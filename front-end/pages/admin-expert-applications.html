@@ -368,7 +368,7 @@
 
   <script>
     document.addEventListener('DOMContentLoaded', () => {
-      if (typeof Auth !== 'undefined' && !Auth.requireRole('superuser')) return;
+      if (typeof Auth !== 'undefined' && !Auth.requireRole('admin')) return;
       const session = Auth.getCurrentUser();
 
       let activeFilter = 'all';
@@ -540,8 +540,8 @@
       `;
 
       initDashboard({
-        role: 'superuser',
-        activePath: 'superuser-expert-applications.html',
+        role: 'admin',
+        activePath: 'admin-expert-applications.html',
         pageTitle: 'Expert Applications',
         pageSubtitle: 'Review and manage expert reviewer applications.',
         content,
@@ -645,6 +645,15 @@
             <div class="detail-field">
               <div class="detail-label">GitHub</div>
               <div class="detail-value">${app.github ? `<a href="${app.github}" target="_blank">${app.github}</a>` : 'N/A'}</div>
+            </div>
+          </div>
+          <div class="detail-field" style="margin-top:6px;">
+            <div class="detail-label">Documents</div>
+            <div class="detail-value" style="font-weight:400;font-size:13px;">
+              ${app.resumeName
+                ? `Resume: <strong>${app.resumeName}</strong>${app.certificateName ? ` · Certificate: <strong>${app.certificateName}</strong>` : ''}
+                   <div style="color:var(--muted-foreground);font-size:12px;margin-top:3px;">Uploaded files are not retained — the platform has no document storage yet.</div>`
+                : 'No documents recorded with this application.'}
             </div>
           </div>
           <div class="detail-field" style="margin-top:6px;">

@@ -9,6 +9,7 @@ import { DisputesService } from '../disputes/disputes.service';
 import { TransactionsService } from '../transactions/transactions.service';
 import { ExpertApplicationsService } from '../expert-applications/expert-applications.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { LedgerService } from '../ledger/ledger.service';
 
 @Injectable()
 export class SeedService {
@@ -23,6 +24,7 @@ export class SeedService {
     @Inject(forwardRef(() => TransactionsService)) private transactionsService: TransactionsService,
     @Inject(forwardRef(() => ExpertApplicationsService)) private expertApplicationsService: ExpertApplicationsService,
     @Inject(forwardRef(() => NotificationsService)) private notificationsService: NotificationsService,
+    @Inject(forwardRef(() => LedgerService)) private ledgerService: LedgerService,
   ) {}
 
   resetAll() {
@@ -36,5 +38,7 @@ export class SeedService {
     this.transactionsService.resetToSeed();
     this.expertApplicationsService.resetToSeed();
     this.notificationsService.resetToSeed();
+    // Last: rebuilds escrow and billings from the freshly reset transaction ledger.
+    this.ledgerService.resetToSeed();
   }
 }

@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UsersRepository } from './users.repository';
+import { round2 } from '../ledger/fee-config';
 
 /**
  * EER Specialization — Users Service
@@ -149,18 +150,21 @@ export class UsersService {
     return { deleted: true };
   }
 
+  // Balances are rounded to cents on every write. Without this, repeated
+  // float arithmetic drifts (24500 - 2634.99 lands on 21865.010000000002)
+  // and balances stop comparing equal to the amounts that produced them.
   deductFromWallet(id: string, amount: number) {
     const base = this.usersRepository.getRawBase(id);
     if (!base) throw new NotFoundException(`User with id "${id}" not found`);
     if (base.walletBalance < amount) throw new BadRequestException('Insufficient wallet balance.');
-    base.walletBalance -= amount;
+    base.walletBalance = round2(base.walletBalance - amount);
     return this.usersRepository.findById(id);
   }
 
   addToWallet(id: string, amount: number) {
     const base = this.usersRepository.getRawBase(id);
     if (!base) throw new NotFoundException(`User with id "${id}" not found`);
-    base.walletBalance += amount;
+    base.walletBalance = round2(base.walletBalance + amount);
     return this.usersRepository.findById(id);
   }
 

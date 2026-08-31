@@ -311,7 +311,14 @@
         raw = all.find(d => d.status === 'open') || all[0] || null;
       }
       if (!raw) {
-        document.body.innerHTML = '<div style="padding:80px;text-align:center;color:#6b7280;font-size:16px;">No dispute found. <a href="expert-dispute-cases.html" style="color:#6366f1;">Go to Disputes</a></div>';
+        renderEmptyState({
+          role: 'expert',
+          activePath: 'expert-dispute-cases.html',
+          pageTitle: 'Resolve Dispute',
+          message: 'No dispute found.',
+          linkHref: 'expert-dispute-cases.html',
+          linkLabel: 'Go to Disputes',
+        });
         return;
       }
 
@@ -562,6 +569,14 @@
                   </div>
                 </div>
 
+                <div class="verdict-option" id="v3" onclick="selectVerdict('partial',this)">
+                  <div class="verdict-radio"><div class="verdict-radio-dot"></div></div>
+                  <div>
+                    <div class="verdict-title">Split the milestone</div>
+                    <div class="verdict-desc">Partial delivery. Half of ${d.escrow} is released to the worker and half returned to the client.</div>
+                  </div>
+                </div>
+
 
                 <div style="margin-top:16px;">
                   <label style="font-size:12px;font-weight:600;display:block;margin-bottom:6px;">Resolution Notes <span style="color:var(--muted-foreground);font-weight:400;">(required)</span></label>
@@ -629,7 +644,7 @@
         if (!valid) return;
 
         // Map verdict to store format
-        const verdictMap = { favour_worker: 'worker-favour', favour_client: 'client-favour', partial: 'split', escalate: 'client-favour' };
+        const verdictMap = { favour_worker: 'worker-favour', favour_client: 'client-favour', partial: 'split' };
         const storeVerdict = verdictMap[selectedVerdict] || selectedVerdict;
 
         // Save to store
@@ -669,7 +684,6 @@
           favour_worker: `✓ Verdict submitted. Escrow of ${d.escrow} released to ${d.respondentName}.`,
           favour_client: `✓ Verdict submitted. Escrow returned to client. Worker notified to revise.`,
           partial:       `✓ Partial resolution submitted. Escrow split and worker notified.`,
-          escalate:      `✓ Case escalated to senior reviewer.`,
         };
         Validate.toast(msgs[selectedVerdict], 'success');
         setTimeout(() => { window.location.href = 'expert-dispute-cases.html'; }, 2800);

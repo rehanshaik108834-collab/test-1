@@ -50,7 +50,14 @@
       }
 
       if (!milestone) {
-        document.body.innerHTML = '<div style="padding:80px;text-align:center;color:#6b7280;font-size:16px;">No deliverable pending review. <a href="client-my-projects.html" style="color:#6366f1;">Go to Projects</a></div>';
+        renderEmptyState({
+          role: 'client',
+          activePath: 'client-my-projects.html',
+          pageTitle: 'Review Deliverable',
+          message: 'No deliverable pending review.',
+          linkHref: 'client-my-projects.html',
+          linkLabel: 'Go to Projects',
+        });
         return;
       }
 

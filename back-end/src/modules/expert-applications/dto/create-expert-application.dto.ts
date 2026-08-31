@@ -45,4 +45,12 @@ export class CreateExpertApplicationDto {
   @ApiPropertyOptional({ example: 'Passionate about code quality...' })
   @IsOptional() @IsString()
   motivation?: string;
+
+  @ApiPropertyOptional({ example: 'marta-kovac-cv.pdf', description: 'Filename of the supplied resume' })
+  @IsOptional() @IsString()
+  resumeName?: string;
+
+  @ApiPropertyOptional({ example: 'aws-cert.pdf' })
+  @IsOptional() @IsString()
+  certificateName?: string;
 }

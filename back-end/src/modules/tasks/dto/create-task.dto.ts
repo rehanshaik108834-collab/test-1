@@ -38,4 +38,12 @@ export class CreateTaskDto {
   @ApiPropertyOptional({ example: false })
   @IsOptional() @IsBoolean()
   auditEnabled?: boolean;
+
+  @ApiPropertyOptional({ example: 300, description: 'Opening offer for the technical audit fee' })
+  @IsOptional() @IsNumber()
+  auditFee?: number;
+
+  @ApiPropertyOptional({ example: 'Web Development', description: 'Expert domain the audit should match' })
+  @IsOptional() @IsString()
+  auditDomain?: string;
 }

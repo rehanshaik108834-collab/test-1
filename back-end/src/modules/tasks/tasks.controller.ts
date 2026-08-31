@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Param, Body, Query, Headers, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiHeader, ApiQuery } from '@nestjs/swagger';
 import { TasksService } from './tasks.service';
 import { CreateTaskDto } from './dto/create-task.dto';
@@ -21,8 +21,11 @@ export class TasksController {
     @Query('clientId') clientId?: string,
     @Query('workerId') workerId?: string,
     @Query('status') status?: string,
+    @Headers('user-id') userId?: string,
   ) {
-    return this.tasksService.findAll({ clientId, workerId, status });
+    // viewerId lets a client see their own draft projects in an unfiltered
+    // listing; drafts stay hidden from everyone else.
+    return this.tasksService.findAll({ clientId, workerId, status, viewerId: userId });
   }
 
   @Get(':id')
@@ -45,6 +48,17 @@ export class TasksController {
   @ApiOperation({ summary: 'Update a task' })
   update(@Param('id') id: string, @Body() dto: UpdateTaskDto) {
     return this.tasksService.update(id, dto);
+  }
+
+  @Post(':id/cancel-draft')
+  @ApiHeader({ name: 'role', required: true, description: 'User role required' })
+  @Roles('client', 'superuser')
+  @ApiOperation({
+    summary: 'Abandon a draft project',
+    description: 'Cancels a project still awaiting its technical audit and refunds any audit escrow.',
+  })
+  cancelDraft(@Param('id') id: string) {
+    return this.tasksService.cancelDraft(id);
   }
 
   @Delete(':id')

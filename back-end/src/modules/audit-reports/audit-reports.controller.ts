@@ -26,6 +26,10 @@ export class AuditReportsController {
   }
 
   @Post()
+  @ApiHeader({ name: 'role', required: true, description: 'User role required' })
+  // Previously unguarded — any caller could file an audit report, which now
+  // releases money from escrow.
+  @Roles('expert', 'superuser')
   @ApiOperation({ summary: 'Submit audit report (updates milestone status on pass/fail)' })
   create(@Body() dto: CreateAuditReportDto) {
     return this.auditReportsService.create(dto);

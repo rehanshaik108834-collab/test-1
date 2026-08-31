@@ -192,7 +192,20 @@
       const taskId = params.get('id');
       task = taskId ? Store.getTaskById(taskId) : null;
       if (!task) {
-        document.body.innerHTML = '<div style="padding:80px;text-align:center;color:#6b7280;font-size:16px;">No project selected for this workroom. Please choose a project from your <a href="worker-my-projects.html">My Projects</a> page.</div>';
+        // Keep the dashboard shell — replacing document.body strands the user with no nav.
+        initDashboard({
+          role: 'worker',
+          activePath: 'worker-my-projects.html',
+          pageTitle: 'Workroom',
+          pageSubtitle: 'No project selected',
+          content: `
+            <div style="padding:56px 24px;text-align:center;background:var(--card);border:1px solid var(--border);border-radius:16px;">
+              <div style="font-size:16px;font-weight:600;margin-bottom:6px;">No project selected</div>
+              <div style="color:var(--muted-foreground);font-size:14px;margin-bottom:18px;">Open a workroom from one of your projects.</div>
+              <a href="worker-my-projects.html" class="btn-primary" style="text-decoration:none;">Go to My Projects</a>
+            </div>`
+        });
+        if (window.lucide) lucide.createIcons();
         return;
       }
 

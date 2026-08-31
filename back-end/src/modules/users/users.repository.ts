@@ -34,6 +34,7 @@ export class UsersRepository {
       merged.completedProjects = 0;
       merged.specialization = '';
       merged.reviewsDone = 0;
+      merged.domains = [];
     } else if (base.role === 'worker') {
       const sub = this.workers.find(w => w.userId === base.id);
       merged.location = sub?.location ?? '';
@@ -43,16 +44,22 @@ export class UsersRepository {
       merged.company = '';
       merged.specialization = '';
       merged.reviewsDone = 0;
+      merged.domains = [];
     } else if (base.role === 'expert') {
       const sub = this.experts.find(e => e.userId === base.id);
       merged.specialization = sub?.specialization ?? '';
       merged.reviewsDone = sub?.reviewsDone ?? 0;
+      // Domains drive reviewer matching when a client enables an audit.
+      merged.domains = sub?.domains ?? [];
+      merged.hourlyRate = sub?.hourlyRate ?? 0;
       merged.company = '';
       merged.location = '';
       merged.skills = [];
       merged.rating = 0;
       merged.completedProjects = 0;
     } else {
+      // Staff roles (superuser, admin) have no sub-table — zero-fill so every
+      // user has the same shape regardless of role.
       merged.company = '';
       merged.location = '';
       merged.skills = [];
@@ -60,6 +67,7 @@ export class UsersRepository {
       merged.completedProjects = 0;
       merged.specialization = '';
       merged.reviewsDone = 0;
+      merged.domains = [];
     }
 
     return merged;

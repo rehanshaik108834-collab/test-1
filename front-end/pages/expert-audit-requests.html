@@ -230,6 +230,22 @@
   </style>
 
   <script>
+    // The API stores 'Pending' / 'In-Progress' / 'Completed'; this screen was
+    // written against 'Awaiting Review' / 'In Review' / 'Completed', so no row
+    // ever matched and the Accept button never rendered. Normalise at the boundary.
+    const UI_STATUS = {
+      'preview-sent':     'Awaiting Review',
+      'negotiating':      'Negotiating',
+      'agreed':           'Agreed',
+      'escrow-funded':    'Ready to start',
+      'in-progress':      'In Review',
+      'report-submitted': 'In Review',
+      'paid':             'Completed',
+      'declined':         'Declined',
+      'cancelled':        'Cancelled',
+    };
+    const toUiStatus = s => UI_STATUS[s] || 'Awaiting Review';
+
     // Build audit requests from store
     function getAuditRequests() {
       return Store.getAuditRequests().map(a => ({
@@ -239,7 +255,10 @@
         worker: a.worker,
         milestone: a.milestone,
         submitted: a.createdAt,
-        status: a.status,
+        status: toUiStatus(a.status),
+        rawStatus: a.status,
+        kind: a.kind,
+        agreedAmount: a.agreedAmount,
         priority: a.severity === 'High' ? 'high' : a.severity === 'Low' ? 'low' : 'normal',
         severity: a.severity === 'High' ? 'major' : 'minor',
         severityLabel: a.severity + ' Priority',
@@ -249,11 +268,8 @@
 
     let auditRequests = [];
 
-    function acceptAudit(id) {
-      Store.updateAuditRequest(id, { status: 'In Review' });
-      Validate.toast('Audit request accepted. Now In Review.', 'success');
-      auditRequests = getAuditRequests();
-      render();
+    function openAudit(id) {
+      window.location.href = `expert-audit-preview.html?id=${id}`;
     }
 
     const severityIcon = {
@@ -265,8 +281,13 @@
 
     const statusClass = {
       'Awaiting Review': 'status-awaiting',
+      'Negotiating':     'status-awaiting',
+      'Agreed':          'status-in-review',
+      'Ready to start':  'status-in-review',
       'In Review':       'status-in-review',
       'Completed':       'status-completed',
+      'Declined':        'status-completed',
+      'Cancelled':       'status-completed',
     };
 
     function buildCards(list) {
@@ -310,9 +331,9 @@
 
           <!-- CTA -->
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            ${a.status !== 'Completed' ? `<a href="review-deliverable.html?id=${a.milestoneId}&role=expert&auditId=${a.id}" class="btn-review"><i data-lucide="eye" style="width:15px;height:15px;"></i>Review Deliverable</a>` : ''}
-            ${a.status === 'Awaiting Review' && a.fromStore ? `<button onclick="acceptAudit('${a.id}')" class="btn-review" style="background:#ecfdf5;color:#166534;border:1px solid #bbf7d0;"><i data-lucide="check" style="width:15px;height:15px;"></i>Accept</button>` : ''}
-            ${a.status === 'Completed' ? `<a href="expert-report-audit.html?id=${a.id}" class="btn-review" style="background:#f8f9fb;color:var(--foreground);border:1px solid var(--border);"><i data-lucide="file-text" style="width:15px;height:15px;"></i>View Report</a>` : ''}
+            ${a.rawStatus === 'in-progress' && a.milestoneId ? `<a href="review-deliverable.html?id=${a.milestoneId}&role=expert&auditId=${a.id}" class="btn-review"><i data-lucide="file-search" style="width:15px;height:15px;"></i>Review Deliverable</a>` : ''}
+            ${!['paid','declined','cancelled'].includes(a.rawStatus) ? `<button onclick="openAudit('${a.id}')" class="btn-review" style="background:#ecfdf5;color:#166534;border:1px solid #bbf7d0;"><i data-lucide="eye" style="width:15px;height:15px;"></i>${a.rawStatus === 'in-progress' ? 'Open' : 'Review &amp; quote'}</button>` : ''}
+            ${a.rawStatus === 'paid' ? `<a href="expert-report-audit.html?id=${a.id}" class="btn-review" style="background:#f8f9fb;color:var(--foreground);border:1px solid var(--border);"><i data-lucide="file-text" style="width:15px;height:15px;"></i>View Report</a>` : ''}
           </div>
         </div>
       `).join('');
@@ -340,10 +361,11 @@
           lucide.createIcons();
         }
       }
+      window.refreshAuditGrid = render;
 
       const totalRequests = auditRequests.length;
-      const pendingCount  = auditRequests.filter(a => a.status !== 'Completed').length;
-      const inReviewCount = auditRequests.filter(a => a.status === 'In Review').length;
+      const pendingCount  = auditRequests.filter(a => !['Completed','Declined','Cancelled'].includes(a.status)).length;
+      const inReviewCount = auditRequests.filter(a => a.status === 'In Review' || a.status === 'Ready to start').length;
       const doneCount     = auditRequests.filter(a => a.status === 'Completed').length;
 
       const content = `
@@ -400,7 +422,7 @@
             />
           </div>
           <button class="filter-btn active" id="filterAll"       onclick="setFilter('all',this)">All</button>
-          <button class="filter-btn"        id="filterAwaiting"  onclick="setFilter('Awaiting Review',this)">Pending</button>
+          <button class="filter-btn"        id="filterAwaiting"  onclick="setFilter('Awaiting Review',this)">Awaiting</button>
           <button class="filter-btn"        id="filterInReview"  onclick="setFilter('In Review',this)">In Review</button>
           <button class="filter-btn"        id="filterCompleted" onclick="setFilter('Completed',this)">Completed</button>
         </div>

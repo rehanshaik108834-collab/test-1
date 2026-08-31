@@ -102,6 +102,7 @@
           <span style="display:block;">Worker: <code style="background:#e2e8f0;padding:1px 5px;border-radius:4px;">worker@gmail.com</code> / <code style="background:#e2e8f0;padding:1px 5px;border-radius:4px;">Password@123</code></span>
           <span style="display:block;">Expert: <code style="background:#e2e8f0;padding:1px 5px;border-radius:4px;">expert@gmail.com</code> / <code style="background:#e2e8f0;padding:1px 5px;border-radius:4px;">Password@123</code></span>
           <span style="display:block;">Super User: <code style="background:#e2e8f0;padding:1px 5px;border-radius:4px;">super@gmail.com</code> / <code style="background:#e2e8f0;padding:1px 5px;border-radius:4px;">Superadmin@123</code></span>
+          <span style="display:block;">Admin: <code style="background:#e2e8f0;padding:1px 5px;border-radius:4px;">admin@gmail.com</code> / <code style="background:#e2e8f0;padding:1px 5px;border-radius:4px;">Admin@123</code></span>
         </div>
       </div>
     </div>
@@ -118,6 +119,23 @@
     if (Auth.isLoggedIn()) {
       const u = Auth.getCurrentUser();
       window.location.href = Auth.getDashboardUrl(u.role);
+    }
+
+    // Demo prefill: index.html links here as ?demo=<role>.
+    const DEMO_ACCOUNTS = {
+      client: { email: 'client@gmail.com', password: 'Password@123' },
+      worker: { email: 'worker@gmail.com', password: 'Password@123' },
+      expert: { email: 'expert@gmail.com', password: 'Password@123' },
+      superuser: { email: 'super@gmail.com', password: 'Superadmin@123' },
+      admin: { email: 'admin@gmail.com', password: 'Admin@123' },
+    };
+    const demoRole = new URLSearchParams(window.location.search).get('demo');
+    if (demoRole && DEMO_ACCOUNTS[demoRole]) {
+      const acct = DEMO_ACCOUNTS[demoRole];
+      const emailEl = document.getElementById('loginEmail');
+      const pwEl = document.getElementById('loginPassword');
+      if (emailEl) emailEl.value = acct.email;
+      if (pwEl) pwEl.value = acct.password;
     }
 
     // Toggle password visibility

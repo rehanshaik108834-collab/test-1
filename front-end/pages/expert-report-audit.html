@@ -313,7 +313,14 @@
       }
 
       if (!req) {
-        document.body.innerHTML = '<div style="padding:80px;text-align:center;color:#6b7280;font-size:16px;">No audit request found. <a href="expert-audit-requests.html" style="color:#6366f1;">Go to Audit Requests</a></div>';
+        renderEmptyState({
+          role: 'expert',
+          activePath: 'expert-audit-requests.html',
+          pageTitle: 'Audit Report',
+          message: 'No audit request found.',
+          linkHref: 'expert-audit-requests.html',
+          linkLabel: 'Go to Audit Requests',
+        });
         return;
       }
 

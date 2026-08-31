@@ -7,6 +7,7 @@ import { UsersModule } from '../users/users.module';
 import { TransactionsModule } from '../transactions/transactions.module';
 import { AuditRequestsModule } from '../audit-requests/audit-requests.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { LedgerModule } from '../ledger/ledger.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     forwardRef(() => TransactionsModule),
     forwardRef(() => AuditRequestsModule),
     forwardRef(() => NotificationsModule),
+    forwardRef(() => LedgerModule),
   ],
   controllers: [MilestonesController],
   providers: [MilestonesRepository, MilestonesService],

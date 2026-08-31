@@ -5,7 +5,9 @@
 
 const Auth = (() => {
   const SESSION_KEY = 'lannent_session';
-  const API = 'http://localhost:3000/api';
+  const API = (typeof LANNENT_API !== 'undefined')
+    ? LANNENT_API
+    : 'http://localhost:3000/api';
 
   function login(email, password) {
     // Synchronous wrapper: try API first, fall back to Store
@@ -78,16 +80,23 @@ const Auth = (() => {
     const allowed = roles.flat();
     if (!allowed.includes(user.role)) {
       // Redirect to their correct dashboard
-      const map = { client: 'client-dashboard.html', worker: 'worker-dashboard.html', expert: 'expert-dashboard.html', superuser: 'superuser-dashboard.html' };
-      window.location.href = _getRoot() + 'pages/' + (map[user.role] || 'login.html');
+      window.location.href = _getRoot() + 'pages/' + getDashboardUrl(user.role);
       return false;
     }
     return true;
   }
 
+  // Single source of truth for where each role lands after signing in.
+  const DASHBOARDS = {
+    client:    'client-dashboard.html',
+    worker:    'worker-dashboard.html',
+    expert:    'expert-dashboard.html',
+    superuser: 'superuser-dashboard.html',
+    admin:     'admin-dashboard.html',
+  };
+
   function getDashboardUrl(role) {
-    const map = { client: 'client-dashboard.html', worker: 'worker-dashboard.html', expert: 'expert-dashboard.html', superuser: 'superuser-dashboard.html' };
-    return map[role] || 'login.html';
+    return DASHBOARDS[role] || 'login.html';
   }
 
   return { login, logout, getCurrentUser, isLoggedIn, requireAuth, requireRole, getDashboardUrl };

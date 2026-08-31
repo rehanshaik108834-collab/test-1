@@ -5,8 +5,11 @@
  * Drop-in replacement: all existing pages work without changes.
  */
 
+const LANNENT_API = (typeof window !== 'undefined' && window.LANNENT_API)
+  || 'http://localhost:3000/api';
+
 const Store = (() => {
-  const API = 'http://localhost:3000/api';
+  const API = LANNENT_API;
 
   // Local cache — initialized from API on first load
   let _cache = {
@@ -145,8 +148,14 @@ const Store = (() => {
     return false;
   }
 
+  // True once at least one endpoint has answered. Pages read this to tell
+  // "the API is down" apart from "there is genuinely no data yet" — without it,
+  // an unreachable backend renders every page as a silent empty shell.
+  let _online = false;
+  let _reachedEndpoints = 0;
+
   function init() {
-    // Load all data synchronously from API so cache is ready before pages render
+    // Load all data synchronously from the API so the cache is ready before pages render.
     const endpoints = [
       ['users', '/users'], ['tasks', '/tasks'], ['milestones', '/milestones'],
       ['proposals', '/proposals'], ['auditRequests', '/audit-requests'],
@@ -155,11 +164,19 @@ const Store = (() => {
       ['notifications', '/notifications'],
       ['messages', '/messages'],
     ];
+    _reachedEndpoints = 0;
     for (const [key, path] of endpoints) {
-      const data = _syncFetch(API + path);
-      if (data) _cache[key] = data;
+      // One failing endpoint must not abort the rest.
+      let data = null;
+      try { data = _syncFetch(API + path); } catch (e) { data = null; }
+      if (data) { _cache[key] = data; _reachedEndpoints++; }
+      else if (!Array.isArray(_cache[key])) { _cache[key] = []; }
     }
+    _online = _reachedEndpoints > 0;
+    return _online;
   }
+
+  function isOnline() { return _online; }
 
   function resetToSeed() {
     _syncPost(`${API}/seed/reset`, {});
@@ -195,24 +212,182 @@ const Store = (() => {
     _cache.users = _cache.users.filter(u => u.id !== id);
   }
 
+  // Balance changes must never fall back to a cache-only mutation: that reports
+  // success for money the server never moved, and the change is lost on reload.
+  // Both of these return null when the API does not confirm the change.
   function deductFromWallet(userId, amount) {
     const user = getUserById(userId);
     if (!user) return null;
     if (user.walletBalance < amount) return null;
     const result = _syncPost(`${API}/users/${userId}/wallet/deduct`, { amount });
-    if (result) { const idx = _cache.users.findIndex(u => u.id === userId); if (idx >= 0) _cache.users[idx] = result; return result; }
-    user.walletBalance -= amount;
-    return user;
+    if (!result) return null;
+    const idx = _cache.users.findIndex(u => u.id === userId);
+    if (idx >= 0) _cache.users[idx] = result;
+    return result;
+  }
+
+  // Deposits and withdrawals carry a platform fee, so these return the fee
+  // breakdown ({ gross, fee, net, balance }) rather than the user record.
+  // The cached user is refreshed from the server afterwards.
+  function _refreshUser(userId) {
+    const fresh = _syncFetch(`${API}/users/${userId}`);
+    if (fresh) {
+      const idx = _cache.users.findIndex(u => u.id === userId);
+      if (idx >= 0) _cache.users[idx] = fresh;
+    }
+    return fresh;
   }
 
   function addToWallet(userId, amount) {
     const user = getUserById(userId);
     if (!user) return null;
     const result = _syncPost(`${API}/users/${userId}/wallet/add`, { amount });
-    if (result) { const idx = _cache.users.findIndex(u => u.id === userId); if (idx >= 0) _cache.users[idx] = result; return result; }
-    user.walletBalance += amount;
-    return user;
+    if (!result) return null;
+    _refreshUser(userId);
+    return result;
   }
+
+  /** Withdraws to an external account. Returns { gross, fee, net, balance }. */
+  function withdrawFromWallet(userId, amount) {
+    const user = getUserById(userId);
+    if (!user) return null;
+    const result = _syncPost(`${API}/users/${userId}/wallet/withdraw`, { amount });
+    if (!result) return null;
+    _refreshUser(userId);
+    return result;
+  }
+
+  // ─── AUDIT ENGAGEMENTS ────────────────────────────────────────────────────
+  // An audit is a hired, negotiated, escrow-paid engagement:
+  //   preview-sent → negotiating → agreed → escrow-funded
+  //                → in-progress → report-submitted → paid
+  function getAuditPreview(id) {
+    return _syncFetch(`${API}/audit-requests/${id}/preview`);
+  }
+  function getAuditRequestsByTask(taskId) {
+    return (_cache.auditRequests || []).filter(a => a.taskId === taskId);
+  }
+  function _refreshAuditRequests() {
+    const fresh = _syncFetch(`${API}/audit-requests`);
+    if (fresh) _cache.auditRequests = fresh;
+  }
+  function makeAuditOffer(id, { amount, offeredBy, note }) {
+    const r = _syncPost(`${API}/audit-requests/${id}/offers`, { amount, offeredBy, note });
+    if (r) _refreshAuditRequests();
+    return r;
+  }
+  function acceptAuditOffer(id, offerId) {
+    const r = _syncPost(`${API}/audit-requests/${id}/offers/${offerId}/accept`, {});
+    if (r) _refreshAuditRequests();
+    return r;
+  }
+  function fundAuditEscrow(id) {
+    const r = _syncPost(`${API}/audit-requests/${id}/fund`, {});
+    if (r) { _refreshAuditRequests(); _refreshUser(_sessionUserId()); }
+    return r;
+  }
+  function acceptAuditEngagement(id, expertId) {
+    const r = _syncPost(`${API}/audit-requests/${id}/accept`, { expertId });
+    if (r) {
+      _refreshAuditRequests();
+      const tasks = _syncFetch(`${API}/tasks`);
+      if (tasks) _cache.tasks = tasks;
+    }
+    return r;
+  }
+  function declineAuditEngagement(id, reason) {
+    const r = _syncPost(`${API}/audit-requests/${id}/decline`, { reason });
+    if (r) _refreshAuditRequests();
+    return r;
+  }
+  function cancelDraftTask(taskId) {
+    const r = _syncPost(`${API}/tasks/${taskId}/cancel-draft`, {});
+    if (r) {
+      const tasks = _syncFetch(`${API}/tasks`);
+      if (tasks) _cache.tasks = tasks;
+      _refreshUser(_sessionUserId());
+    }
+    return r;
+  }
+  function getExperts() {
+    return (_cache.users || []).filter(u => u.role === 'expert' && u.status === 'active');
+  }
+  function _sessionUserId() {
+    try { return JSON.parse(localStorage.getItem('lannent_session') || '{}').userId; } catch { return null; }
+  }
+
+  // ─── LEDGER ───────────────────────────────────────────────────────────────
+  // Authoritative escrow and revenue totals. Do not re-derive escrow from
+  // transaction rows: milestone-release rows carry the NET paid to the worker,
+  // so summing them under-counts what actually left escrow by the service fee.
+  function getLedgerSummary() {
+    return _syncFetch(`${API}/ledger/summary`) || {
+      totalHeld: 0, totalRevenue: 0, escrowByTask: {}, revenueEntries: [],
+    };
+  }
+
+  function getEscrowForTask(taskId) {
+    return _syncFetch(`${API}/ledger/escrow/${taskId}`) || { projectHeld: 0, auditHeld: 0 };
+  }
+
+  // ─── REVENUE (admin) ──────────────────────────────────────────────────────
+  function getRevenueSummary()      { return _syncFetch(`${API}/revenue/summary`); }
+  function getRevenueByFeeType()    { return _syncFetch(`${API}/revenue/by-fee-type`) || []; }
+  function getRevenueTimeseries(period) {
+    return _syncFetch(`${API}/revenue/timeseries?period=${period || 'day'}`) || [];
+  }
+  function getRevenueByUser()       { return _syncFetch(`${API}/revenue/by-user`) || []; }
+  function getRevenueDistribution() { return _syncFetch(`${API}/revenue/distribution`); }
+  function getFeeConfig()           { return _syncFetch(`${API}/revenue/fee-config`); }
+  function updateFeeConfig(patch)   { return _syncPatch(`${API}/revenue/fee-config`, patch); }
+
+  // ─── FEE PREVIEW ──────────────────────────────────────────────────────────
+  // Mirrors back-end/src/modules/ledger/fee-config.ts so forms can show the
+  // charge before it is committed. The server always recomputes authoritatively.
+  const FEES = {
+    deposit:            { percent: 2.9,  fixed: 0.30 },
+    clientMarketplace:  { percent: 5.0 },
+    contractInitiation: [
+      { upTo: 500, fee: 0.99 }, { upTo: 2000, fee: 4.99 },
+      { upTo: 10000, fee: 9.99 }, { upTo: Infinity, fee: 14.99 },
+    ],
+    workerService: [
+      { upTo: 500, percent: 20 }, { upTo: 10000, percent: 10 },
+      { upTo: Infinity, percent: 5 },
+    ],
+    expertService: { percent: 10 },
+    withdrawal:    { percent: 0.25, fixed: 0.25, min: 0.25 },
+  };
+
+  function _round2(n) { return Math.round((n + Number.EPSILON) * 100) / 100; }
+  function _tier(tiers, amount) { return tiers.find(t => amount <= t.upTo) || tiers[tiers.length - 1]; }
+
+  const Fees = {
+    round2: _round2,
+    deposit(gross) {
+      const fee = _round2(gross * (FEES.deposit.percent / 100) + FEES.deposit.fixed);
+      return { gross, fee, net: _round2(gross - fee) };
+    },
+    withdrawal(gross) {
+      const raw = gross * (FEES.withdrawal.percent / 100) + FEES.withdrawal.fixed;
+      const fee = _round2(Math.max(raw, FEES.withdrawal.min));
+      return { gross, fee, net: _round2(gross - fee) };
+    },
+    projectFunding(budget) {
+      const marketplace = _round2(budget * (FEES.clientMarketplace.percent / 100));
+      const initiation = _tier(FEES.contractInitiation, budget).fee;
+      return { budget, marketplace, initiation, total: _round2(budget + marketplace + initiation) };
+    },
+    workerRelease(amount, lifetimeBillings) {
+      const rate = _tier(FEES.workerService, lifetimeBillings || 0).percent;
+      const fee = _round2(amount * (rate / 100));
+      return { amount, rate, fee, net: _round2(amount - fee) };
+    },
+    expertPayout(amount) {
+      const fee = _round2(amount * (FEES.expertService.percent / 100));
+      return { amount, fee, net: _round2(amount - fee) };
+    },
+  };
 
   // ─── TASKS ────────────────────────────────────────────────────────────────
   function getTasks() { return _cache.tasks; }
@@ -515,6 +690,16 @@ const Store = (() => {
   function getExpertApplicationById(id) { return (_cache.expertApplications || []).find(a => a.id === id) || null; }
   function getExpertApplicationByEmail(email) { return (_cache.expertApplications || []).find(a => a.email.toLowerCase() === email.toLowerCase()) || null; }
 
+  /**
+   * Public lookup: does an application exist for this email, and what is its
+   * status. The full application list is admin-only — it holds applicants'
+   * contact details — so signup and login use this instead.
+   */
+  function getExpertApplicationStatus(email) {
+    return _syncFetch(`${API}/expert-applications/status?email=${encodeURIComponent(email)}`)
+      || { exists: false, status: null };
+  }
+
   function saveExpertApplication(data) {
     if (getExpertApplicationByEmail(data.email)) {
       return { success: false, error: 'An application with this email already exists.' };
@@ -588,21 +773,25 @@ const Store = (() => {
 
   // ─── PUBLIC API ───────────────────────────────────────────────────────────
   return {
-    init, resetToSeed,
-    getUsers, getUserById, getUserByEmail, createUser, updateUser, deleteUser, deductFromWallet, addToWallet,
+    init, resetToSeed, isOnline,
+    getUsers, getUserById, getUserByEmail, createUser, updateUser, deleteUser, deductFromWallet, addToWallet, withdrawFromWallet, Fees, getLedgerSummary, getEscrowForTask,
+    getRevenueSummary, getRevenueByFeeType, getRevenueTimeseries, getRevenueByUser,
+    getRevenueDistribution, getFeeConfig, updateFeeConfig,
     getTasks, getTaskById, getTasksByClient, getTasksByWorker, getOpenTasks, createTask, updateTask, deleteTask,
     getMilestones, getMilestonesByTask, getMilestoneById, createMilestone, updateMilestone, submitDeliverable, approveDeliverable,
     getProposals, getProposalsByTask, getProposalsByWorker, getInvitationsByWorker, createProposal, updateProposal, hireWorker, acceptInvitation, declineInvitation,
     getAuditRequests, getAuditRequestById, createAuditRequest, updateAuditRequest,
+    getAuditPreview, getAuditRequestsByTask, makeAuditOffer, acceptAuditOffer, fundAuditEscrow,
+    acceptAuditEngagement, declineAuditEngagement, cancelDraftTask, getExperts,
     getAuditReports, getAuditReportByRequest, getReportsByTask, saveAuditReport,
     getDisputes, getDisputeById, createDispute, resolveDispute,
     getTransactions, getTransactionsByUser, createTransaction,
     getNotifications, addNotification, markNotificationsRead,
     getMessagesByTask, getMessagesByUser, sendMessage,
-    getExpertApplications, getExpertApplicationById, getExpertApplicationByEmail, saveExpertApplication, updateExpertApplicationStatus,
+    getExpertApplications, getExpertApplicationById, getExpertApplicationByEmail, getExpertApplicationStatus, saveExpertApplication, updateExpertApplicationStatus,
   };
 })();
 
 // Auto-init on load
-Store.init();
+try { Store.init(); } catch (e) { console.error('[Store] init failed:', e); }
 

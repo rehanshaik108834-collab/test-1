@@ -5,6 +5,7 @@ import { MilestonesRepository } from './milestones.repository';
 import { TasksService } from '../tasks/tasks.service';
 import { UsersService } from '../users/users.service';
 import { TransactionsService } from '../transactions/transactions.service';
+import { LedgerService } from '../ledger/ledger.service';
 import { AuditRequestsService } from '../audit-requests/audit-requests.service';
 import { NotificationsService } from '../notifications/notifications.service';
 
@@ -21,6 +22,7 @@ export class MilestonesService {
     @Inject(forwardRef(() => TasksService)) private tasksService: TasksService,
     @Inject(forwardRef(() => UsersService)) private usersService: UsersService,
     @Inject(forwardRef(() => TransactionsService)) private transactionsService: TransactionsService,
+    @Inject(forwardRef(() => LedgerService)) private ledger: LedgerService,
     @Inject(forwardRef(() => AuditRequestsService)) private auditRequestsService: AuditRequestsService,
     @Inject(forwardRef(() => NotificationsService)) private notificationsService: NotificationsService,
   ) {}
@@ -62,25 +64,23 @@ export class MilestonesService {
     ms.submittedAt = new Date().toISOString().slice(0, 10);
     if (deliverable) ms.deliverable = deliverable;
 
-    // If task has auditEnabled, create audit request
+    // An audited project already has a hired expert from creation time, so a
+    // submission no longer spawns a fresh unassigned request. Point the live
+    // engagement at the milestone that now needs reviewing.
     try {
       const task = this.tasksService.findById(ms.taskId);
       if (task && task.auditEnabled) {
-        let workerName = 'Worker';
-        try { workerName = this.usersService.findById(ms.workerId)?.name || 'Worker'; } catch {}
-        this.auditRequestsService.create({
-          taskId: ms.taskId,
-          milestoneId: id,
-          workerId: ms.workerId,
-          clientId: task.clientId,
-          expertId: undefined,
-          status: 'Pending',
-          severity: 'Medium',
-          project: task.title,
-          worker: workerName,
-          milestone: ms.title,
-          dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
-        });
+        const active = this.auditRequestsService
+          .findAll({ taskId: ms.taskId, kind: 'project-audit' })
+          .find((a: any) => a.status === 'in-progress');
+        if (active) {
+          const workerName = this.usersService.findById(ms.workerId)?.name || 'Worker';
+          this.auditRequestsService.update(active.id, {
+            milestoneId: id,
+            worker: workerName,
+            milestone: ms.title,
+          });
+        }
       }
     } catch {}
 
@@ -89,29 +89,27 @@ export class MilestonesService {
 
   approveDeliverable(id: string) {
     const ms = this.findById(id);
+    const task = this.tasksService.findById(ms.taskId);
+
+    // Release before marking complete: if escrow cannot cover the milestone the
+    // approval must fail rather than mark it paid. LedgerService is idempotent
+    // per milestone, so approving twice cannot pay twice.
+    const release = this.ledger.releaseMilestone({
+      milestoneId: id,
+      taskId: ms.taskId,
+      clientId: task.clientId,
+      workerId: ms.workerId,
+      amount: ms.budget,
+      description: `Payment for ${ms.title}`,
+    });
+
     ms.status = 'completed';
     ms.approvedAt = new Date().toISOString().slice(0, 10);
     ms.progress = 100;
 
-    // Create release transaction and pay worker
-    try {
-      this.transactionsService.create({
-        type: 'milestone-release',
-        amount: ms.budget,
-        fromId: 'escrow',
-        toId: ms.workerId,
-        taskId: ms.taskId,
-        milestoneId: id,
-        description: `Payment for ${ms.title}`,
-        status: 'completed',
-      });
-      this.usersService.addToWallet(ms.workerId, ms.budget);
-    } catch {}
-
-    // Check task completion
     this.checkTaskCompletion(ms.taskId);
 
-    return ms;
+    return { ...ms, release };
   }
 
   checkTaskCompletion(taskId: string) {

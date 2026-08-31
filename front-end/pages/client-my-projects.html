@@ -47,6 +47,9 @@
           'open': ['badge-gray','Open'],
           'in-progress': ['badge-blue','In Progress'],
           'completed': ['badge-green','Completed'],
+          // An audited project is held as a draft until a reviewer accepts.
+          'draft': ['badge-amber','Draft — awaiting audit'],
+          'cancelled': ['badge-gray','Cancelled'],
         };
         const [cls, label] = map[status] || ['badge-gray', status];
         return `<span class="badge ${cls}">${label}</span>`;
@@ -126,7 +129,7 @@
             <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
               <div style="width:32px;height:32px;border-radius:50%;background:${p.workerColor};display:flex;align-items:center;justify-content:center;color:white;font-size:11px;font-weight:700;">${p.workerAvatar}</div>
               <span style="font-size:13px;color:var(--foreground);">${p.worker}</span>
-              ${p.auditEnabled ? '<span style="font-size:11px;background:#f3e8ff;color:#7c3aed;padding:2px 8px;border-radius:99px;font-weight:500;margin-left:4px;">Audit On</span>' : ''}
+              ${p.auditEnabled ? `<a href="client-audit-offers.html" style="font-size:11px;background:#f3e8ff;color:#7c3aed;padding:2px 8px;border-radius:99px;font-weight:500;margin-left:4px;text-decoration:none;">${p.status === 'draft' ? 'Audit pending →' : 'Audit On'}</a>` : ''}
             </div>
             <div style="margin-bottom:16px;">
               <div style="display:flex;justify-content:space-between;margin-bottom:6px;">

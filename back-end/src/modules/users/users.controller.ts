@@ -1,6 +1,7 @@
-import { Controller, Get, Post, Patch, Delete, Param, Body, Headers, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Param, Body, Headers, Query, UseGuards, Inject, forwardRef } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiHeader, ApiQuery } from '@nestjs/swagger';
 import { UsersService } from './users.service';
+import { LedgerService } from '../ledger/ledger.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { LoginDto } from './dto/login.dto';
@@ -12,7 +13,10 @@ import { Roles } from '../../common/decorators/roles.decorator';
 @Controller('users')
 @UseGuards(RoleGuard)
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(
+    private readonly usersService: UsersService,
+    @Inject(forwardRef(() => LedgerService)) private readonly ledger: LedgerService,
+  ) {}
 
   @Post('login')
   @ApiOperation({ summary: 'Login with email and password' })
@@ -58,17 +62,32 @@ export class UsersController {
 
   @Post(':id/wallet/add')
   @ApiHeader({ name: 'role', required: true, description: 'User role required' })
-  @Roles('client', 'worker', 'superuser')
-  @ApiOperation({ summary: 'Add funds to user wallet' })
+  @Roles('client', 'worker', 'expert', 'superuser')
+  @ApiOperation({
+    summary: 'Deposit funds into a wallet (card processing fee applies)',
+    description: 'Charges the deposit processing fee and credits the net. Returns the fee breakdown.',
+  })
   addToWallet(@Param('id') id: string, @Body() dto: WalletDto) {
-    return this.usersService.addToWallet(id, dto.amount);
+    return this.ledger.deposit(id, dto.amount);
   }
 
   @Post(':id/wallet/deduct')
   @ApiHeader({ name: 'role', required: true, description: 'User role required' })
-  @Roles('client', 'superuser')
-  @ApiOperation({ summary: 'Deduct funds from user wallet' })
+  // Workers and experts debit their own wallet when withdrawing.
+  @Roles('client', 'worker', 'expert', 'superuser')
+  @ApiOperation({ summary: 'Deduct funds from a wallet (no fee — internal transfer)' })
   deductFromWallet(@Param('id') id: string, @Body() dto: WalletDto) {
     return this.usersService.deductFromWallet(id, dto.amount);
+  }
+
+  @Post(':id/wallet/withdraw')
+  @ApiHeader({ name: 'role', required: true, description: 'User role required' })
+  @Roles('client', 'worker', 'expert', 'superuser')
+  @ApiOperation({
+    summary: 'Withdraw to an external account (payout fee applies)',
+    description: 'Debits the full gross amount and returns the fee breakdown and net paid out.',
+  })
+  withdraw(@Param('id') id: string, @Body() dto: WalletDto) {
+    return this.ledger.withdraw(id, dto.amount);
   }
 }

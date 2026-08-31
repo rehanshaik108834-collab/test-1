@@ -395,7 +395,14 @@
         rawDispute = all.find(d => d.status === 'resolved') || all[0] || null;
       }
       if (!rawDispute) {
-        document.body.innerHTML = '<div style="padding:80px;text-align:center;color:#6b7280;">No dispute report found. <a href="expert-dispute-cases.html" style="color:#6366f1;">Back to Cases</a></div>';
+        renderEmptyState({
+          role: 'expert',
+          activePath: 'expert-dispute-cases.html',
+          pageTitle: 'Dispute Report',
+          message: 'No dispute report found.',
+          linkHref: 'expert-dispute-cases.html',
+          linkLabel: 'Back to Cases',
+        });
         return;
       }
       const _task = Store.getTaskById(rawDispute.taskId);

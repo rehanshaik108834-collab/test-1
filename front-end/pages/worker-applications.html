@@ -257,14 +257,18 @@
             <p style="font-size:14px;color:var(--muted-foreground);margin-bottom:20px;">You're about to hire <strong id="hireWorkerName"></strong> for this project. This will lock the escrow funds.</p>
             <div style="padding:16px;border-radius:12px;background:#f0fdf4;border:1px solid #bbf7d0;margin-bottom:20px;">
               <div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:13px;">
-                <span style="color:#374151;">Bid Amount</span><span style="font-weight:700;" id="hireBidAmount"></span>
+                <span style="color:#374151;">Project budget (held in escrow)</span><span style="font-weight:700;" id="hireBidAmount"></span>
               </div>
               <div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:13px;">
-                <span style="color:#374151;">Platform Fee (5%)</span><span style="font-weight:600;color:#dc2626;" id="hireFee"></span>
+                <span style="color:#374151;">Marketplace fee (5%)</span><span style="font-weight:600;color:#dc2626;" id="hireFee"></span>
+              </div>
+              <div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:13px;">
+                <span style="color:#374151;">Contract initiation fee</span><span style="font-weight:600;color:#dc2626;" id="hireInitiation"></span>
               </div>
               <div style="display:flex;justify-content:space-between;font-size:13px;border-top:1px solid #bbf7d0;padding-top:8px;margin-top:4px;">
-                <span style="font-weight:600;">Total Escrow</span><span style="font-weight:700;color:#10b981;" id="hireTotal"></span>
+                <span style="font-weight:600;">Total charged to you</span><span style="font-weight:700;color:#10b981;" id="hireTotal"></span>
               </div>
+              <div style="font-size:11px;color:#6b7280;margin-top:8px;" id="hireBidNote"></div>
             </div>
             <div style="display:flex;gap:12px;">
               <button onclick="document.getElementById('hireModal').style.display='none'" class="btn-outline" style="flex:1;padding:12px;border-radius:12px;">Cancel</button>
@@ -379,12 +383,24 @@
         const p = allProposals.find(p => p.id === proposalId);
         if (!p) return;
         const modal = document.getElementById('hireModal');
-        const bid = parseInt(p.bidPrice.replace(/[$,]/g, ''));
-        const fee = Math.round(bid * 0.05);
+
+        // Escrow is funded from the task budget, not the worker's bid, and the
+        // client also pays a contract initiation fee. Quote what the server will
+        // actually charge, using the same fee table it uses.
+        const task = Store.getTaskById(p.taskId);
+        const budget = task ? task.budget : parseFloat(String(p.bidPrice).replace(/[$,]/g, '')) || 0;
+        const q = Store.Fees.projectFunding(budget);
+        const money = n => '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
         document.getElementById('hireWorkerName').textContent = p.workerName;
-        document.getElementById('hireBidAmount').textContent = p.bidPrice;
-        document.getElementById('hireFee').textContent = `$${fee}`;
-        document.getElementById('hireTotal').textContent = `$${bid + fee}`;
+        document.getElementById('hireBidAmount').textContent = money(q.budget);
+        document.getElementById('hireFee').textContent = money(q.marketplace);
+        document.getElementById('hireInitiation').textContent = money(q.initiation);
+        document.getElementById('hireTotal').textContent = money(q.total);
+        const note = document.getElementById('hireBidNote');
+        if (note) {
+          note.textContent = `${p.workerName} bid ${p.bidPrice}. Escrow is funded from the project budget of ${money(q.budget)}.`;
+        }
         modal.style.display = 'flex';
         lucide.createIcons();
       };

@@ -144,7 +144,18 @@
 
       const session = Auth.getCurrentUser();
       const user = session ? Store.getUserById(session.userId) : null;
-      if (!user) return;
+      if (!user) {
+        // Bailing here used to leave a genuinely blank page.
+        renderEmptyState({
+          role: 'expert',
+          activePath: 'expert-settings.html',
+          pageTitle: 'Settings',
+          message: 'Your profile could not be loaded. Check that the API is running, then reload.',
+          linkHref: 'expert-dashboard.html',
+          linkLabel: 'Back to Dashboard',
+        });
+        return;
+      }
 
       const profile = {
         name: user.name || '',

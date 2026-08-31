@@ -246,10 +246,25 @@
             </div>
             <span class="status-badge ${d.rawStatus === 'resolved' ? 'status-resolved' : d.rawStatus === 'open' ? 'status-open' : 'status-investigating'}">${d.status}</span>
           </div>
-          <a href="${d.rawStatus === 'resolved' ? 'expert-report-dispute.html' : 'resolve-dispute.html'}?id=${d.id}" class="btn-resolve">
-            <i data-lucide="${d.rawStatus === 'resolved' ? 'file-text' : 'shield'}" style="width:15px;height:15px;"></i>
-            ${d.rawStatus === 'resolved' ? 'View Resolution' : 'Resolve Dispute'}
-          </a>
+          ${(() => {
+            // A dispute is arbitrated through a priced engagement: preview the
+            // claim, agree a fee, and only then resolve it.
+            if (d.rawStatus === 'resolved') {
+              return `<a href="expert-report-dispute.html?id=${d.id}" class="btn-resolve">
+                <i data-lucide="file-text" style="width:15px;height:15px;"></i>View Resolution</a>`;
+            }
+            const eng = (Store.getAuditRequests() || []).find(a => a.disputeId === d.id);
+            if (!eng) {
+              return `<a href="resolve-dispute.html?id=${d.id}" class="btn-resolve">
+                <i data-lucide="shield" style="width:15px;height:15px;"></i>Resolve Dispute</a>`;
+            }
+            if (eng.status === 'in-progress') {
+              return `<a href="resolve-dispute.html?id=${d.id}" class="btn-resolve">
+                <i data-lucide="shield" style="width:15px;height:15px;"></i>Resolve Dispute</a>`;
+            }
+            return `<a href="expert-audit-preview.html?id=${eng.id}" class="btn-resolve">
+              <i data-lucide="eye" style="width:15px;height:15px;"></i>Review &amp; quote</a>`;
+          })()}
         </div>`).join('');
     }
 

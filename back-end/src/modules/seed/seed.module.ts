@@ -11,6 +11,7 @@ import { DisputesModule } from '../disputes/disputes.module';
 import { TransactionsModule } from '../transactions/transactions.module';
 import { ExpertApplicationsModule } from '../expert-applications/expert-applications.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { LedgerModule } from '../ledger/ledger.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     forwardRef(() => TransactionsModule),
     forwardRef(() => ExpertApplicationsModule),
     forwardRef(() => NotificationsModule),
+    forwardRef(() => LedgerModule),
   ],
   controllers: [SeedController],
   providers: [SeedService],

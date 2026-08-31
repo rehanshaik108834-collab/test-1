@@ -29,37 +29,31 @@ export class AuditReportsService {
   }
 
   create(dto: CreateAuditReportDto) {
-    // Upsert: if a report for this auditRequestId already exists, update it
     const existing = this.auditReportsRepository.findByAuditRequestId(dto.auditRequestId);
-    if (existing) {
-      const updated = this.auditReportsRepository.updateByIndex(dto.auditRequestId, {
-        ...dto,
-        createdAt: new Date().toISOString().slice(0, 10),
-      });
-      // Update audit request status
-      try {
-        this.auditRequestsService.update(dto.auditRequestId, { status: 'Completed' });
-      } catch {}
-      // Note: Expert audit reports do not change milestone status - that's for client approval only
-      return updated;
-    }
 
-    // Create new report
-    const report = {
-      id: this.auditReportsRepository.generateId(),
-      createdAt: new Date().toISOString().slice(0, 10),
-      ...dto,
-    };
-    this.auditReportsRepository.insert(report);
+    const report = existing
+      ? this.auditReportsRepository.updateByIndex(dto.auditRequestId, {
+          ...dto,
+          createdAt: new Date().toISOString().slice(0, 10),
+        })
+      : (() => {
+          const r = {
+            id: this.auditReportsRepository.generateId(),
+            createdAt: new Date().toISOString().slice(0, 10),
+            ...dto,
+          };
+          this.auditReportsRepository.insert(r);
+          return r;
+        })();
 
-    // Update audit request status
-    try {
-      this.auditRequestsService.update(dto.auditRequestId, { status: 'Completed' });
-    } catch {}
+    // Filing the report is what pays the expert. settle() refuses an audit that
+    // is not in progress, so a report cannot be filed against an unfunded audit,
+    // and it is idempotent, so re-submitting does not pay twice.
+    // Deliberately NOT swallowed: a failed payout must surface, not vanish.
+    const { payout } = this.auditRequestsService.settle(dto.auditRequestId);
 
-    // Note: Expert audit reports do not change milestone status - that's for client approval only
-
-    return report;
+    // Expert reports do not change milestone status — that stays with the client.
+    return { ...report, payout };
   }
 
   resetToSeed() {

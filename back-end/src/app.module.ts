@@ -10,6 +10,8 @@ import { TransactionsModule } from './modules/transactions/transactions.module';
 import { ExpertApplicationsModule } from './modules/expert-applications/expert-applications.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { MessagesModule } from './modules/messages/messages.module';
+import { LedgerModule } from './modules/ledger/ledger.module';
+import { RevenueModule } from './modules/revenue/revenue.module';
 import { SeedModule } from './modules/seed/seed.module';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
 
@@ -26,6 +28,8 @@ import { LoggerMiddleware } from './common/middleware/logger.middleware';
     ExpertApplicationsModule,
     NotificationsModule,
     MessagesModule,
+    LedgerModule,
+    RevenueModule,
     SeedModule,
   ],
 })
