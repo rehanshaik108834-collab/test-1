@@ -29,23 +29,22 @@
       let task = null;
       if (typeof Store !== 'undefined' && urlId) task = Store.getTaskById(urlId);
 
+      // A missing task used to fall back to a fabricated one — five hardcoded
+      // fixtures plus a default — so a wrong or stale id rendered an invented
+      // project, complete with a client name, a budget and a skill list, as
+      // though it were real. Better to say the task is not there.
       if (!task) {
-        const demoTasks = {
-          's1': { title: 'E-commerce Website Redesign', description: 'Looking for an experienced frontend developer to redesign our e-commerce platform with modern UI/UX principles.', budget: '$1,500–$2,500', numBudget: 2500, skills: ['React', 'TypeScript', 'Tailwind CSS', 'Figma'], clientInitials: 'JT', clientName: 'James Thompson' },
-          's2': { title: 'Mobile App Development (React Native)', description: 'Need a skilled React Native developer to build a cross-platform mobile app with authentication and real-time features.', budget: '$3,000–$5,000', numBudget: 5000, skills: ['React Native', 'TypeScript', 'Firebase', 'Redux'], clientInitials: 'AW', clientName: 'Alex Worker' },
-          's3': { title: 'REST API Development with Node.js', description: 'Build a scalable REST API with authentication, rate limiting, and comprehensive documentation.', budget: '$800–$1,200', numBudget: 1200, skills: ['Node.js', 'Express', 'PostgreSQL', 'JWT'], clientInitials: 'JS', clientName: 'Jane Smith' },
-          's4': { title: 'UI/UX Design for SaaS Dashboard', description: 'Create wireframes and high-fidelity designs for a B2B SaaS analytics dashboard.', budget: '$600–$1,000', numBudget: 1000, skills: ['Figma', 'UI Design', 'Prototyping'], clientInitials: 'SA', clientName: 'Super Admin' },
-          's5': { title: 'Machine Learning Model Integration', description: 'Integrate an existing ML model into a production Flask API with proper error handling and monitoring.', budget: '$1,200–$2,000', numBudget: 2000, skills: ['Python', 'Flask', 'TensorFlow', 'Docker'], clientInitials: 'JT', clientName: 'James Thompson' }
-        };
-        task = demoTasks[urlId] || { 
-          id: 't1', 
-          title: 'E-commerce Website Redesign', 
-          description: 'We are looking for an experienced frontend developer to completely redesign our e-commerce platform. The current site is outdated and we want a modern, conversion-focused design that provides an excellent user experience across all devices.\n\nThe ideal candidate will have experience with React, TypeScript, and modern CSS frameworks. You should be comfortable working with Figma designs and have a good eye for detail.\n\nThis is a milestone-based project with clear deliverables for each phase. We value communication and will hold weekly progress meetings.', 
-          budget: '$1,500–$2,500', numBudget: 2500, 
-          skills: ['React', 'TypeScript', 'Tailwind CSS', 'Figma', 'REST APIs', 'Git', 'Responsive Design', 'Performance Optimization'],
-          clientName: 'James Thompson', clientInitials: 'JT'
-        };
-        task.id = urlId || 't1';
+        renderEmptyState({
+          role: (Auth.getCurrentUser() || {}).role,
+          activePath: 'browse-tasks.html',
+          pageTitle: 'Task',
+          message: urlId
+            ? `No task found with the id "${escapeHtml(urlId)}". It may have been removed, or the link may be out of date.`
+            : 'No task was specified. Open a task from the list to see its details.',
+          linkHref: 'browse-tasks.html',
+          linkLabel: 'Browse tasks',
+        });
+        return;
       }
 
       const clientInfo = task.clientId && typeof Store !== 'undefined' ? Store.getUserById(task.clientId) : null;
