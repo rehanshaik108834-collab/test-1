@@ -352,9 +352,19 @@
       const isCompleted = isSettled || hasReport || !isReviewer;
       const awaitingReview = !hasReport && !isReviewer;
 
+      /**
+       * Stars are painted, never rebuilt.
+       *
+       * These used to replace the container's innerHTML on mouseenter, which
+       * destroyed the very <span> the pointer was pressing — so the click never
+       * completed and setScore() never ran. The hover highlight stayed on
+       * screen because the mouseleave handler referenced `scores`, a closure
+       * variable an inline attribute cannot see, and threw instead of
+       * repainting. The reviewer saw five lit stars and submitted a zero.
+       */
       function renderStars(category, val) {
         return [1,2,3,4,5].map(n => `
-          <span onclick="${isCompleted?'':(`setScore('${category}',${n})`)}" style="cursor:${isCompleted?'default':'pointer'};font-size:24px;color:${n<=val?'#f59e0b':'#d1d5db'};transition:color 0.15s;" onmouseenter="if(!${isCompleted})highlightStars('${category}',${n})" onmouseleave="if(!${isCompleted})highlightStars('${category}',scores['${category}'])">★</span>`).join('');
+          <span data-star="${n}"${isCompleted?'':` onclick="setScore('${category}',${n})" onmouseenter="paintStars('${category}',${n})" onmouseleave="paintStars('${category}')"`} style="cursor:${isCompleted?'default':'pointer'};font-size:24px;color:${n<=val?'#f59e0b':'#d1d5db'};transition:color 0.15s;">★</span>`).join('');
       }
 
       function renderChecklist() {
@@ -597,16 +607,24 @@
         }
       };
 
-      window.highlightStars = function(cat, val) {
+      /** Colours the existing stars. `preview` omitted repaints the committed score. */
+      window.paintStars = function(cat, preview) {
         const el = document.getElementById('stars-' + cat);
-        if (el) el.innerHTML = renderStars(cat, val);
+        if (!el) return;
+        const val = (preview === undefined || preview === null) ? scores[cat] : preview;
+        el.querySelectorAll('span[data-star]').forEach(sp => {
+          sp.style.color = Number(sp.dataset.star) <= val ? '#f59e0b' : '#d1d5db';
+        });
       };
 
       window.setScore = function(cat, val) {
+        if (isCompleted) return;
         scores[cat] = val;
-        const el = document.getElementById('stars-' + cat);
-        if (el) el.innerHTML = renderStars(cat, val);
+        window.paintStars(cat);
       };
+
+      /** Exposed so the committed score can be read from outside the closure. */
+      window.getScores = function() { return { ...scores }; };
 
       window.setVerdict = function(v) {
         if (isCompleted) return;

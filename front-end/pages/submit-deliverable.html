@@ -697,40 +697,15 @@
           Store.submitDeliverable(milestoneId, deliverable);
           const _ms = Store.getMilestoneById(milestoneId);
           const _task = _ms ? Store.getTaskById(_ms.taskId) : null;
-          const _session = (typeof Auth !== 'undefined') ? Auth.getCurrentUser() : null;
           if (_task && _task.clientId) {
             Store.addNotification({ userId: _task.clientId, type: 'milestone-submitted', text: 'New deliverable submitted', subtext: (_ms.title || 'Milestone') + ' — ' + (_task.title || 'Project') + ' · just now', read: false });
           }
 
-          // ── Notify expert reviewers if project has audit enabled ──
-          if (_task && _task.auditEnabled) {
-            const experts = Store.getUsers().filter(u => u.role === 'expert' && u.status !== 'suspended');
-            experts.forEach(expert => {
-              Store.addNotification({
-                userId: expert.id,
-                type: 'audit-needed',
-                text: '🔍 New deliverable awaiting technical audit',
-                subtext: (_ms.title || 'Milestone') + ' — ' + (_task.title || 'Project') + ' · just now',
-                read: false
-              });
-            });
-
-            // Auto-create audit request so it appears in the expert's audit requests page
-            try {
-              Store.createAuditRequest({
-                taskId: _task.id,
-                milestoneId: milestoneId,
-                clientId: _task.clientId,
-                workerId: _task.workerId || (_session ? _session.userId : ''),
-                project: _task.title,
-                milestone: _ms.title || 'Milestone',
-                worker: _session ? _session.name : 'Worker',
-                status: 'Pending',
-                priority: 'High',
-                requestedAt: new Date().toISOString().slice(0, 10),
-              });
-            } catch(auditErr) { console.warn('Auto audit request failed', auditErr); }
-          }
+          // The audit hand-off is the server's job now: it points the project's
+          // one engagement at this milestone and notifies the reviewer the
+          // client assigned — and only that reviewer. This page used to loop
+          // over every expert account and notify all of them, then create a
+          // second audit request for a milestone that already had one.
         } catch(e) { console.warn('Store save failed', e); }
       }
 

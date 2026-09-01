@@ -246,6 +246,26 @@
     };
     const toUiStatus = s => UI_STATUS[s] || 'Awaiting Review';
 
+    /**
+     * A project audit is not finished when the reviewer files their first
+     * report — it is finished when every milestone on the project has one.
+     * The engagement is priced and paid once, so its lifecycle status turns
+     * 'paid' early; reading that as "Completed" hid the milestones still
+     * waiting. The server sends the real coverage in `auditProgress`.
+     */
+    function auditUiStatus(a) {
+      const lifecycle = toUiStatus(a.status);
+      const p = a.auditProgress;
+      if (!p || a.kind === 'dispute-audit') return lifecycle;
+      // Terminal states are terminal regardless of coverage.
+      if (['Declined', 'Cancelled'].includes(lifecycle)) return lifecycle;
+      // Before the reviewer has taken the engagement on, nothing has changed.
+      if (!['In Review', 'Completed'].includes(lifecycle)) return lifecycle;
+
+      if (p.complete) return 'Completed';
+      return p.awaitingReview > 0 ? 'In Review' : 'Awaiting Review';
+    }
+
     // Build audit requests from store
     function getAuditRequests() {
       const session = Auth.getCurrentUser();
@@ -262,8 +282,9 @@
         worker: a.worker,
         milestone: a.milestone,
         submitted: a.createdAt,
-        status: toUiStatus(a.status),
+        status: auditUiStatus(a),
         rawStatus: a.status,
+        auditProgress: a.auditProgress || null,
         kind: a.kind,
         agreedAmount: a.agreedAmount,
         priority: a.severity === 'High' ? 'high' : a.severity === 'Low' ? 'low' : 'normal',
@@ -322,6 +343,11 @@
                   <i data-lucide="calendar" style="width:13px;height:13px;"></i>
                   ${a.submitted}
                 </span>
+                ${a.auditProgress && a.auditProgress.total ? `
+                <span title="Milestones on this project that have an audit report">
+                  <i data-lucide="check-circle-2" style="width:13px;height:13px;"></i>
+                  ${a.auditProgress.audited} of ${a.auditProgress.total} milestones audited
+                </span>` : ''}
               </div>
             </div>
             <span class="status-badge ${statusClass[a.status]}">${a.status}</span>

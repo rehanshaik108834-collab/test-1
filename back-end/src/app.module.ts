@@ -1,4 +1,4 @@
-import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
+import { Module, NestModule, MiddlewareConsumer, RequestMethod } from '@nestjs/common';
 import { UsersModule } from './modules/users/users.module';
 import { TasksModule } from './modules/tasks/tasks.module';
 import { MilestonesModule } from './modules/milestones/milestones.module';
@@ -14,9 +14,12 @@ import { LedgerModule } from './modules/ledger/ledger.module';
 import { RevenueModule } from './modules/revenue/revenue.module';
 import { SeedModule } from './modules/seed/seed.module';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
+import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
+import { LoggingModule } from './common/logging/logging.module';
 
 @Module({
   imports: [
+    LoggingModule,
     UsersModule,
     TasksModule,
     MilestonesModule,
@@ -35,6 +38,18 @@ import { LoggerMiddleware } from './common/middleware/logger.middleware';
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(LoggerMiddleware).forRoutes('*');
+    // Order matters: the id has to exist before the first line is written, so
+    // RequestIdMiddleware runs first and LoggerMiddleware reads what it set.
+    consumer
+      .apply(RequestIdMiddleware, LoggerMiddleware)
+      // Swagger sits outside the /api prefix and re-fetches its bundle, spec
+      // and favicon on every page load — three or four access lines per visit,
+      // none of them about the application.
+      .exclude(
+        { path: 'api-docs', method: RequestMethod.ALL },
+        { path: 'api-docs/(.*)', method: RequestMethod.ALL },
+        { path: 'api-docs-json', method: RequestMethod.ALL },
+      )
+      .forRoutes('*');
   }
 }

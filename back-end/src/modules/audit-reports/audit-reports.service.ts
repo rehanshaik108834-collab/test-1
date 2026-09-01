@@ -82,7 +82,10 @@ export class AuditReportsService {
     // is not in progress, so a report cannot be filed against an unfunded audit,
     // and it is idempotent, so re-submitting does not pay twice.
     // Deliberately NOT swallowed: a failed payout must surface, not vanish.
-    const { payout } = this.auditRequestsService.settle(dto.auditRequestId);
+    // The milestone id is what tells the engagement which part of the project
+    // this report covers — without it a four-milestone audit cannot know when
+    // it is done.
+    const { payout } = this.auditRequestsService.settle(dto.auditRequestId, dto.milestoneId);
 
     // Expert reports do not change milestone status — that stays with the client.
     return { ...report, payout };

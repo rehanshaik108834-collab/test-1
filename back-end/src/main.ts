@@ -15,7 +15,10 @@ async function bootstrap() {
   app.enableCors({
     origin: '*',
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
-    allowedHeaders: 'Content-Type, Accept, role, user-id',
+    allowedHeaders: 'Content-Type, Accept, role, user-id, X-Request-Id',
+    // Without this the browser can see the response but not the id on it, so
+    // a user reporting a problem has no reference to quote.
+    exposedHeaders: 'X-Request-Id',
   });
 
   // Global validation pipe (class-validator)
