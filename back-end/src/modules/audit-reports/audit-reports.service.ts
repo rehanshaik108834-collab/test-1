@@ -61,10 +61,15 @@ export class AuditReportsService {
   }
 
   create(dto: CreateAuditReportDto) {
-    const existing = this.auditReportsRepository.findByAuditRequestId(dto.auditRequestId);
+    // Keyed on the milestone as well as the engagement: re-filing a report
+    // updates that milestone's report, it does not replace another one.
+    const existing = this.auditReportsRepository.findByEngagementAndMilestone(
+      dto.auditRequestId,
+      dto.milestoneId,
+    );
 
     const report = existing
-      ? this.auditReportsRepository.updateByIndex(dto.auditRequestId, {
+      ? this.auditReportsRepository.updateByEngagementAndMilestone(dto.auditRequestId, dto.milestoneId, {
           ...dto,
           createdAt: new Date().toISOString().slice(0, 10),
         })

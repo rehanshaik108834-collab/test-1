@@ -3,6 +3,7 @@ import { CreateExpertApplicationDto } from './dto/create-expert-application.dto'
 import { UpdateExpertApplicationStatusDto } from './dto/update-expert-application.dto';
 import { ExpertApplicationsRepository } from './expert-applications.repository';
 import { UsersService } from '../users/users.service';
+import { hashPassword } from '../../common/security/password.util';
 import { AppLoggerService } from '../../common/logging/app-logger.service';
 
 /**
@@ -57,6 +58,10 @@ export class ExpertApplicationsService {
       reviewedAt: null,
       reviewedBy: null,
       ...dto,
+      // The applicant chooses a password on the form and it sits in this record
+      // until approval creates their account. Hashed on the way in, so an
+      // application never holds a readable one.
+      password: dto.password ? hashPassword(dto.password) : undefined,
     };
     return this.redact(this.expertApplicationsRepository.insert(app));
   }
@@ -76,7 +81,7 @@ export class ExpertApplicationsService {
       try {
         const existing = this.usersService.findByEmail(app.email);
         if (!existing) {
-          this.usersService.create({
+          this.usersService.createPrivileged({
             name: app.name,
             email: app.email,
             password: app.password || 'Expert@123',

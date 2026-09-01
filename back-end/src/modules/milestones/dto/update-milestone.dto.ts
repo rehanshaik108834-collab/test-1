@@ -9,7 +9,7 @@ import {
   MaxLength,
   ValidateNested,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Type, Transform } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UpdateMilestoneDto extends PartialType(CreateMilestoneDto) {
@@ -20,6 +20,29 @@ export class UpdateMilestoneDto extends PartialType(CreateMilestoneDto) {
   @ApiPropertyOptional({ example: 60 })
   @IsOptional() @IsNumber()
   progress?: number;
+}
+
+/** A file in the store, as a deliverable references it. */
+export class FileRefDto {
+  @ApiPropertyOptional({ example: 'f_1788258506029_100' })
+  @IsOptional() @IsString() @MaxLength(64)
+  id?: string;
+
+  @ApiPropertyOptional({ example: 'screens.pdf' })
+  @IsString() @MaxLength(255)
+  name: string;
+
+  @ApiPropertyOptional({ example: 248192 })
+  @IsOptional() @IsNumber()
+  size?: number;
+
+  @ApiPropertyOptional({ example: 'application/pdf' })
+  @IsOptional() @IsString() @MaxLength(128)
+  mime?: string;
+
+  @ApiPropertyOptional({ example: '/api/files/f_1788258506029_100' })
+  @IsOptional() @IsString() @MaxLength(512)
+  url?: string;
 }
 
 /**
@@ -42,14 +65,25 @@ export class DeliverableDto {
   @MaxLength(2000)
   link?: string;
 
+  @ApiPropertyOptional({ example: 'feat/design-tokens' })
+  @IsOptional() @IsString() @MaxLength(255)
+  branch?: string;
+
   /**
-   * Filenames today. The file-upload stage replaces these with real file
-   * references; until then this stays `string[]` so submissions already in
-   * flight keep validating.
+   * Files attached to the submission.
+   *
+   * A bare string is still accepted and normalised to `{ name }` — submissions
+   * predate the file store, and their filenames are all that was ever kept.
    */
-  @ApiPropertyOptional({ example: ['design-system.fig', 'screens.pdf'], type: [String] })
-  @IsOptional() @IsArray() @IsString({ each: true }) @MaxLength(255, { each: true })
-  files?: string[];
+  @ApiPropertyOptional({ type: [FileRefDto] })
+  @IsOptional()
+  @IsArray()
+  @Transform(({ value }) =>
+    Array.isArray(value) ? value.map(v => (typeof v === 'string' ? { name: v } : v)) : value,
+  )
+  @ValidateNested({ each: true })
+  @Type(() => FileRefDto)
+  files?: FileRefDto[];
 }
 
 export class SubmitDeliverableDto {

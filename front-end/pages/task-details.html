@@ -56,8 +56,8 @@
       const clientRating = clientInfo?.rating || 0;
       const budgetDisplay = task.budget && typeof task.budget === 'number' ? ('$' + task.budget.toLocaleString()) : (task.budget || '$0');
       const budgetNum = task.numBudget || (typeof task.budget === 'number' ? task.budget : parseInt(budgetDisplay.replace(/[^0-9]/g, '')) || 0);
-      const skillsHtml = (task.skills || []).map(s => `<span class="skill-tag" style="padding:6px 14px;font-size:13px;">${s}</span>`).join('');
-      const descriptionHtml = (task.description || '').split('\n').filter(p => p.trim()).map(p => `<p style="font-size:14px;color:#374151;line-height:1.7;margin-bottom:16px;">${p}</p>`).join('');
+      const skillsHtml = (task.skills || []).map(s => `<span class="skill-tag" style="padding:6px 14px;font-size:13px;">${escapeHtml(s)}</span>`).join('');
+      const descriptionHtml = (task.description || '').split('\n').filter(p => p.trim()).map(p => `<p style="font-size:14px;color:#374151;line-height:1.7;margin-bottom:16px;">${escapeHtml(p)}</p>`).join('');
       const taskMilestones = typeof Store !== 'undefined' ? Store.getMilestonesByTask(task.id) : [];
       const taskProposals = typeof Store !== 'undefined' ? Store.getProposalsByTask(task.id).filter(p => p.type !== 'invitation') : [];
       const taskStatus = task.status || 'open';
@@ -84,7 +84,7 @@
                     ${task.auditEnabled ? '<span class="badge badge-purple">Audit Enabled</span>' : ''}
                     <span class="badge ${statusBadgeClass}">${statusLabel}</span>
                   </div>
-                  <h1 style="font-size:22px;font-weight:600;letter-spacing:-0.02em;margin-bottom:8px;">${task.title}</h1>
+                  <h1 style="font-size:22px;font-weight:600;letter-spacing:-0.02em;margin-bottom:8px;">${escapeHtml(task.title)}</h1>
                   <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
                     <div style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted-foreground);">
                       <i data-lucide="user" style="width:13px;height:13px;"></i> ${clientName}
@@ -123,10 +123,10 @@
                     <div class="milestone-dot" style="background:${color};margin-top:6px;"></div>
                     <div style="flex:1;">
                       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
-                        <span style="font-weight:600;font-size:14px;">Milestone ${i+1}: ${m.title}</span>
+                        <span style="font-weight:600;font-size:14px;">Milestone ${i+1}: ${escapeHtml(m.title)}</span>
                         <span style="font-weight:700;color:${color};">$${(m.budget || 0).toLocaleString()}</span>
                       </div>
-                      <p style="font-size:13px;color:var(--muted-foreground);margin-bottom:4px;">${m.description || ''}</p>
+                      <p style="font-size:13px;color:var(--muted-foreground);margin-bottom:4px;">${escapeHtml(m.description || '')}</p>
                       <span style="font-size:12px;color:var(--muted-foreground);">${msStatusLabel}</span>
                     </div>
                   </div>`;
@@ -305,8 +305,8 @@
           Store.addNotification({
             userId: task.clientId,
             type: 'proposal',
-            text: `New proposal from ${currentUser.name || 'a worker'}`,
-            subtext: `${task.title} — Bid: $${taskBudget.toLocaleString()}, Timeline: ${timeline}`,
+            text: `New proposal from ${escapeHtml(currentUser.name || 'a worker')}`,
+            subtext: `${escapeHtml(task.title)} — Bid: $${taskBudget.toLocaleString()}, Timeline: ${timeline}`,
           });
         }
       } catch(e) {

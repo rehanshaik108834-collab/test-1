@@ -382,7 +382,7 @@
         <div class="tl-item">
           <div class="tl-dot ${t.dot}"></div>
           <div class="tl-time">${t.time}</div>
-          <div class="tl-text">${t.text}</div>
+          <div class="tl-text">${escapeHtml(t.text)}</div>
           <div class="tl-sub">${t.sub}</div>
         </div>`).join('');
 
@@ -393,10 +393,10 @@
             <i data-lucide="${f.icon}" style="width:18px;height:18px;color:${f.iconColor};"></i>
           </div>
           <div>
-            <div class="file-name">${f.name}</div>
+            <div class="file-name">${escapeHtml(f.name)}</div>
             <div class="file-size">${f.size}</div>
           </div>
-          <button class="file-dl" onclick="toast('Downloading ${f.name}…','success')">
+          <button class="file-dl" onclick="toast('Downloading ${escapeHtml(f.name)}…','success')">
             <i data-lucide="download" style="width:12px;height:12px;display:inline;vertical-align:middle;margin-right:4px;"></i>View
           </button>
         </div>`).join('');
@@ -448,11 +448,11 @@
                 <div class="info-grid" style="margin-bottom:16px;">
                   <div class="info-cell">
                     <span class="info-label">Project</span>
-                    <span class="info-value">${d.project}</span>
+                    <span class="info-value">${escapeHtml(d.project)}</span>
                   </div>
                   <div class="info-cell">
                     <span class="info-label">Milestone</span>
-                    <span class="info-value">${d.milestone}</span>
+                    <span class="info-value">${escapeHtml(d.milestone)}</span>
                   </div>
                   <div class="info-cell">
                     <span class="info-label">Dispute ID</span>
@@ -472,7 +472,7 @@
                   </div>
                 </div>
                 <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.07em;color:var(--muted-foreground);margin-bottom:8px;">Dispute Description</div>
-                <p style="font-size:14px;line-height:1.65;color:var(--foreground);">${d.description}</p>
+                <p style="font-size:14px;line-height:1.65;color:var(--foreground);">${escapeHtml(d.description)}</p>
               </div>
             </div>
 
@@ -509,11 +509,17 @@
                   <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.07em;color:var(--muted-foreground);margin-bottom:6px;">Files</div>
                   ${(disputedWork.files && disputedWork.files.length) ? `
                     <div style="display:flex;flex-direction:column;gap:8px;">
-                      ${disputedWork.files.map(f => `
+                      ${disputedWork.files.map(f => {
+                        const name = typeof f === 'string' ? f : (f && f.name) || 'File';
+                        const href = typeof f === 'object' ? Store.fileUrl(f) : '';
+                        return `
                         <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;">
                           <i data-lucide="file" style="width:16px;height:16px;color:#6366f1;flex:none;"></i>
-                          <span style="font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(typeof f === 'string' ? f : (f && f.name) || 'File')}</span>
-                        </div>`).join('')}
+                          <span style="flex:1;min-width:0;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(name)}</span>
+                          ${href
+                            ? `<a href="${esc(href)}" download="${esc(name)}" style="font-size:12px;color:#4f46e5;text-decoration:none;display:inline-flex;align-items:center;gap:4px;white-space:nowrap;"><i data-lucide="download" style="width:13px;height:13px;"></i>Download</a>`
+                            : `<span style="font-size:11px;color:var(--muted-foreground);white-space:nowrap;">Not stored</span>`}
+                        </div>`; }).join('')}
                     </div>` : `<p style="font-size:13.5px;color:var(--muted-foreground);">No files were attached to this submission.</p>`}
 
                   ${disputedMilestone.submittedAt ? `
@@ -534,7 +540,7 @@
                 <div class="party-row">
                   <div class="party-avatar" style="background:${d.raisedByColor};">${d.raisedByInitials}</div>
                   <div>
-                    <div class="party-name">${d.raisedByName}</div>
+                    <div class="party-name">${escapeHtml(d.raisedByName)}</div>
                     <div class="party-role">${d.raisedBy}</div>
                   </div>
                   <span class="party-tag tag-raiser">Raised Dispute</span>
@@ -663,7 +669,7 @@
         role:        'expert',
         activePath:  'expert-dispute-cases.html',
         pageTitle:   'Resolve Dispute',
-        pageSubtitle: `Case #DIS-${d.caseId} · ${d.project} — ${d.milestone}`,
+        pageSubtitle: `Case #DIS-${d.caseId} · ${escapeHtml(d.project)} — ${escapeHtml(d.milestone)}`,
         content,
       });
 
@@ -721,8 +727,8 @@
               Store.addNotification({
                 userId: raw.raisedBy,
                 type: 'dispute-resolved',
-                text: `Dispute resolved: ${d.project}`,
-                subtext: `Expert verdict ${verdictLabel} — ${d.milestone}`,
+                text: `Dispute resolved: ${escapeHtml(d.project)}`,
+                subtext: `Expert verdict ${verdictLabel} — ${escapeHtml(d.milestone)}`,
               });
             }
 
@@ -731,8 +737,8 @@
               Store.addNotification({
                 userId: raw.againstId,
                 type: 'dispute-resolved',
-                text: `Dispute resolved: ${d.project}`,
-                subtext: `Expert verdict ${verdictLabel} — ${d.milestone}`,
+                text: `Dispute resolved: ${escapeHtml(d.project)}`,
+                subtext: `Expert verdict ${verdictLabel} — ${escapeHtml(d.milestone)}`,
               });
             }
           }
