@@ -22,14 +22,30 @@ Health: `curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/api/tasks`
 
 Reset seed data between runs (undoes wallet/status mutations):
 ```bash
-curl -s -X POST http://localhost:3000/api/seed/reset -H "role: superuser"
+curl -s -X POST http://localhost:3000/api/seed/reset -H "role: superuser" -H "user-id: u4"
 ```
+Refused when `NODE_ENV=production`. `PORT`, `JWT_SECRET`, `CORS_ORIGIN` and
+`RATE_LIMIT_PER_MIN` are all read from the environment; `JWT_SECRET` (32+ chars)
+is **required** to boot in production.
 
 ## Gotchas
 
-- **Auth is a `role` header, no tokens.** The browser reads
-  `localStorage['lannent_session']` (`{userId, role, name, email, avatar, avatarColor}`)
-  and forwards `role` + `user-id`. Seed a session with `addInitScript` — no login needed.
+- **Auth is a bearer token, with the `role` header as a fallback.** `POST /api/auth/login`
+  returns `{ token, user, session }`; the browser keeps the token in
+  `localStorage['lannent_token']` beside `localStorage['lannent_session']`
+  (`{userId, role, name, email, avatar, avatarColor}`) and sends
+  `Authorization` plus `role` + `user-id`. A verified token **overrides** the
+  headers, so you cannot spoof a role past one. Seeding a session with
+  `addInitScript` still works — the header fallback identifies you with no token.
+- **Almost every route now 401s without credentials.** Exactly five are public:
+  `POST /auth/login`, `POST /users/login`, `POST /users` (signup),
+  `POST /expert-applications`, `GET /expert-applications/status`. `POST /files/application`
+  is public too. Every other call needs a token or the `role` header — including
+  `POST /seed/reset`, which also wants `user-id`.
+- **User text is stripped of HTML on the way in.** `SanitizeMiddleware` removes
+  complete tags from every string in a mutation body, so a payload posted for an
+  XSS test comes back without it. `3 < 5` and `x<y` survive; `List<String>` does not.
+  Passwords are exempt.
 - **Pages ship an empty `<body>` by design.** `initDashboard()` in `js/dashboard.js`
   replaces `document.body.innerHTML`. An empty body is normal at parse time, not a bug.
 - **`Store.init()` fires 11 blocking sync XHRs at script load.** Everything is
@@ -153,7 +169,9 @@ Several forms disable Submit until every rule passes. Satisfy them, don't fight 
 - **submit-deliverable**: file + `#repoUrl` + `#branchName` + `#deliverableTitle`
   + `#deliverableNotes` + every `input.checklist-item` ticked.
 - **review-deliverable**: the review checklist items are clickable `.checklist-item`
-  divs, not checkboxes. Approve is inert until all are ticked.
+  divs, not checkboxes. Approve is inert until all are ticked — and `#approveBtn`
+  only opens a modal. The API call comes from `[onclick="confirmRelease()"]` inside
+  it, so a click on Approve alone moves no money and fires no POST.
 - **messages / workroom**: send with the Enter key — the send control is an icon
   button with no text.
 

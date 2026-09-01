@@ -13,6 +13,19 @@ async function bootstrap() {
   // Global prefix
   app.setGlobalPrefix('api');
 
+  // Rate limiting counts per client IP, and behind a load balancer every user
+  // shares the proxy's address — one budget for everyone. TRUST_PROXY tells
+  // express how many hops to trust so `req.ip` is the real client.
+  //
+  // Off by default on purpose: trusting a forwarded header that nobody set is
+  // how a caller spoofs their own address and escapes the limit entirely.
+  const trustProxy = process.env.TRUST_PROXY;
+  if (trustProxy) {
+    const hops = Number(trustProxy);
+    app.getHttpAdapter().getInstance().set('trust proxy',
+      Number.isFinite(hops) && String(hops) === trustProxy ? hops : trustProxy);
+  }
+
   // The 100kb express default is tight once a deliverable carries file
   // references. Multipart uploads do not pass through here — multer enforces
   // its own 10MB ceiling on those.
