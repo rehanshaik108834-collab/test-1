@@ -215,7 +215,7 @@ const Store = (() => {
     // real errors in the console.
     let role = null;
     try { role = JSON.parse(localStorage.getItem('lannent_session') || '{}').role; } catch {}
-    const allowed = endpoints.filter(([key]) => key !== 'expertApplications' || role === 'admin');
+    const allowed = endpoints.filter(([key]) => key !== 'expertApplications' || (role === 'intake-admin' || role === 'compliance-admin'));
 
     _reachedEndpoints = 0;
     for (const [key, path] of allowed) {

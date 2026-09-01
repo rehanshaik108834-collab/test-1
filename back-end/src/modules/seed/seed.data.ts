@@ -18,7 +18,9 @@ export const SEED_USERS = [
   { id: 'u8', name: 'Bob Client', email: 'bob@gmail.com', password: 'Password@123', role: 'client', avatar: 'BC', avatarColor: 'linear-gradient(135deg,#f59e0b,#d97706)', status: 'active', joinDate: 'Mar 1, 2026', walletBalance: 15000 },
   { id: 'u9', name: 'Priya Nair', email: 'priya@gmail.com', password: 'Password@123', role: 'expert', avatar: 'PN', avatarColor: 'linear-gradient(135deg,#0ea5e9,#0284c7)', status: 'active', joinDate: 'Feb 8, 2026', walletBalance: 3200 },
   { id: 'u10', name: 'Tom Becker', email: 'tom@gmail.com', password: 'Password@123', role: 'expert', avatar: 'TB', avatarColor: 'linear-gradient(135deg,#f97316,#ea580c)', status: 'active', joinDate: 'Feb 22, 2026', walletBalance: 1800 },
-  { id: 'u11', name: 'Nadia Osei', email: 'admin@gmail.com', password: 'Admin@123', role: 'admin', avatar: 'NO', avatarColor: 'linear-gradient(135deg,#0d9488,#0f766e)', status: 'active', joinDate: 'Jan 1, 2026', walletBalance: 0 },
+  { id: 'u11', name: 'Nadia Osei', email: 'admin@gmail.com', password: 'Admin@123', role: 'revenue-admin', avatar: 'NO', avatarColor: 'linear-gradient(135deg,#0d9488,#0f766e)', status: 'active', joinDate: 'Jan 1, 2026', walletBalance: 0 },
+  { id: 'u12', name: 'Idris Bello', email: 'intake@gmail.com', password: 'Intake@123', role: 'intake-admin', avatar: 'IB', avatarColor: 'linear-gradient(135deg,#7c3aed,#5b21b6)', status: 'active', joinDate: 'Jan 1, 2026', walletBalance: 0 },
+  { id: 'u13', name: 'Hana Vogel', email: 'compliance@gmail.com', password: 'Compliance@123', role: 'compliance-admin', avatar: 'HV', avatarColor: 'linear-gradient(135deg,#b45309,#92400e)', status: 'active', joinDate: 'Jan 1, 2026', walletBalance: 0 },
 ];
 
 // ── CLIENTS (1:1 with USERS where role='client') ──────────────────────────────

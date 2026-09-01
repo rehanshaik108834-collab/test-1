@@ -1,6 +1,7 @@
 import { Injectable, NestMiddleware } from '@nestjs/common';
 import { Request, Response, NextFunction } from 'express';
 import { AppLoggerService } from '../logging/app-logger.service';
+import { AuditService } from '../../modules/audit/audit.service';
 
 const MUTATIONS = ['POST', 'PATCH', 'PUT', 'DELETE'];
 
@@ -14,7 +15,10 @@ const MUTATIONS = ['POST', 'PATCH', 'PUT', 'DELETE'];
  */
 @Injectable()
 export class MoneyTrailMiddleware implements NestMiddleware {
-  constructor(private readonly log: AppLoggerService) {}
+  constructor(
+    private readonly log: AppLoggerService,
+    private readonly audit: AuditService,
+  ) {}
 
   use(req: Request, res: Response, next: NextFunction) {
     if (!MUTATIONS.includes(req.method)) return next();
@@ -27,6 +31,12 @@ export class MoneyTrailMiddleware implements NestMiddleware {
         'money.trail',
         `${req.method} ${req.originalUrl} -> ${res.statusCode} ${outcome} ${Date.now() - started}ms`,
       );
+      this.audit.record({
+        kind: 'money',
+        status: res.statusCode,
+        outcome,
+        detail: { durationMs: Date.now() - started },
+      });
     });
     next();
   }

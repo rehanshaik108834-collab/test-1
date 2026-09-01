@@ -5,7 +5,7 @@ import { DisputesRepository } from './disputes.repository';
 import { MilestonesService } from '../milestones/milestones.service';
 import { TasksService } from '../tasks/tasks.service';
 import { LedgerService } from '../ledger/ledger.service';
-import { canViewTask, isStaff } from '../../common/guards/viewer.util';
+import { canViewTask, canViewAnyRecord } from '../../common/guards/viewer.util';
 import { AuditRequestsService } from '../audit-requests/audit-requests.service';
 import { AppLoggerService } from '../../common/logging/app-logger.service';
 
@@ -28,7 +28,7 @@ export class DisputesService {
 
   findAll(viewer?: { id?: string; role?: string }) {
     const all = this.disputesRepository.findAll();
-    if (!viewer || isStaff(viewer.role)) return all;
+    if (!viewer || canViewAnyRecord(viewer.role)) return all;
     // Visible to the parties and the reviewer arbitrating it — not to every
     // reviewer on the platform, which is what an unguarded GET allowed.
     return all.filter((d: any) => this.canView(d, viewer));

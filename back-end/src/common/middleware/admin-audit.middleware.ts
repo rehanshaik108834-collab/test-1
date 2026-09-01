@@ -1,6 +1,7 @@
 import { Injectable, NestMiddleware } from '@nestjs/common';
 import { Request, Response, NextFunction } from 'express';
 import { AppLoggerService } from '../logging/app-logger.service';
+import { AuditService } from '../../modules/audit/audit.service';
 
 /**
  * Logs access to the financial surfaces — reads included.
@@ -11,13 +12,23 @@ import { AppLoggerService } from '../logging/app-logger.service';
  */
 @Injectable()
 export class AdminAuditMiddleware implements NestMiddleware {
-  constructor(private readonly log: AppLoggerService) {}
+  constructor(
+    private readonly log: AppLoggerService,
+    private readonly audit: AuditService,
+  ) {}
 
   use(req: Request, res: Response, next: NextFunction) {
     res.on('finish', () => {
       const verb = req.method === 'GET' ? 'read' : 'changed';
       // AppLoggerService already prefixes the id and the actor.
       this.log.log('admin.audit', `${verb} ${req.originalUrl} -> ${res.statusCode}`);
+      // The log line is for a human tailing stdout; this is the record the
+      // compliance desk actually reads.
+      this.audit.record({
+        kind: req.method === 'GET' ? 'admin.read' : 'admin.change',
+        status: res.statusCode,
+        outcome: res.statusCode < 400 ? 'ok' : 'refused',
+      });
     });
     next();
   }

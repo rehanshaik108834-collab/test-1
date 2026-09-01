@@ -41,7 +41,7 @@
     };
 
     document.addEventListener('DOMContentLoaded', () => {
-      if (typeof Auth !== 'undefined' && !Auth.requireRole('superuser', 'admin')) return;
+      if (typeof Auth !== 'undefined' && !Auth.requireRole('superuser', 'revenue-admin', 'intake-admin', 'compliance-admin')) return;
 
       const session = Auth.getCurrentUser();
       const user = Store.getUserById(session.userId);

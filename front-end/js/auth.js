@@ -101,7 +101,9 @@ const Auth = (() => {
     worker:    'worker-dashboard.html',
     expert:    'expert-dashboard.html',
     superuser: 'superuser-dashboard.html',
-    admin:     'admin-dashboard.html',
+    'revenue-admin':    'admin-revenue.html',
+    'intake-admin':     'admin-expert-applications.html',
+    'compliance-admin': 'compliance-dashboard.html',
   };
 
   function getDashboardUrl(role) {

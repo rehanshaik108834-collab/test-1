@@ -30,7 +30,7 @@ export class FilesController {
 
   @Post()
   @ApiHeader({ name: 'role', required: true, description: 'User role required' })
-  @Roles(ROLES.CLIENT, ROLES.WORKER, ROLES.EXPERT, ROLES.SUPERUSER, ROLES.ADMIN)
+  @Roles(ROLES.CLIENT, ROLES.WORKER, ROLES.EXPERT, ROLES.SUPERUSER, ROLES.REVENUE_ADMIN, ROLES.INTAKE_ADMIN, ROLES.COMPLIANCE_ADMIN)
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Upload a file and get back the reference to store' })
   @ApiBody({

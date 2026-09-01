@@ -368,7 +368,7 @@
 
   <script>
     document.addEventListener('DOMContentLoaded', () => {
-      if (typeof Auth !== 'undefined' && !Auth.requireRole('admin')) return;
+      if (typeof Auth !== 'undefined' && !Auth.requireRole('intake-admin', 'compliance-admin')) return;
       const session = Auth.getCurrentUser();
 
       let activeFilter = 'all';
@@ -562,7 +562,7 @@
       `;
 
       initDashboard({
-        role: 'admin',
+        role: (Auth.getCurrentUser() || {}).role,
         activePath: 'admin-expert-applications.html',
         pageTitle: 'Expert Applications',
         pageSubtitle: 'Review and manage expert reviewer applications.',

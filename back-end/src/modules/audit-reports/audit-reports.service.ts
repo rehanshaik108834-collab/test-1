@@ -4,7 +4,7 @@ import { AuditReportsRepository } from './audit-reports.repository';
 import { AuditRequestsService } from '../audit-requests/audit-requests.service';
 import { MilestonesService } from '../milestones/milestones.service';
 import { TasksService } from '../tasks/tasks.service';
-import { canViewTask, isStaff } from '../../common/guards/viewer.util';
+import { canViewTask, canViewAnyRecord } from '../../common/guards/viewer.util';
 
 /**
  * AuditReportsService — Business Logic Layer
@@ -24,7 +24,7 @@ export class AuditReportsService {
   findAll(query?: { taskId?: string; auditRequestId?: string },
           viewer?: { id?: string; role?: string }) {
     const all = this.auditReportsRepository.findAll(query);
-    if (!viewer || isStaff(viewer.role)) return all;
+    if (!viewer || canViewAnyRecord(viewer.role)) return all;
     // A report belongs to the project it audits. It was readable by anyone —
     // this route had no guard at all.
     return all.filter((r: any) => this.canView(r, viewer));

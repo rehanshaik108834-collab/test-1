@@ -9,7 +9,7 @@ import { LoginDto } from './dto/login.dto';
 import { WalletDto } from './dto/wallet.dto';
 import { RoleGuard } from '../../common/guards/role.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
-import { isStaff } from '../../common/guards/viewer.util';
+import { canMoveAnyWallet } from '../../common/guards/viewer.util';
 
 @ApiTags('Users')
 @Controller('users')
@@ -129,7 +129,7 @@ function redact<T>(value: T): T {
  * u5 in the path. The comparison has to happen here.
  */
 function assertOwnWallet(walletUserId: string, actorId?: string, role?: string) {
-  if (isStaff(role)) return;
+  if (canMoveAnyWallet(role)) return;
   if (!actorId) {
     throw new ForbiddenException('Missing "user-id" header. A wallet operation must identify the account holder.');
   }

@@ -12,7 +12,7 @@ import { FilesRepository } from './files.repository';
 import { UPLOAD_DIR, ensureUploadDir } from './upload.config';
 import { TasksService } from '../tasks/tasks.service';
 import { AuditRequestsService } from '../audit-requests/audit-requests.service';
-import { canViewTask, isStaff } from '../../common/guards/viewer.util';
+import { canViewTask, canViewAnyRecord, canDeleteAnyFile } from '../../common/guards/viewer.util';
 import { AppLoggerService } from '../../common/logging/app-logger.service';
 
 export interface Viewer {
@@ -111,7 +111,7 @@ export class FilesService {
    * expert application — is uploader-and-staff only.
    */
   private canView(record: any, viewer: Viewer): boolean {
-    if (isStaff(viewer.role)) return true;
+    if (canViewAnyRecord(viewer.role)) return true;
     if (record.uploadedBy && record.uploadedBy === viewer.id) return true;
     if (!record.taskId) return false;
     const task = this.safe(() => this.tasks.findById(record.taskId));
@@ -132,8 +132,8 @@ export class FilesService {
   remove(id: string, viewer: Viewer) {
     const record = this.findById(id);
     const owns = record.uploadedBy && record.uploadedBy === viewer.id;
-    if (!owns && !isStaff(viewer.role)) {
-      throw new ForbiddenException('Only the person who uploaded a file, or staff, can delete it.');
+    if (!owns && !canDeleteAnyFile(viewer.role)) {
+      throw new ForbiddenException('Only the person who uploaded a file, or operations staff, can delete it.');
     }
     this.filesRepository.remove(id);
     this.safeUnlink(join(UPLOAD_DIR, basename(record.storedName)));

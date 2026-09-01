@@ -4,7 +4,7 @@ import { UpdateAuditRequestDto } from './dto/update-audit-request.dto';
 import { CreateOfferDto, AcceptAuditDto, DeclineAuditDto } from './dto/audit-offer.dto';
 import { AuditRequestsRepository } from './audit-requests.repository';
 import { AUDIT_STATUS, AUDIT_KIND, NEGOTIABLE, TERMINAL } from './audit-request.constants';
-import { canViewTask, assertCanViewTask, isStaff } from '../../common/guards/viewer.util';
+import { canViewTask, assertCanViewTask, canViewAnyRecord } from '../../common/guards/viewer.util';
 import { TasksService } from '../tasks/tasks.service';
 import { MilestonesService } from '../milestones/milestones.service';
 import { UsersService } from '../users/users.service';
@@ -32,7 +32,7 @@ export class AuditRequestsService {
   findAll(query?: { expertId?: string; status?: string; taskId?: string; kind?: string },
           viewer?: { id?: string; role?: string }) {
     const all = this.auditRequestsRepository.findAll(query).map((ar: any) => this.withProgress(ar));
-    if (!viewer || isStaff(viewer.role)) return all;
+    if (!viewer || canViewAnyRecord(viewer.role)) return all;
     // An engagement is only visible to its assigned reviewer and the parties to
     // the work. Previously every reviewer saw every project's audit.
     return all

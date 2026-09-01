@@ -17,6 +17,7 @@ import { RevenueModule } from './modules/revenue/revenue.module';
 import { SeedModule } from './modules/seed/seed.module';
 import { FilesModule } from './modules/files/files.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { AuditModule } from './modules/audit/audit.module';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import { AuthMiddleware } from './common/middleware/auth.middleware';
@@ -56,6 +57,7 @@ import { LoggingModule } from './common/logging/logging.module';
     SeedModule,
     FilesModule,
     AuthModule,
+    AuditModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
