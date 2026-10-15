@@ -20,6 +20,7 @@ import { useStore } from '../context/StoreContext';
 import { useValidation } from '../context/ValidationContext';
 import usePageTitle from '../hooks/usePageTitle';
 import pageCss from './SuperuserCreateTask.css?raw';
+import { escapeHtml } from '../utils/helpers';
 
 const CATEGORIES = ['Web Development', 'Mobile Development', 'Backend / API', 'UI/UX Design', 'AI / Machine Learning', 'DevOps / Cloud'];
 const EMPTY_MILESTONE = { title: '', description: '', budget: '', deadline: '' };
@@ -211,21 +212,26 @@ export function CreateTaskForm() {
     setPublishState('publishing');
 
     setTimeout(() => {
-      const task = Store.createTask({
-        title: taskTitle,
-        category,
-        description: description.trim(),
-        skills: [],
-        deadline,
-        budget: parseFloat(budget),
-        currency,
-        auditEnabled: false,
-        clientId,
-        status: 'open',
-      });
-      milestones.forEach(m => {
-        Store.createMilestone({ taskId: task.id, title: m.title, description: m.description, budget: parseFloat(m.budget), deadline: m.deadline, workerId: null });
-      });
+      try {
+        const task = Store.createTask({
+          title: taskTitle,
+          category,
+          description: description.trim(),
+          skills: [],
+          deadline,
+          budget: parseFloat(budget),
+          currency,
+          auditEnabled: false,
+          clientId,
+        });
+        milestones.forEach(m => {
+          Store.createMilestone({ taskId: task.id, title: m.title, description: m.description, budget: parseFloat(m.budget), dueDate: m.deadline || undefined });
+        });
+      } catch (e) {
+        Validate.toast(escapeHtml(e.message), 'error');
+        setPublishState('idle');
+        return;
+      }
       Validate.toast('Task created and assigned to client successfully!', 'success');
       setPublishState('done');
       setTimeout(() => { navigate('/superuser-tasks'); }, 1200);

@@ -14,7 +14,7 @@ import StatCard from '../components/StatCard';
 import { useAuth } from '../context/AuthContext';
 import { useStore } from '../context/StoreContext';
 import { useValidation } from '../context/ValidationContext';
-import { hoverBackground } from '../utils/helpers';
+import { hoverBackground, escapeHtml } from '../utils/helpers';
 import useRerender from '../hooks/useRerender';
 import usePageTitle from '../hooks/usePageTitle';
 
@@ -67,7 +67,12 @@ export default function WorkerInvitations() {
 
   function acceptInvite(id) {
     Validate.confirm('Accept this invitation? The project will be moved to your active projects and escrow will be locked.', () => {
-      Store.acceptInvitation(id);
+      try {
+        Store.acceptInvitation(id);
+      } catch (e) {
+        Validate.toast(escapeHtml(e.message), 'error');
+        return;
+      }
       refreshPage();
       Validate.toast('Invitation accepted! Project is now active in My Projects.', 'success');
     });
@@ -75,7 +80,12 @@ export default function WorkerInvitations() {
 
   function declineInvite(id) {
     Validate.confirm('Reject this invitation? The client will be notified.', () => {
-      Store.declineInvitation(id);
+      try {
+        Store.declineInvitation(id);
+      } catch (e) {
+        Validate.toast(escapeHtml(e.message), 'error');
+        return;
+      }
       refreshPage();
       Validate.toast('Invitation rejected.', 'success');
     });

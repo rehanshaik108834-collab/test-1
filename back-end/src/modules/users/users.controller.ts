@@ -1,4 +1,4 @@
-import { ForbiddenException, Controller, Get, Post, Patch, Delete, Param, Body, Headers, Query, UseGuards, Inject, forwardRef } from '@nestjs/common';
+import { ForbiddenException, Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards, Inject, forwardRef } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiHeader, ApiQuery } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { UsersService } from './users.service';
@@ -10,6 +10,9 @@ import { WalletDto } from './dto/wallet.dto';
 import { RoleGuard } from '../../common/guards/role.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { canMoveAnyWallet } from '../../common/guards/viewer.util';
+import { CurrentActor } from '../../common/decorators/actor.decorator';
+import type { Actor } from '../../common/decorators/actor.decorator';
+import { ALL_ROLES, ROLES } from '../../common/constants/roles';
 
 @ApiTags('Users')
 @Controller('users')
@@ -60,9 +63,28 @@ export class UsersController {
 
   @Patch(':id')
   @ApiHeader({ name: 'role', required: true, description: 'User role required' })
-  @Roles('client', 'worker', 'expert', 'superuser')
-  @ApiOperation({ summary: 'Update user profile' })
-  update(@Param('id') id: string, @Body() dto: UpdateUserDto) {
+  // Staff edit their own display name from the staff settings page.
+  @Roles(...ALL_ROLES)
+  @ApiOperation({ summary: 'Update a profile (your own; superuser may moderate any)' })
+  update(@Param('id') id: string, @Body() dto: UpdateUserDto, @CurrentActor() actor: Actor) {
+    // This took the id from the URL and never compared it to the caller, so
+    // any signed-in user could edit — or suspend — anyone.
+    const moderator = actor.role === ROLES.SUPERUSER;
+    if (!moderator && actor.id !== id) {
+      throw new ForbiddenException('You can only edit your own profile.');
+    }
+    // Account standing and reputation are not self-service: a worker could
+    // set their own rating, or un-suspend themselves.
+    const MODERATED = ['status', 'rating', 'completedProjects', 'reviewsDone'] as const;
+    if (!moderator) {
+      const attempted = MODERATED.filter(k => (dto as any)[k] !== undefined);
+      if (attempted.length) {
+        throw new ForbiddenException(`Only operations staff can change: ${attempted.join(', ')}.`);
+      }
+    }
+    if (moderator && actor.id === id && dto.status === 'suspended') {
+      throw new ForbiddenException('You cannot suspend your own account.');
+    }
     return redact(this.usersService.update(id, dto));
   }
 
@@ -70,7 +92,8 @@ export class UsersController {
   @ApiHeader({ name: 'role', required: true, description: 'User role required' })
   @Roles('superuser')
   @ApiOperation({ summary: 'Delete a user (superuser only)' })
-  remove(@Param('id') id: string) {
+  remove(@Param('id') id: string, @CurrentActor() actor: Actor) {
+    if (actor.id === id) throw new ForbiddenException('You cannot delete your own account.');
     return this.usersService.delete(id);
   }
 
@@ -81,20 +104,15 @@ export class UsersController {
     summary: 'Deposit funds into a wallet (card processing fee applies)',
     description: 'Charges the deposit processing fee and credits the net. Returns the fee breakdown.',
   })
-  addToWallet(@Param('id') id: string, @Body() dto: WalletDto, @Headers('user-id') actor: string, @Headers('role') role: string) {
-    assertOwnWallet(id, actor, role);
+  addToWallet(@Param('id') id: string, @Body() dto: WalletDto, @CurrentActor() actor: Actor) {
+    assertOwnWallet(id, actor.id, actor.role);
     return this.ledger.deposit(id, dto.amount);
   }
 
-  @Post(':id/wallet/deduct')
-  @ApiHeader({ name: 'role', required: true, description: 'User role required' })
-  // Workers and experts debit their own wallet when withdrawing.
-  @Roles('client', 'worker', 'expert', 'superuser')
-  @ApiOperation({ summary: 'Deduct funds from a wallet (no fee — internal transfer)' })
-  deductFromWallet(@Param('id') id: string, @Body() dto: WalletDto, @Headers('user-id') actor: string, @Headers('role') role: string) {
-    assertOwnWallet(id, actor, role);
-    return redact(this.usersService.deductFromWallet(id, dto.amount));
-  }
+  // `POST :id/wallet/deduct` was removed. It debited a balance with no
+  // transaction row and no fee — money left the system unrecorded, and nothing
+  // in the app called it. Withdrawals go through /withdraw, which the ledger
+  // records.
 
   @Post(':id/wallet/withdraw')
   @ApiHeader({ name: 'role', required: true, description: 'User role required' })
@@ -103,8 +121,8 @@ export class UsersController {
     summary: 'Withdraw to an external account (payout fee applies)',
     description: 'Debits the full gross amount and returns the fee breakdown and net paid out.',
   })
-  withdraw(@Param('id') id: string, @Body() dto: WalletDto, @Headers('user-id') actor: string, @Headers('role') role: string) {
-    assertOwnWallet(id, actor, role);
+  withdraw(@Param('id') id: string, @Body() dto: WalletDto, @CurrentActor() actor: Actor) {
+    assertOwnWallet(id, actor.id, actor.role);
     return this.ledger.withdraw(id, dto.amount);
   }
 }

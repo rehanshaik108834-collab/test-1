@@ -19,6 +19,7 @@ import { useValidation } from '../context/ValidationContext';
 import useFieldErrors from '../hooks/useFieldErrors';
 import usePageTitle from '../hooks/usePageTitle';
 import pageCss from './PostTask.css?raw';
+import { escapeHtml } from '../utils/helpers';
 
 const skillSuggestions = ['React','TypeScript','Node.js','Web Design','JavaScript','Vue.js','Angular','Python','Django','FastAPI','Express.js','MongoDB','PostgreSQL','MySQL','AWS','Google Cloud','Azure','Docker','Kubernetes','Jenkins','CI/CD','Figma','Sketch','Adobe XD','UI Design','UX Design','Responsive Design','CSS','HTML','SASS','Tailwind','Bootstrap','Flutter','Dart','Swift','Kotlin','Java','C#','PHP','Laravel','Symfony','Ruby','Rails','GraphQL','REST API','OAuth','JWT','Authentication','Database Design','System Design','Machine Learning','TensorFlow','PyTorch','NLP','Computer Vision','Data Analysis','Pandas','NumPy','Matplotlib','Tableau','Power BI','Analytics','Git','GitHub','GitLab','Bitbucket','SVN','Linux','Unix','Windows','MacOS','Bash','Shell','PowerShell','Python Scripting','Automation','Testing','Jest','Mocha','Pytest','Selenium','QA','Manual Testing','Load Testing','Performance Testing','Security','Penetration Testing','Cybersecurity','SSL/TLS','Encryption','OWASP','API Security','Web Security','SEO','SEM','PPC','Content Marketing','Email Marketing','Social Media','Facebook Ads','Google Ads','Analytics','Google Analytics','Mixpanel','Amplitude','Product Management','Agile','Scrum','Kanban','Project Management','JIRA','Asana','Monday.com','Notion','Slack','Communication','Leadership','Team Management','Training','Documentation','Technical Writing','Copywriting','Content Strategy','Brand Strategy','User Research','Usability Testing','A/B Testing','Conversion Rate Optimization','Customer Support','Customer Success','Sales','Negotiation','Contract Negotiation','Legal','Compliance','GDPR','HIPAA','SOC 2','ISO','Quality Assurance','Code Review','Refactoring','Optimization','Performance Tuning','Caching','CDN','Load Balancing','Microservices','Serverless','Lambda','Cloud Functions','Firebase','Supabase','Sanity','Contentful','Headless CMS','Static Site Generation','Next.js','Gatsby','Hugo','Jekyll','WordPress','Shopify','WooCommerce','Magento','BigCommerce','E-commerce','Payment Processing','Stripe','PayPal','Square','Blockchain','Crypto','Web3','Smart Contracts','Solidity','Ethereum','Bitcoin','NFT','Virtual Reality','Augmented Reality','3D Modeling','Blender','Unity','Unreal Engine','Game Development','Level Design','Game Art','Sound Design','Music Production','Video Production','Video Editing','Adobe Creative Suite','Premiere','After Effects','Lighting','Photography','Motion Graphics','Animation','2D Animation','3D Animation','Rigging','Modeling','Texturing','Rendering','Visualization','Data Visualization','Infographics','Illustration','Vector Art','Iconography','Logo Design','Branding','Package Design','Print Design','Layout Design','Typography','Color Theory','Design Systems','Component Libraries','Accessibility','WCAG','Inclusive Design','Mobile First','Progressive Web Apps','Service Workers','Offline Support','Caching Strategies','State Management','Redux','MobX','Vuex','Context API','Hooks','Composition API','Async/Await','Promises','Callbacks','Error Handling','Logging','Monitoring','Sentry','Datadog','New Relic','APM','Observability','Telemetry','Event Tracking','User Tracking','Privacy','Analytics Privacy','GDPR Compliance','Data Privacy','Security Audit','Vulnerability Assessment','Bug Bounty','Incident Response','Disaster Recovery','Backup Strategy','Data Recovery','Version Control','Branching Strategies','Code Owners','Pull Requests','Code Reviews','Pair Programming','Mob Programming','Test-Driven Development','Behavior-Driven Development','Acceptance Testing','Integration Testing','Unit Testing','End-to-End Testing','Contract Testing','Snapshot Testing','Visual Regression Testing','Performance Testing','Load Testing','Stress Testing','Chaos Engineering','Infrastructure as Code','Terraform','Ansible','Puppet','Chef','Containers','Docker Compose','Orchestration','Kubernetes','OpenShift','AWS ECS','Cloud Deployment','CI/CD Pipeline','GitHub Actions','GitLab CI','CircleCI','Travis CI','Jenkins','Monitoring','Alerting','Logging','Log Aggregation','ELK Stack','Splunk','Cloudwatch','Metrics','Prometheus','Grafana','Cost Optimization','Resource Management','Scaling','Horizontal Scaling','Vertical Scaling','Caching Strategies','Database Optimization','Query Optimization','Index Optimization','Sharding','Partitioning','Replication','Backup','Disaster Recovery','Business Continuity','Incident Management','Change Management','Release Management','Deployment Strategy','Blue-Green Deployment','Canary Deployment','Rolling Deployment','Feature Flags','A/B Testing'];
 
@@ -213,9 +214,24 @@ export default function PostTask() {
   }
 
   function handleRemoveMilestone(idx) {
-    const next = milestones.filter((_, i) => i !== idx);
-    setMilestones(next);
-    renderMilestones(next, editingIndex);
+    const title = milestones[idx]?.title || `Milestone ${idx + 1}`;
+    Validate.confirm(`Delete "${escapeHtml(title)}"? Its budget is returned to the unallocated total.`, () => {
+      const next = milestones.filter((_, i) => i !== idx);
+      // Keep an open edit pointed at the same milestone. Deleting an earlier
+      // one shifted the indexes, so "Update" overwrote the wrong card;
+      // deleting the one being edited closes the form.
+      let nextEdit = editingIndex;
+      if (editingIndex === idx) {
+        nextEdit = null;
+        setShowMilestoneForm(false);
+        setNewMilestone(EMPTY_MILESTONE);
+      } else if (editingIndex !== null && idx < editingIndex) {
+        nextEdit = editingIndex - 1;
+      }
+      setEditingIndex(nextEdit);
+      setMilestones(next);
+      renderMilestones(next, nextEdit);
+    });
   }
 
   function handleEditMilestone(idx) {
@@ -305,7 +321,9 @@ export default function PostTask() {
     }
 
     // Create task
-    const task = Store.createTask({
+    let task;
+    try {
+    task = Store.createTask({
       title: title,
       category,
       description: description.trim(),
@@ -318,17 +336,17 @@ export default function PostTask() {
       auditDomain: auditEnabled ? category : undefined,
       auditExpertId: auditEnabled ? auditExpertId : undefined,
       clientId,
-      status: 'open',
     });
 
-    // Create milestones
+    // Create milestones. The server sets who each one is payable to — the
+    // worker, once someone is hired.
     milestones.forEach(m => {
-      // workerId stays null: nobody is hired yet. Setting it to the client
-      // made the milestone payable to the client, so approving a deliverable
-      // released escrow back to them instead of to the hired worker. The
-      // worker is backfilled onto these milestones when they are hired.
-      Store.createMilestone({ taskId: task.id, title: m.title, description: m.description, budget: parseFloat(m.budget), deadline: m.deadline, workerId: null });
+      Store.createMilestone({ taskId: task.id, title: m.title, description: m.description, budget: parseFloat(m.budget), dueDate: m.deadline || undefined });
     });
+    } catch (e) {
+      Validate.toast(escapeHtml(e.message), 'error');
+      return;
+    }
 
     // No money moves here. Project escrow is funded when a worker is hired,
     // and the audit fee is funded once you and the reviewer agree a price.
@@ -571,8 +589,10 @@ export default function PostTask() {
                       <button className="milestone-delete" type="button" title="Edit" onClick={() => handleEditMilestone(idx)}>
                         <Svg d={PATH_EDIT} style={{ width: 14, height: 14 }} />
                       </button>
-                      <button className="milestone-delete" type="button" title="Remove" onClick={() => handleRemoveMilestone(idx)}>
-                        <Svg d={PATH_X} />
+                      {/* The icon had no size, so it collapsed to nothing and the
+                          button was invisible — users could not delete a milestone. */}
+                      <button className="milestone-delete" type="button" title="Delete milestone" aria-label={`Delete milestone ${idx + 1}`} onClick={() => handleRemoveMilestone(idx)}>
+                        <Svg d={PATH_X} style={{ width: 16, height: 16 }} />
                       </button>
                     </div>
                   </div>

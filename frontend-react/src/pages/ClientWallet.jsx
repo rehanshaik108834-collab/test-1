@@ -18,6 +18,7 @@ import { useValidation } from '../context/ValidationContext';
 import useRerender from '../hooks/useRerender';
 import usePageTitle from '../hooks/usePageTitle';
 import pageCss from './ClientWallet.css?raw';
+import { escapeHtml, newestFirst } from '../utils/helpers';
 
 const TX_TYPE_MAP = {
   'deposit':           { label: 'Wallet Top-up',      icon: 'arrow-down-circle', color: '#10b981', bg: '#ecfdf5', positive: true },
@@ -25,6 +26,10 @@ const TX_TYPE_MAP = {
   'milestone-release': { label: 'Milestone Released', icon: 'unlock',            color: '#f59e0b', bg: '#fffbeb', positive: false },
   'withdrawal':        { label: 'Withdrawal',         icon: 'arrow-up-circle',   color: '#ef4444', bg: '#fef2f2', positive: false },
   'refund':            { label: 'Partial Refund',     icon: 'rotate-ccw',        color: '#a855f7', bg: '#faf5ff', positive: true },
+  // These were missing, so the raw type ("platform-fee") was shown as the label.
+  'platform-fee':      { label: 'Platform Fees',      icon: 'receipt',           color: '#64748b', bg: '#f1f5f9', positive: false },
+  'audit-escrow-lock': { label: 'Audit Escrow Funded', icon: 'shield-check',     color: '#7c3aed', bg: '#f5f3ff', positive: false },
+  'audit-release':     { label: 'Audit Fee Released', icon: 'unlock',            color: '#7c3aed', bg: '#f5f3ff', positive: false },
 };
 
 const LOCKED_STATUSES = ['pending', 'submitted', 'todo', 'not-started', 'in-progress', 'review', 'audit-requested', 'audit-passed', 'disputed'];
@@ -92,8 +97,15 @@ function computeWalletData(Store, userId) {
     if (lockedVal > 0) activeEscrowCount++;
     activeEscrowAmount += lockedVal;
 
+    // Most recent money movement on the project, falling back to when it
+    // was posted — what "newest" means for this list.
+    const lastActivity = allTxs
+      .filter(tx => tx.taskId === t.id && tx.createdAt)
+      .reduce((latest, tx) => (tx.createdAt > latest ? tx.createdAt : latest), t.createdAt || '');
+
     escrowProjects.push({
       id: t.id,
+      lastActivity,
       name: t.title,
       worker: Store.getUserById(t.workerId)?.name || 'TBD',
       locked: '$' + lockedVal.toLocaleString(),
@@ -105,14 +117,20 @@ function computeWalletData(Store, userId) {
 
   // Build combined transaction list: user's own txs + milestone-releases for their tasks
   const userTxIds = new Set(userTxs.map(t => t.id));
-  const combinedTxs = [...userTxs, ...releaseTxs.filter(t => !userTxIds.has(t.id))];
+  // Newest first. The list was the user's own rows in server order with this
+  // client's releases appended after them, so dates came out jumbled.
+  const combinedTxs = newestFirst([...userTxs, ...releaseTxs.filter(t => !userTxIds.has(t.id))]);
   const transactions = combinedTxs.map(tx => {
     const cfg = TX_TYPE_MAP[tx.type] || { label: tx.type, icon: 'circle', color: '#64748b', bg: '#f1f5f9', positive: false };
     const task = Store.getTaskById(tx.taskId);
     return { id: tx.id, type: tx.type, label: cfg.label, sub: (task?.title || 'Platform') + ' • ' + (tx.createdAt || new Date().toISOString().slice(0, 10)), amount: (cfg.positive ? '+' : '-') + '$' + tx.amount.toLocaleString(), positive: cfg.positive, icon: cfg.icon, color: cfg.color, bg: cfg.bg };
   });
 
-  return { walletBalance, deposits, spent, released, activeEscrowAmount, activeEscrowCount, escrowProjects, transactions };
+  return {
+    walletBalance, deposits, spent, released, activeEscrowAmount, activeEscrowCount,
+    escrowProjects: newestFirst(escrowProjects, p => p.lastActivity),
+    transactions,
+  };
 }
 
 /** Bottom-right notice used by the withdraw dialog (this page's own variant). */
@@ -293,9 +311,11 @@ export default function ClientWallet() {
 
     // One call: the server charges card processing, credits the net and writes
     // the ledger row together.
-    const deposit = Store.addToWallet(walletUserId, addAmount);
-    if (!deposit) {
-      Validate.toast('Deposit failed. Please check your connection and try again.', 'error');
+    let deposit;
+    try {
+      deposit = Store.addToWallet(walletUserId, addAmount);
+    } catch (e) {
+      Validate.toast(escapeHtml(e.message), 'error');
       return;
     }
 
@@ -308,7 +328,7 @@ export default function ClientWallet() {
 
   // ── All transactions ──
   function showAllTransactions() {
-    setAllTx(computeWalletData(Store, walletUserId).transactions.slice().reverse());
+    setAllTx(computeWalletData(Store, walletUserId).transactions);
     setAllOpen(true);
   }
 
@@ -410,7 +430,7 @@ export default function ClientWallet() {
                   <div style={{ fontWeight: 600, marginBottom: 4 }}>No transactions yet</div>
                   <div style={{ fontSize: 13 }}>Transactions will appear here once you fund a project.</div>
                 </div>
-              ) : d.transactions.slice(-10).reverse().map(t => <TxRow key={t.id} t={t} />)}
+              ) : d.transactions.slice(0, 10).map(t => <TxRow key={t.id} t={t} />)}
             </div>
           </div>
         </div>

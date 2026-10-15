@@ -194,7 +194,13 @@ export default function ExpertApplicationsReview({ role, activePath, showDocumen
   function executeAction() {
     if (!pendingAction) return;
     const { appId, status } = pendingAction;
-    Store.updateExpertApplicationStatus(appId, status, session?.userId || 'u4');
+    try {
+      Store.updateExpertApplicationStatus(appId, status);
+    } catch (e) {
+      closeConfirm();
+      Validate.toast(escapeHtml(e.message), 'error');
+      return;
+    }
     closeConfirm();
     rerender();
     const app = Store.getExpertApplicationById(appId);

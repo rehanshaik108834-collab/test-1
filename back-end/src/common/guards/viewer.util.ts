@@ -61,6 +61,11 @@ export function canDeleteAnyFile(role?: string): boolean {
   return role === ROLES.SUPERUSER;
 }
 
+/** Throws unless `ok`. Keeps the ownership checks at call sites to one line. */
+export function assertAllowed(ok: unknown, message: string): void {
+  if (!ok) throw new ForbiddenException(message);
+}
+
 export interface TaskLike {
   clientId?: string;
   workerId?: string | null;

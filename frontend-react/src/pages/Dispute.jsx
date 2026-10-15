@@ -8,13 +8,12 @@
  * Expert Reviewer to arbitrate.
  */
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import ExpertPicker from '../components/ExpertPicker';
 import PageStyle from '../components/PageStyle';
 import { useAuth } from '../context/AuthContext';
 import { useStore } from '../context/StoreContext';
-import { escapeHtml } from '../utils/helpers';
 import usePageTitle from '../hooks/usePageTitle';
 import pageCss from './Dispute.css?raw';
 
@@ -28,14 +27,46 @@ function showToast(msg, type = 'success') {
   setTimeout(() => t.remove(), 3200);
 }
 
-/** The milestone being disputed, as saved by the previous page. */
-function readTarget() {
+/** The milestone the previous page left in localStorage (older links). */
+function readSavedTarget() {
   try {
     return JSON.parse(localStorage.getItem('disputeTargetMilestone') || 'null');
   } catch (e) {
     console.warn('Could not get disputeTargetMilestone from localStorage', e);
     return null;
   }
+}
+
+/**
+ * The milestone being disputed, loaded from the real record.
+ *
+ * The page used to work from whatever object the previous page saved. The
+ * workroom saved its display copy, which has no `taskId` — so the project
+ * was never found, the reviewer list could not be narrowed to the project's
+ * category and listed everyone, and the title and amount came from that
+ * copy rather than the milestone. The id now travels in the URL
+ * (/dispute?milestoneId=…), and everything else is read from the store.
+ */
+function loadTarget(Store, milestoneId) {
+  const id = milestoneId || readSavedTarget()?.id;
+  const ms = id ? Store.getMilestoneById(id) : null;
+  if (!ms) return null;
+  const task = Store.getTaskById(ms.taskId);
+  return {
+    id: ms.id,
+    taskId: ms.taskId,
+    task,
+    title: ms.title || 'Untitled milestone',
+    amount: '$' + (ms.budget || 0).toLocaleString(),
+    status: ms.status,
+  };
+}
+
+/** The reviewer the client chose for this project's technical audit, if any. */
+function assignedReviewer(Store, taskId) {
+  const ar = (Store.getAuditRequestsByTask(taskId) || []).find(a =>
+    a.kind === 'project-audit' && a.expertId && !['declined', 'cancelled'].includes(a.status));
+  return ar ? ar.expertId : null;
 }
 
 // Read-only "Milestone" / "Amount" boxes
@@ -50,18 +81,22 @@ export default function Dispute() {
   const userRole = session?.role || 'client';
   const workroomURL = userRole === 'worker' ? '/worker-workroom' : '/project-workroom';
 
-  const [target] = useState(readTarget);
+  const [searchParams] = useSearchParams();
+  const [target] = useState(() => loadTarget(Store, searchParams.get('milestoneId')));
+  const targetTask = target ? target.task : null;
+  // A project audited at creation already has its reviewer: that is who
+  // arbitrates, rather than anyone the category happens to match.
+  const [lockedReviewerId] = useState(() => (target ? assignedReviewer(Store, target.taskId) : null));
   const [reason, setReason] = useState('');
   const [details, setDetails] = useState('');
   const [outcome, setOutcome] = useState('');
-  const [expertId, setExpertId] = useState(null);
+  const [expertId, setExpertId] = useState(lockedReviewerId);
+  const [reviewerFee, setReviewerFee] = useState('');
   const [showExpertError, setShowExpertError] = useState(false);
-
-  // Offer only reviewers who cover this project's category.
-  const targetTask = target && target.taskId ? Store.getTaskById(target.taskId) : null;
+  // The client pays the reviewer, so only the client proposes a fee.
+  const proposesFee = userRole === 'client';
 
   function submitDispute() {
-    const target = readTarget();
     if (!target) {
       showToast('No milestone selected for dispute.', 'warn');
       return;
@@ -72,26 +107,24 @@ export default function Dispute() {
       return;
     }
 
-    const taskIdFromTarget = target.taskId || null;
-    const task = taskIdFromTarget ? Store.getTaskById(taskIdFromTarget) : Store.getMilestoneById(target.id)?.taskId ? Store.getTaskById(Store.getMilestoneById(target.id).taskId) : null;
-    const workerId = target.workerId || (task ? task.workerId : null);
-    const worker = workerId ? Store.getUserById(workerId) : null;
+    const fee = parseFloat(reviewerFee);
+    if (proposesFee && reviewerFee !== '' && !(fee >= 1)) {
+      showToast('Enter a reviewer fee of at least $1, or leave it empty.', 'warn');
+      return;
+    }
 
+    // The server takes the parties from the project; it only needs the ids.
     const disputeData = {
-      taskId: task?.id || target.taskId || null,
+      taskId: target.taskId,
       milestoneId: target.id,
-      project: task ? task.title : target.project || target.title || 'Project',
-      milestone: target.title || target.milestone || 'Milestone',
-      amount: target.amount ? (typeof target.amount === 'number' ? '$' + target.amount.toLocaleString() : target.amount) : '$0',
+      project: targetTask ? targetTask.title : 'Project',
+      milestone: target.title,
+      amount: target.amount,
       reason: reason.trim(),
       details: details.trim(),
       outcome: outcome.trim(),
-      raisedBy: session?.userId || null,
-      raisedByName: session?.name || session?.email || 'Client',
       expertId,
-      againstId: worker ? worker.id : target.workerId || null,
-      againstName: worker ? worker.name : target.workerName || target.worker || 'Worker',
-      status: 'open',
+      ...(proposesFee && fee >= 1 ? { reviewerFee: fee } : {}),
     };
 
     if (!expertId) {
@@ -100,37 +133,39 @@ export default function Dispute() {
       return;
     }
 
+    let created;
     try {
-      Store.createDispute(disputeData);
-
-      // Notify all expert reviewers about the new dispute
-      const experts = Store.getUsers().filter(u => u.role === 'expert' && u.status === 'active');
-      experts.forEach(expert => {
-        Store.addNotification({
-          userId: expert.id,
-          type: 'dispute',
-          text: `New dispute raised: ${escapeHtml(disputeData.project)}`,
-          subtext: `${escapeHtml(disputeData.raisedByName)} raised a dispute — ${escapeHtml(disputeData.reason)}`,
-        });
-      });
-
-      // Also notify the worker being disputed
-      if (disputeData.againstId) {
-        Store.addNotification({
-          userId: disputeData.againstId,
-          type: 'dispute',
-          text: `A dispute has been raised against you`,
-          subtext: `${escapeHtml(disputeData.project)} — ${escapeHtml(disputeData.milestone)}: ${escapeHtml(disputeData.reason)}`,
-        });
-      }
-
-      showToast('Dispute submitted successfully.', 'success');
-      const redirectTaskId = disputeData.taskId ? `?id=${disputeData.taskId}` : '';
-      setTimeout(() => { navigate(`/project-milestone-board${redirectTaskId}`); }, 1300);
+      created = Store.createDispute(disputeData);
     } catch (e) {
-      console.error('Dispute submit error:', e);
-      showToast('Unable to submit dispute. Please try again.', 'error');
+      // The server's reason (already disputed, already paid, …), not a
+      // generic "try again".
+      showToast(e.message || 'Unable to submit dispute. Please try again.', 'error');
+      return;
     }
+
+    // Notifications render as text, so they are not HTML-escaped here —
+    // escaping them showed "&amp;" in the dropdown.
+    Store.addNotification({
+      userId: expertId,
+      type: 'dispute',
+      text: `New dispute raised: ${disputeData.project}`,
+      subtext: `${session?.name || 'A user'} raised a dispute — ${disputeData.reason}`,
+    });
+    if (created.againstId) {
+      Store.addNotification({
+        userId: created.againstId,
+        type: 'dispute',
+        text: `A dispute has been raised against you`,
+        subtext: `${disputeData.project} — ${disputeData.milestone}: ${disputeData.reason}`,
+      });
+    }
+
+    showToast('Dispute submitted successfully.', 'success');
+    // The client pays the reviewer, so they go where the fee is agreed. A
+    // worker was sent to the client's board, which bounced them to their
+    // dashboard.
+    const next = userRole === 'client' ? '/client-audit-offers' : `/worker-milestone-board?id=${disputeData.taskId}`;
+    setTimeout(() => { navigate(next); }, 1300);
   }
 
   return (
@@ -180,12 +215,14 @@ export default function Dispute() {
               <div className="field-group">
                 <label>Expert Reviewer</label>
                 <div style={{ fontSize: 12, color: 'var(--muted-foreground)', marginBottom: 10 }}>
-                  Choose who arbitrates this dispute. Only reviewers covering this project's category are shown,
-                  and only they will be able to see the case.
+                  {lockedReviewerId
+                    ? 'This project\'s Expert Reviewer, chosen when it was created, arbitrates the dispute. Only they will be able to see the case.'
+                    : 'Choose who arbitrates this dispute. Only reviewers covering this project\'s category are shown, and only they will be able to see the case.'}
                 </div>
                 <div id="disputeExpertList">
                   <ExpertPicker
                     category={targetTask ? targetTask.category : null}
+                    lockedId={lockedReviewerId}
                     selectedId={expertId}
                     onChange={id => { setExpertId(id); setShowExpertError(false); }}
                   />
@@ -194,6 +231,17 @@ export default function Dispute() {
                   Select an Expert Reviewer to continue.
                 </div>
               </div>
+
+              {proposesFee && (
+                <div className="field-group">
+                  <label htmlFor="disputeReviewerFee">Proposed reviewer fee (optional)</label>
+                  <div style={{ fontSize: 12, color: 'var(--muted-foreground)', marginBottom: 6 }}>
+                    Your opening offer for the reviewer&apos;s time. They can accept or counter it, and you agree the final fee under Audit Offers.
+                  </div>
+                  <input id="disputeReviewerFee" className="field-input" type="number" min="1" step="1" placeholder="e.g. 150"
+                         value={reviewerFee} onChange={e => setReviewerFee(e.target.value)} />
+                </div>
+              )}
 
               <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
                 <button className="btn-primary btn-action" onClick={submitDispute}>Submit Dispute</button>

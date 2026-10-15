@@ -296,7 +296,11 @@ export default function ExpertReportAudit() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [session] = useState(() => Auth.getCurrentUser());
-  const role = searchParams.get('role') || (session ? session.role : 'expert');
+  // The layout follows who is signed in. It preferred `?role=` over the
+  // session, so a link with the wrong value without the parameter (the worker sidebar's "Reports")
+  // drew another role's sidebar — whose Settings link then bounced the user
+  // to their dashboard.
+  const role = session?.role || searchParams.get('role') || 'expert';
   const [data] = useState(() => loadAudit(Store, searchParams, session));
 
   // ── Form state (only used by the assigned expert's scoring form) ──
@@ -415,8 +419,9 @@ export default function ExpertReportAudit() {
         workerName: req.worker || (worker ? worker.name : ''),
       });
 
-      // Update audit request status
-      Store.updateAuditRequest(req.id, { status: 'Completed', expertId: session.userId });
+      // Filing the report is what moves the engagement on (and pays the
+      // reviewer). The PATCH that followed set `expertId` from the browser —
+      // the hole that let a reviewer write themselves onto any engagement.
 
       // Note: Expert audit report does not change milestone status - that's for client approval or dispute resolution only
 

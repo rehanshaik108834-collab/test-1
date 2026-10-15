@@ -37,6 +37,24 @@ function loadEngagements(Store, userId) {
     .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
 }
 
+/**
+ * Runs a Store write, returning its result or null. A refusal is shown with
+ * the server's own reason (e.g. "Insufficient wallet balance…").
+ */
+function attempt(fn) {
+  try {
+    return fn();
+  } catch (e) {
+    const el = document.createElement('div');
+    el.setAttribute('role', 'alert');
+    el.style.cssText = 'position:fixed;bottom:28px;right:28px;z-index:99999;background:#ef4444;color:#fff;padding:14px 20px;border-radius:14px;font-size:14px;max-width:380px;';
+    el.textContent = e.message;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 5000);
+    return null;
+  }
+}
+
 export default function ClientAuditOffers() {
   const Store = useStore();
   const Auth = useAuth();
@@ -54,16 +72,16 @@ export default function ClientAuditOffers() {
       Validate.toast('Enter a price greater than zero.', 'error');
       return;
     }
-    const r = Store.makeAuditOffer(id, { amount, offeredBy: 'client', note: 'Counter-offer' });
-    if (!r) { Validate.toast('Could not send that offer. Please try again.', 'error'); return; }
+    const r = attempt(() => Store.makeAuditOffer(id, { amount, note: 'Counter-offer' }));
+    if (!r) return;
     Validate.toast(`Offer of $${amount.toLocaleString()} sent to the reviewer.`, 'success');
     setCounterValues(v => ({ ...v, [id]: '' }));
     reload();
   }
 
   function acceptOffer(id, offerId) {
-    const r = Store.acceptAuditOffer(id, offerId);
-    if (!r) { Validate.toast('Could not accept that offer.', 'error'); return; }
+    const r = attempt(() => Store.acceptAuditOffer(id, offerId));
+    if (!r) return;
     Validate.toast('Fee agreed. Fund the escrow to hire the reviewer.', 'success');
     reload();
   }
@@ -73,8 +91,8 @@ export default function ClientAuditOffers() {
     Validate.confirm(
       `Move $${Number(ar.agreedAmount).toLocaleString()} into escrow for this audit? The reviewer is paid from it once they file their report.`,
       () => {
-        const r = Store.fundAuditEscrow(id);
-        if (!r) { Validate.toast('Funding failed. Check your wallet balance.', 'error'); return; }
+        const r = attempt(() => Store.fundAuditEscrow(id));
+        if (!r) return;
         Validate.toast('Escrow funded. The reviewer can now start.', 'success');
         reload();
       }
@@ -82,16 +100,13 @@ export default function ClientAuditOffers() {
   }
 
   function findAnotherReviewer(taskId) {
-    const task = Store.getTaskById(taskId);
-    const r = Store.createAuditRequest({
+    // The server takes the owner, title and worker from the task itself.
+    const r = attempt(() => Store.createAuditRequest({
       kind: 'project-audit',
       taskId,
-      clientId: task.clientId,
-      project: task.title,
       severity: 'Medium',
-      openingOffer: undefined,
-    });
-    if (!r) { Validate.toast('Could not open a new audit request.', 'error'); return; }
+    }));
+    if (!r) return;
     Validate.toast('New audit request opened. Reviewers can now quote for it.', 'success');
     reload();
   }
@@ -100,8 +115,8 @@ export default function ClientAuditOffers() {
     Validate.confirm(
       'Cancel this draft project? Any audit escrow is refunded to your wallet.',
       () => {
-        const r = Store.cancelDraftTask(taskId);
-        if (!r) { Validate.toast('Could not cancel the draft.', 'error'); return; }
+        const r = attempt(() => Store.cancelDraftTask(taskId));
+        if (!r) return;
         Validate.toast('Draft cancelled and escrow refunded.', 'success');
         reload();
       }

@@ -1,10 +1,27 @@
-import { Injectable, NotFoundException, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { CreateExpertApplicationDto } from './dto/create-expert-application.dto';
 import { UpdateExpertApplicationStatusDto } from './dto/update-expert-application.dto';
 import { ExpertApplicationsRepository } from './expert-applications.repository';
 import { UsersService } from '../users/users.service';
 import { hashPassword } from '../../common/security/password.util';
 import { AppLoggerService } from '../../common/logging/app-logger.service';
+
+/**
+ * The signup form's expertise → the task categories a reviewer covers.
+ * Clients are only offered reviewers whose domains include the project's
+ * category, and approval used to create every expert with none — so a newly
+ * approved reviewer could never be chosen by anyone.
+ */
+const DOMAINS_BY_EXPERTISE: Record<string, string[]> = {
+  'Frontend Development': ['Web Development', 'UI/UX Design'],
+  'Backend Development': ['Backend / API', 'Web Development'],
+  'Full-Stack Development': ['Web Development', 'Backend / API'],
+  'Mobile Development': ['Mobile Development'],
+  'DevOps & Infrastructure': ['DevOps / Cloud'],
+  'Security & Auditing': ['Security', 'Web Development', 'Backend / API'],
+  'Data Engineering': ['Backend / API', 'AI / Machine Learning'],
+  'Machine Learning': ['AI / Machine Learning'],
+};
 
 /**
  * ExpertApplicationsService — Business Logic Layer
@@ -51,6 +68,14 @@ export class ExpertApplicationsService {
   }
 
   create(dto: CreateExpertApplicationDto) {
+    // One live application per address, and none for an existing account.
+    const email = dto.email.trim().toLowerCase();
+    const clash = this.expertApplicationsRepository
+      .findAll()
+      .find((a: any) => String(a.email).toLowerCase() === email && a.status !== 'rejected');
+    if (clash || this.usersService.findByEmail(email)) {
+      throw new BadRequestException('An application or account with this email already exists.');
+    }
     const app = {
       id: this.expertApplicationsRepository.generateId(),
       status: 'pending',
@@ -66,40 +91,44 @@ export class ExpertApplicationsService {
     return this.redact(this.expertApplicationsRepository.insert(app));
   }
 
-  updateStatus(id: string, dto: UpdateExpertApplicationStatusDto) {
+  updateStatus(id: string, dto: UpdateExpertApplicationStatusDto, reviewerId: string) {
     // The RAW record, not findById's redacted copy — this mutates the stored
     // application and needs the applicant's chosen password to create their
     // account with the credentials they signed up with.
     const app = this.expertApplicationsRepository.findById(id);
     if (!app) throw new NotFoundException(`Expert application with id "${id}" not found`);
-    app.status = dto.status;
-    app.reviewedAt = new Date().toISOString().slice(0, 10);
-    app.reviewedBy = dto.reviewedBy;
-
-    // On approval, auto-create expert user account
-    if (dto.status === 'approved') {
-      try {
-        const existing = this.usersService.findByEmail(app.email);
-        if (!existing) {
-          this.usersService.createPrivileged({
-            name: app.name,
-            email: app.email,
-            password: app.password || 'Expert@123',
-            role: 'expert',
-            specialization: app.expertise || '',
-          });
-        }
-      } catch (e) {
-        // The application shows approved but no account exists to log in with,
-        // so this one must never be silent.
-        this.log.error(
-          'expertApplications.approve',
-          `approved application ${app.id} but could not create the expert account for ${app.email}`,
-          e,
-        );
-      }
+    if (app.status !== 'pending') {
+      // Rejecting an approved application would leave its account live.
+      throw new BadRequestException(`This application was already ${app.status}.`);
     }
 
+    // Create the account before recording the decision, so an application is
+    // never shown as approved with no account behind it.
+    if (dto.status === 'approved') {
+      if (this.usersService.findByEmail(app.email)) {
+        throw new BadRequestException(`An account already exists for ${app.email}.`);
+      }
+      if (!app.password) {
+        // This used to fall back to the hardcoded password "Expert@123" —
+        // a working login anyone could guess for any approved reviewer.
+        throw new BadRequestException('This application has no password, so no account can be created for it.');
+      }
+      this.usersService.createPrivileged(
+        {
+          name: app.name,
+          email: app.email,
+          password: app.password,
+          role: 'expert',
+          specialization: app.expertise || '',
+        },
+        { domains: DOMAINS_BY_EXPERTISE[app.expertise] || [] },
+      );
+      this.log.log('expertApplications.approve', `created expert account for application ${app.id}`);
+    }
+
+    app.status = dto.status;
+    app.reviewedAt = new Date().toISOString().slice(0, 10);
+    app.reviewedBy = reviewerId;
     return this.redact(app);
   }
 

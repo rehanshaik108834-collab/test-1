@@ -235,10 +235,13 @@ export default function WorkerApplications() {
     setHireOpen(false);
 
     try {
-      if (selectedProposalId && Store.getProposals().find(p => p.id === selectedProposalId)) {
-        Store.hireWorker(selectedProposalId);
-      }
-    } catch (e) { console.warn('Store hire failed', e); }
+      Store.hireWorker(selectedProposalId);
+    } catch (e) {
+      // Usually not enough in the wallet to fund escrow. This used to be
+      // logged and followed by "Worker hired!" regardless.
+      Validate.toast(escapeHtml(e.message), 'error');
+      return;
+    }
 
     // Update UI — mark hired, disable others in current project
     setAllProposals(list => list.map(p => (p.taskId === selectedProjectId ? { ...p, status: p.id === selectedProposalId ? 'hired' : 'rejected' } : p)));
@@ -248,8 +251,13 @@ export default function WorkerApplications() {
 
   function rejectProposal(proposalId) {
     Validate.confirm('Are you sure you want to reject this application?', () => {
+      try {
+        Store.updateProposal(proposalId, { status: 'rejected' });
+      } catch (e) {
+        Validate.toast(escapeHtml(e.message), 'error');
+        return;
+      }
       setAllProposals(list => list.map(p => (p.id === proposalId ? { ...p, status: 'rejected' } : p)));
-      try { Store.updateProposal(proposalId, { status: 'rejected' }); } catch (e) { /* ignore */ }
       Validate.toast('Application rejected.', 'success');
       switchProject(selectedProjectId);
     });

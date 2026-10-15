@@ -1,10 +1,12 @@
-import { Injectable, NotFoundException, ForbiddenException, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { CreateAuditReportDto } from './dto/create-audit-report.dto';
 import { AuditReportsRepository } from './audit-reports.repository';
 import { AuditRequestsService } from '../audit-requests/audit-requests.service';
 import { MilestonesService } from '../milestones/milestones.service';
 import { TasksService } from '../tasks/tasks.service';
-import { canViewTask, canViewAnyRecord } from '../../common/guards/viewer.util';
+import { canViewTask, canViewAnyRecord, assertAllowed } from '../../common/guards/viewer.util';
+import { Actor } from '../../common/decorators/actor.decorator';
+import { ROLES } from '../../common/constants/roles';
 
 /**
  * AuditReportsService — Business Logic Layer
@@ -60,7 +62,23 @@ export class AuditReportsService {
     try { return fn(); } catch { return null; }
   }
 
-  create(dto: CreateAuditReportDto) {
+  create(dto: CreateAuditReportDto, actor: Actor) {
+    // The engagement decides who files and what is covered. Any expert could
+    // previously file — or overwrite — a report on any audit, naming any
+    // task and milestone, and filing is what triggers the payout.
+    const ar = this.auditRequestsService.findById(dto.auditRequestId);
+    assertAllowed(
+      (ar.expertId && ar.expertId === actor.id) || actor.role === ROLES.SUPERUSER,
+      'Only the reviewer assigned to this audit can file its report.',
+    );
+    if (dto.milestoneId) {
+      const ms = this.milestonesService.findById(dto.milestoneId);
+      if (ms.taskId !== ar.taskId) {
+        throw new BadRequestException('That milestone does not belong to the audited project.');
+      }
+    }
+    const fields = { ...dto, taskId: ar.taskId, expertId: ar.expertId };
+
     // Keyed on the milestone as well as the engagement: re-filing a report
     // updates that milestone's report, it does not replace another one.
     const existing = this.auditReportsRepository.findByEngagementAndMilestone(
@@ -70,14 +88,14 @@ export class AuditReportsService {
 
     const report = existing
       ? this.auditReportsRepository.updateByEngagementAndMilestone(dto.auditRequestId, dto.milestoneId, {
-          ...dto,
+          ...fields,
           createdAt: new Date().toISOString().slice(0, 10),
         })
       : (() => {
           const r = {
+            ...fields,
             id: this.auditReportsRepository.generateId(),
             createdAt: new Date().toISOString().slice(0, 10),
-            ...dto,
           };
           this.auditReportsRepository.insert(r);
           return r;

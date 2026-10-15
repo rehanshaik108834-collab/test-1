@@ -1,12 +1,15 @@
 /**
  * LANNENT — NotificationDropdown
  * The bell button in the top bar and its dropdown list (from dashboard.js).
- * Shows the latest 8 notifications for the signed-in user, with an unread
- * badge and a "mark all as read" button.
+ * Shows the latest 8 notifications for the signed-in user (all of them on
+ * "View all"), with an unread badge and a "mark all as read" button.
  */
 import { useState } from 'react';
 import Icon from './Icon';
 import { useStore } from '../context/StoreContext';
+import { newestFirst } from '../utils/helpers';
+
+const PREVIEW_COUNT = 8;
 
 /** Icon + colours for each notification type. */
 function notifIcon(type) {
@@ -28,8 +31,13 @@ function notifIcon(type) {
  */
 export default function NotificationDropdown({ userId, open, onToggle }) {
   const Store = useStore();
-  const [notifications, setNotifications] = useState(() => (userId ? Store.getNotifications(userId) || [] : []));
+  // Newest first. The store keeps them in creation order and the list showed
+  // the first 8 — the eight oldest — so anything newer never appeared, while
+  // the badge still counted it.
+  const [notifications, setNotifications] = useState(() => (userId ? newestFirst(Store.getNotifications(userId) || []) : []));
+  const [showAll, setShowAll] = useState(false);
   const unreadCount = notifications.filter(n => !n.read).length;
+  const shown = showAll ? notifications : notifications.slice(0, PREVIEW_COUNT);
 
   function markAllRead(e) {
     e.stopPropagation();
@@ -65,7 +73,7 @@ export default function NotificationDropdown({ userId, open, onToggle }) {
               No notifications yet
             </div>
           ) : (
-            notifications.slice(0, 8).map(n => {
+            shown.map(n => {
               const ni = notifIcon(n.type);
               return (
                 <div key={n.id} className={'notif-item' + (n.read ? '' : ' unread')} data-notif-id={n.id}>
@@ -82,6 +90,12 @@ export default function NotificationDropdown({ userId, open, onToggle }) {
             })
           )}
         </div>
+        {notifications.length > PREVIEW_COUNT && (
+          <button type="button" className="notif-view-all" onClick={e => { e.stopPropagation(); setShowAll(v => !v); }}
+                  style={{ width: '100%', padding: 10, border: 'none', borderTop: '1px solid var(--border)', background: 'none', color: '#4f46e5', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+            {showAll ? 'Show latest only' : `View all (${notifications.length})`}
+          </button>
+        )}
       </div>
     </>
   );

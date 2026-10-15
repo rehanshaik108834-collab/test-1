@@ -50,7 +50,9 @@ export class RevenueService {
   summary() {
     const totalRevenue = this.ledger.totalRevenue();
     const grossVolume = this.grossVolume();
-    const allTasks = this.tasks.findAll({ status: undefined } as any) || [];
+    // 'system' includes drafts. The viewer-less call hid them, so
+    // `draftProjects` always reported 0.
+    const allTasks = this.tasks.findAll({}, 'system');
 
     return {
       totalRevenue,
@@ -371,6 +373,34 @@ export class RevenueService {
     // FEE_CONFIG objects, so the rates below would mutate `before` too and
     // every diff would come out empty.
     const before = structuredClone(this.getFeeConfig());
+
+    // Validate the whole request before changing anything. The tier arrays
+    // were checked while being applied, so a bad third value threw after the
+    // scalar rates and the first tiers had already changed — a half-applied
+    // update, with no audit record because the throw skipped it.
+    const tiers = FEE_CONFIG.workerService.length;
+    const bands = FEE_CONFIG.contractInitiation.length;
+    if (dto.workerServicePercents) {
+      if (!Array.isArray(dto.workerServicePercents) || dto.workerServicePercents.length !== tiers) {
+        throw new BadRequestException(`Expected ${tiers} worker service tiers.`);
+      }
+      dto.workerServicePercents.forEach((p, i) => {
+        if (typeof p !== 'number' || !Number.isFinite(p) || p < 0 || p > 100) {
+          throw new BadRequestException(`Worker service tier ${i + 1} must be between 0 and 100.`);
+        }
+      });
+    }
+    if (dto.contractInitiationFees) {
+      if (!Array.isArray(dto.contractInitiationFees) || dto.contractInitiationFees.length !== bands) {
+        throw new BadRequestException(`Expected ${bands} initiation bands.`);
+      }
+      dto.contractInitiationFees.forEach((f, i) => {
+        if (typeof f !== 'number' || !Number.isFinite(f) || f < 0) {
+          throw new BadRequestException(`Initiation band ${i + 1} must be zero or greater.`);
+        }
+      });
+    }
+
     if (dto.depositPercent !== undefined) FEE_CONFIG.deposit.percent = dto.depositPercent;
     if (dto.depositFixed !== undefined) FEE_CONFIG.deposit.fixed = dto.depositFixed;
     if (dto.clientMarketplacePercent !== undefined) {
@@ -379,34 +409,8 @@ export class RevenueService {
     if (dto.expertServicePercent !== undefined) FEE_CONFIG.expertService.percent = dto.expertServicePercent;
     if (dto.withdrawalPercent !== undefined) FEE_CONFIG.withdrawal.percent = dto.withdrawalPercent;
     if (dto.withdrawalFixed !== undefined) FEE_CONFIG.withdrawal.fixed = dto.withdrawalFixed;
-
-    if (dto.workerServicePercents) {
-      if (dto.workerServicePercents.length !== FEE_CONFIG.workerService.length) {
-        throw new BadRequestException(
-          `Expected ${FEE_CONFIG.workerService.length} worker service tiers, received ${dto.workerServicePercents.length}.`,
-        );
-      }
-      dto.workerServicePercents.forEach((p, i) => {
-        if (typeof p !== 'number' || p < 0 || p > 100) {
-          throw new BadRequestException(`Worker service tier ${i + 1} must be between 0 and 100.`);
-        }
-        FEE_CONFIG.workerService[i].percent = p;
-      });
-    }
-
-    if (dto.contractInitiationFees) {
-      if (dto.contractInitiationFees.length !== FEE_CONFIG.contractInitiation.length) {
-        throw new BadRequestException(
-          `Expected ${FEE_CONFIG.contractInitiation.length} initiation bands, received ${dto.contractInitiationFees.length}.`,
-        );
-      }
-      dto.contractInitiationFees.forEach((f, i) => {
-        if (typeof f !== 'number' || f < 0) {
-          throw new BadRequestException(`Initiation band ${i + 1} must be zero or greater.`);
-        }
-        FEE_CONFIG.contractInitiation[i].fee = f;
-      });
-    }
+    dto.workerServicePercents?.forEach((p, i) => { FEE_CONFIG.workerService[i].percent = p; });
+    dto.contractInitiationFees?.forEach((f, i) => { FEE_CONFIG.contractInitiation[i].fee = f; });
 
     const after = this.getFeeConfig();
     this.audit.record({

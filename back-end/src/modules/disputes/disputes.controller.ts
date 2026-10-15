@@ -5,6 +5,8 @@ import { CreateDisputeDto } from './dto/create-dispute.dto';
 import { ResolveDisputeDto } from './dto/resolve-dispute.dto';
 import { RoleGuard } from '../../common/guards/role.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { CurrentActor } from '../../common/decorators/actor.decorator';
+import type { Actor } from '../../common/decorators/actor.decorator';
 
 @ApiTags('Disputes')
 @Controller('disputes')
@@ -28,15 +30,15 @@ export class DisputesController {
   @ApiHeader({ name: 'role', required: true, description: 'User role required' })
   @Roles('client', 'worker')
   @ApiOperation({ summary: 'Create a dispute' })
-  create(@Body() dto: CreateDisputeDto) {
-    return this.disputesService.create(dto);
+  create(@Body() dto: CreateDisputeDto, @CurrentActor() actor: Actor) {
+    return this.disputesService.create(dto, actor);
   }
 
   @Post(':id/resolve')
   @ApiHeader({ name: 'role', required: true, description: 'User role required' })
   @Roles('expert')
   @ApiOperation({ summary: 'Resolve a dispute (updates milestone status based on verdict)' })
-  resolve(@Param('id') id: string, @Body() dto: ResolveDisputeDto) {
-    return this.disputesService.resolve(id, dto);
+  resolve(@Param('id') id: string, @Body() dto: ResolveDisputeDto, @CurrentActor() actor: Actor) {
+    return this.disputesService.resolve(id, dto, actor);
   }
 }

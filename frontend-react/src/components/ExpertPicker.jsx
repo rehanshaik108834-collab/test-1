@@ -20,19 +20,30 @@ export function matchingExperts(Store, category) {
   return experts.filter(e => Array.isArray(e.domains) && e.domains.includes(category));
 }
 
-export default function ExpertPicker({ category, selectedId, onChange }) {
+/**
+ * `lockedId` shows only that reviewer, pre-selected and not changeable — for
+ * a dispute on a project whose client already chose its reviewer.
+ */
+export default function ExpertPicker({ category, selectedId, onChange, lockedId }) {
   const Store = useStore();
   const [profileId, setProfileId] = useState(null);       // last profile shown (the modal stays in the DOM once opened)
   const [profileOpen, setProfileOpen] = useState(false);
 
-  const list = matchingExperts(Store, category);
+  const list = lockedId
+    ? matchingExperts(Store, null).filter(e => e.id === lockedId)
+    : matchingExperts(Store, category);
 
   // A reviewer selected for a different category is no longer valid.
   useEffect(() => {
-    if (selectedId && !list.some(e => e.id === selectedId)) onChange(null);
+    if (lockedId) {
+      if (selectedId !== lockedId && list.length) onChange(lockedId);
+    } else if (selectedId && !list.some(e => e.id === selectedId)) {
+      onChange(null);
+    }
   });
 
   function select(id) {
+    if (lockedId) return;
     onChange(selectedId === id ? null : id);
   }
 

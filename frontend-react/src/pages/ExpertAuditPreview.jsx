@@ -73,6 +73,24 @@ function PersonAvatar({ background, children }) {
   );
 }
 
+/**
+ * Runs a Store write, returning its result or null. A refusal is shown with
+ * the server's own reason (e.g. "Insufficient wallet balance…").
+ */
+function attempt(fn) {
+  try {
+    return fn();
+  } catch (e) {
+    const el = document.createElement('div');
+    el.setAttribute('role', 'alert');
+    el.style.cssText = 'position:fixed;bottom:28px;right:28px;z-index:99999;background:#ef4444;color:#fff;padding:14px 20px;border-radius:14px;font-size:14px;max-width:380px;';
+    el.textContent = e.message;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 5000);
+    return null;
+  }
+}
+
 export default function ExpertAuditPreview() {
   const Store = useStore();
   const Auth = useAuth();
@@ -93,6 +111,9 @@ export default function ExpertAuditPreview() {
   const session = Auth.getCurrentUser();
   const a = pv.auditRequest;
   const p = pv.project;
+  // Disputes and technical audits share this page, so the sidebar tab (and
+  // where "back" goes) follows the engagement — it always said Audit Requests.
+  const home = pv.kind === 'dispute-audit' ? '/expert-dispute-cases' : '/expert-audit-requests';
   const live = (pv.offers || []).find(o => o.status === 'pending');
   const canAccept = live && live.offeredBy === 'client';
   const negotiating = ['preview-sent', 'negotiating'].includes(a.status);
@@ -100,33 +121,33 @@ export default function ExpertAuditPreview() {
   function quote() {
     const amount = parseFloat(quoteValue);
     if (!amount || amount < 1) { Validate.toast('Enter a price greater than zero.', 'error'); return; }
-    const r = Store.makeAuditOffer(arId, { amount, offeredBy: 'expert', note: 'Quote from reviewer' });
-    if (!r) { Validate.toast('Could not send that quote.', 'error'); return; }
+    const r = attempt(() => Store.makeAuditOffer(arId, { amount, note: 'Quote from reviewer' }));
+    if (!r) return;
     Validate.toast(`Quote of $${amount.toLocaleString()} sent to the client.`, 'success');
     setQuoteValue('');
     reload();
   }
 
   function acceptOffer(offerId) {
-    const r = Store.acceptAuditOffer(arId, offerId);
-    if (!r) { Validate.toast('Could not accept that offer.', 'error'); return; }
+    const r = attempt(() => Store.acceptAuditOffer(arId, offerId));
+    if (!r) return;
     Validate.toast('Fee agreed. The client now funds escrow.', 'success');
     reload();
   }
 
   function takeJob() {
-    const r = Store.acceptAuditEngagement(arId, Auth.getCurrentUser().userId);
-    if (!r) { Validate.toast('Could not accept the engagement.', 'error'); return; }
+    const r = attempt(() => Store.acceptAuditEngagement(arId));
+    if (!r) return;
     Validate.toast('Engagement accepted. You can now file your report.', 'success');
     reload();
   }
 
   function decline() {
     Validate.confirm('Decline this audit? The client will need to find another reviewer.', () => {
-      const r = Store.declineAuditEngagement(arId, 'Declined by reviewer');
-      if (!r) { Validate.toast('Could not decline.', 'error'); return; }
+      const r = attempt(() => Store.declineAuditEngagement(arId, 'Declined by reviewer'));
+      if (!r) return;
       Validate.toast('Audit declined.', 'info');
-      navigate('/expert-audit-requests');
+      navigate(home);
     });
   }
 
@@ -136,7 +157,7 @@ export default function ExpertAuditPreview() {
     <PageWithStyle>
       <DashboardLayout
         role="expert"
-        activePath="/expert-audit-requests"
+        activePath={home}
         pageTitle="Review before accepting"
         pageSubtitle={`${pv.kind === 'dispute-audit' ? 'Dispute audit' : 'Technical audit'} · status: ${a.status.replace(/-/g, ' ')}`}
       >

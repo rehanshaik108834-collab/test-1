@@ -18,6 +18,7 @@ import { useStore } from '../context/StoreContext';
 import { useValidation } from '../context/ValidationContext';
 import usePageTitle from '../hooks/usePageTitle';
 import pageCss from './ReviewDeliverable.css?raw';
+import { escapeHtml } from '../utils/helpers';
 
 const CHECKLIST = [
   { id: 1, label: 'Code meets project requirements' },
@@ -177,7 +178,11 @@ export default function ReviewDeliverable() {
   const [searchParams] = useSearchParams();
   const session = Auth.getCurrentUser();
   const milestoneId = searchParams.get('milestoneId') || searchParams.get('id');
-  const role = searchParams.get('role') || 'client';
+  // The layout follows who is signed in. It came from `?role=`, defaulting
+  // to client, so a link without the parameter (the worker sidebar's "Reports")
+  // drew another role's sidebar — whose Settings link then bounced the user
+  // to their dashboard.
+  const role = session?.role || searchParams.get('role') || 'client';
 
   const [checked, setChecked] = useState([]);           // ids of ticked checklist items
   const [comments, setComments] = useState('');
@@ -237,17 +242,29 @@ export default function ReviewDeliverable() {
     setConfirmOpen(false);
     try {
       Store.approveDeliverable(milestone.id);
-      Store.addNotification({ userId: deliverable.workerId, type: 'payment', text: `$${deliverable.budget.toLocaleString()} released from escrow`, subtext: deliverable.milestone + ' approved · just now', read: false });
-    } catch (e) { console.warn('Store error:', e); }
-    Validate.toast('✓ $' + deliverable.budget.toLocaleString() + ' released to ' + deliverable.worker, 'success');
+    } catch (e) {
+      // e.g. escrow cannot cover it, or the milestone is under dispute. This
+      // used to be logged and then reported as "released".
+      Validate.toast(escapeHtml(e.message), 'error');
+      return;
+    }
+    Store.addNotification({ userId: deliverable.workerId, type: 'payment', text: `$${deliverable.budget.toLocaleString()} released from escrow`, subtext: deliverable.milestone + ' approved · just now', read: false });
+    Validate.toast('✓ $' + deliverable.budget.toLocaleString() + ' released to ' + escapeHtml(deliverable.worker), 'success');
     setTimeout(() => navigate('/client-my-projects'), 2000);
   }
 
   function handleRequestChanges() {
     if (!comments.trim()) { setCommentsError('Please add revision comments before requesting changes.'); return; }
     setCommentsError('');
-    try { Store.updateMilestone(milestone.id, { status: 'todo' }); } catch (e) { /* ignore */ }
-    Validate.toast('Revision request sent to ' + deliverable.worker, 'success');
+    // 'revision-needed' is the status the board and the server understand;
+    // 'todo' was not one of them.
+    try {
+      Store.updateMilestone(milestone.id, { status: 'revision-needed' });
+    } catch (e) {
+      Validate.toast(escapeHtml(e.message), 'error');
+      return;
+    }
+    Validate.toast('Revision request sent to ' + escapeHtml(deliverable.worker), 'success');
     setTimeout(() => navigate('/client-my-projects'), 1800);
   }
 
@@ -266,7 +283,7 @@ export default function ReviewDeliverable() {
     } catch (e) {
       console.warn('Could not set disputeTargetMilestone in localStorage', e);
     }
-    navigate('/dispute');
+    navigate('/dispute?milestoneId=' + encodeURIComponent(milestone.id));
   }
 
   return (

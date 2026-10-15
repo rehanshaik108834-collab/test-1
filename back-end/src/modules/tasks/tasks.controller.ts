@@ -1,10 +1,12 @@
-import { Controller, Get, Post, Patch, Delete, Param, Body, Query, Headers, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiHeader, ApiQuery } from '@nestjs/swagger';
 import { TasksService } from './tasks.service';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { RoleGuard } from '../../common/guards/role.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { CurrentActor } from '../../common/decorators/actor.decorator';
+import type { Actor } from '../../common/decorators/actor.decorator';
 
 @ApiTags('Tasks')
 @Controller('tasks')
@@ -18,14 +20,12 @@ export class TasksController {
   @ApiQuery({ name: 'workerId', required: false })
   @ApiQuery({ name: 'status', required: false })
   findAll(
+    @CurrentActor() actor: Actor,
     @Query('clientId') clientId?: string,
     @Query('workerId') workerId?: string,
     @Query('status') status?: string,
-    @Headers('user-id') userId?: string,
   ) {
-    // viewerId lets a client see their own draft projects in an unfiltered
-    // listing; drafts stay hidden from everyone else.
-    return this.tasksService.findAll({ clientId, workerId, status, viewerId: userId });
+    return this.tasksService.findAll({ clientId, workerId, status }, actor);
   }
 
   @Get(':id')
@@ -36,18 +36,18 @@ export class TasksController {
 
   @Post()
   @ApiHeader({ name: 'role', required: true, description: 'User role required' })
-  @Roles('client')
-  @ApiOperation({ summary: 'Create a new task' })
-  create(@Body() dto: CreateTaskDto) {
-    return this.tasksService.create(dto);
+  @Roles('client', 'superuser')
+  @ApiOperation({ summary: 'Create a new task (a client creates their own; staff name the client)' })
+  create(@Body() dto: CreateTaskDto, @CurrentActor() actor: Actor) {
+    return this.tasksService.create(dto, actor);
   }
 
   @Patch(':id')
   @ApiHeader({ name: 'role', required: true, description: 'User role required' })
-  @Roles('client')
-  @ApiOperation({ summary: 'Update a task' })
-  update(@Param('id') id: string, @Body() dto: UpdateTaskDto) {
-    return this.tasksService.update(id, dto);
+  @Roles('client', 'superuser')
+  @ApiOperation({ summary: 'Edit your own task' })
+  update(@Param('id') id: string, @Body() dto: UpdateTaskDto, @CurrentActor() actor: Actor) {
+    return this.tasksService.update(id, dto, actor);
   }
 
   @Post(':id/cancel-draft')
@@ -57,15 +57,15 @@ export class TasksController {
     summary: 'Abandon a draft project',
     description: 'Cancels a project still awaiting its technical audit and refunds any audit escrow.',
   })
-  cancelDraft(@Param('id') id: string) {
-    return this.tasksService.cancelDraft(id);
+  cancelDraft(@Param('id') id: string, @CurrentActor() actor: Actor) {
+    return this.tasksService.cancelDraft(id, actor);
   }
 
   @Delete(':id')
   @ApiHeader({ name: 'role', required: true, description: 'User role required' })
   @Roles('client', 'superuser')
-  @ApiOperation({ summary: 'Delete a task' })
-  remove(@Param('id') id: string) {
-    return this.tasksService.delete(id);
+  @ApiOperation({ summary: 'Delete a project that never started' })
+  remove(@Param('id') id: string, @CurrentActor() actor: Actor) {
+    return this.tasksService.delete(id, actor);
   }
 }

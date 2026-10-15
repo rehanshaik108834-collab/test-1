@@ -31,9 +31,10 @@ export class CreateTaskDto {
   @IsOptional() @IsArray()
   skills?: string[];
 
-  @ApiProperty({ example: 'u1' })
-  @IsString()
-  clientId: string;
+  /** Ignored for a client — the owner is always the caller. Required when staff create on a client's behalf. */
+  @ApiPropertyOptional({ example: 'u1' })
+  @IsOptional() @IsString()
+  clientId?: string;
 
   @ApiPropertyOptional({ example: false })
   @IsOptional() @IsBoolean()

@@ -7,6 +7,7 @@
  */
 import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import DashboardLayout from '../components/DashboardLayout';
 import EmptyState from '../components/EmptyState';
 import Icon from '../components/Icon';
@@ -160,10 +161,15 @@ function PartyCard({ color, initials, name, role, tag, tagClass }) {
 
 export default function ExpertReportDispute() {
   const Store = useStore();
+  const Auth = useAuth();
   usePageTitle('Dispute Resolution Report — Lannent');
   const [searchParams] = useSearchParams();
   const rid = searchParams.get('id') || searchParams.get('disputeId') || '';
-  const role = searchParams.get('role') || 'expert';
+  // The layout follows who is signed in. It came from `?role=`, defaulting
+  // to expert, so a link without the parameter (the worker sidebar's "Reports")
+  // drew another role's sidebar — whose Settings link then bounced the user
+  // to their dashboard.
+  const role = Auth.getCurrentUser()?.role || searchParams.get('role') || 'expert';
 
   // Load from Store — fall back to first resolved dispute
   const [r] = useState(() => {

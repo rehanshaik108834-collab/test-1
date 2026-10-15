@@ -1,4 +1,4 @@
-import { IsString, IsOptional, ValidateNested } from 'class-validator';
+import { IsString, IsOptional, IsEmail, MinLength, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 import { FileRefDto } from '../../milestones/dto/update-milestone.dto';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -9,12 +9,13 @@ export class CreateExpertApplicationDto {
   name: string;
 
   @ApiProperty({ example: 'jane@gmail.com' })
-  @IsString()
+  @IsEmail()
   email: string;
 
-  @ApiPropertyOptional({ example: 'Expert@123' })
-  @IsOptional() @IsString()
-  password?: string;
+  /** Becomes the reviewer's login on approval, so it is required. */
+  @ApiProperty({ example: 'Expert@123' })
+  @IsString() @MinLength(8)
+  password: string;
 
   @ApiPropertyOptional({ example: '9876543210' })
   @IsOptional() @IsString()

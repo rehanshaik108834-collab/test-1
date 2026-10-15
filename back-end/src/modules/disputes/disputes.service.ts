@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { CreateDisputeDto } from './dto/create-dispute.dto';
 import { ResolveDisputeDto } from './dto/resolve-dispute.dto';
 import { DisputesRepository } from './disputes.repository';
@@ -8,6 +8,9 @@ import { LedgerService } from '../ledger/ledger.service';
 import { canViewTask, canViewAnyRecord } from '../../common/guards/viewer.util';
 import { AuditRequestsService } from '../audit-requests/audit-requests.service';
 import { AppLoggerService } from '../../common/logging/app-logger.service';
+import { UsersService } from '../users/users.service';
+import { Actor } from '../../common/decorators/actor.decorator';
+import { assertAllowed } from '../../common/guards/viewer.util';
 
 /**
  * DisputesService — Business Logic Layer
@@ -23,6 +26,7 @@ export class DisputesService {
     @Inject(forwardRef(() => TasksService)) private tasksService: TasksService,
     @Inject(forwardRef(() => LedgerService)) private ledger: LedgerService,
     @Inject(forwardRef(() => AuditRequestsService)) private auditRequests: AuditRequestsService,
+    @Inject(forwardRef(() => UsersService)) private users: UsersService,
     private readonly log: AppLoggerService,
   ) {}
 
@@ -54,33 +58,65 @@ export class DisputesService {
     try { return fn(); } catch { return null; }
   }
 
-  create(dto: CreateDisputeDto) {
+  create(dto: CreateDisputeDto, actor: Actor) {
+    // Parties come from the project, not the body. `raisedBy` and `againstId`
+    // were taken as sent, so anyone could open a dispute in someone else's
+    // name — on a project they had nothing to do with.
+    const task = this.tasksService.findById(dto.taskId);
+    if (!task.workerId) {
+      throw new BadRequestException('A dispute needs a hired worker — nobody is working on this project yet.');
+    }
+    const isClient = task.clientId === actor.id;
+    const isWorker = task.workerId === actor.id;
+    assertAllowed(isClient || isWorker, 'Only the client and the worker on this project can raise a dispute about it.');
+    const againstId = isClient ? task.workerId : task.clientId;
+
+    if (dto.milestoneId) {
+      const ms = this.milestonesService.findById(dto.milestoneId);
+      if (ms.taskId !== task.id) throw new BadRequestException('That milestone does not belong to this project.');
+      if (['completed', 'approved'].includes(ms.status)) {
+        throw new BadRequestException('This milestone has already been paid and can no longer be disputed.');
+      }
+      const open = this.disputesRepository
+        .findAll()
+        .find((d: any) => d.milestoneId === dto.milestoneId && d.status === 'open');
+      if (open) throw new BadRequestException('There is already an open dispute on this milestone.');
+    }
+
     // Check the reviewer before recording anything. The engagement below is
     // best-effort, so an unassignable reviewer used to leave a dispute stored
     // with an expertId that could never take the case — no arbitration, and
     // nothing on screen to say why.
     if (dto.expertId) {
-      const task = this.safe(() => this.tasksService.findById(dto.taskId));
-      this.auditRequests.assertAssignableExpert(dto.expertId, task?.category);
+      this.auditRequests.assertAssignableExpert(dto.expertId, task.category);
     }
 
+    const nameOf = (id: string) => this.safe(() => this.users.findById(id))?.name || '';
+    dto = {
+      ...dto,
+      raisedBy: actor.id,
+      raisedByName: nameOf(actor.id),
+      againstId,
+      againstName: nameOf(againstId),
+    };
+
     const dispute = {
+      ...dto,
       id: this.disputesRepository.generateId(),
       status: 'open',
-      expertId: null,
+      expertId: dto.expertId || null,
       verdict: null,
       resolution: null,
       createdAt: new Date().toISOString().slice(0, 10),
       resolvedAt: null,
       milestoneId: dto.milestoneId || null,
-      ...dto,
     };
     this.disputesRepository.insert(dispute);
 
     // If milestone exists, set it to disputed
     if (dto.milestoneId) {
       try {
-        this.milestonesService.update(dto.milestoneId, { status: 'disputed' });
+        this.milestonesService.systemUpdate(dto.milestoneId, { status: 'disputed' });
       } catch (e) {
         // Swallowing is right — the dispute is recorded either way — but a
         // milestone left un-flagged is a real inconsistency to know about.
@@ -107,6 +143,11 @@ export class DisputesService {
         project: task.title,
         milestone: dto.milestone,
         status: 'preview-sent',
+        // The client pays the reviewer, so a fee the client proposes opens the
+        // negotiation — the same as a technical audit's opening offer. Without
+        // it the reviewer saw "No offers yet" and the client had no prompt to
+        // make one.
+        openingOffer: isClient ? dto.reviewerFee : undefined,
       });
       (dispute as any).auditRequestId = auditRequest.id;
     } catch (e) {
@@ -122,10 +163,26 @@ export class DisputesService {
     return dispute;
   }
 
-  resolve(id: string, dto: ResolveDisputeDto) {
+  resolve(id: string, dto: ResolveDisputeDto, actor: Actor) {
     const dispute = this.findById(id);
+    // A verdict moves money, so it can be given once, by the reviewer the
+    // dispute was assigned to. Neither was checked: any expert could resolve
+    // any dispute, and resolving it again refunded the client again.
+    if (dispute.status !== 'open') {
+      throw new BadRequestException(`This dispute is already ${dispute.status}.`);
+    }
+    assertAllowed(
+      dispute.expertId && dispute.expertId === actor.id,
+      'Only the Expert Reviewer assigned to this dispute can resolve it.',
+    );
+    if (dispute.milestoneId && dto.verdict !== 'worker-favour' && this.ledger.isMilestoneReleased(dispute.milestoneId)) {
+      // The worker has already been paid for this milestone; refunding the
+      // client as well would spend money held for other milestones.
+      throw new BadRequestException('This milestone has already been paid out, so it cannot be refunded.');
+    }
+
     dispute.status = 'resolved';
-    dispute.expertId = dto.expertId;
+    dispute.expertId = actor.id;
     dispute.verdict = dto.verdict;
     dispute.resolution = dto.resolution;
     dispute.resolvedAt = new Date().toISOString().slice(0, 10);
@@ -147,7 +204,7 @@ export class DisputesService {
           amount: ms.budget,
           description: `Dispute resolved in worker's favour — ${ms.title}`,
         });
-        this.milestonesService.update(dispute.milestoneId, { status: 'completed' });
+        this.milestonesService.systemUpdate(dispute.milestoneId, { status: 'completed' });
         this.milestonesService.checkTaskCompletion(dispute.taskId);
       } else if (dto.verdict === 'client-favour') {
         settlement = this.ledger.refundToClient({
@@ -156,7 +213,7 @@ export class DisputesService {
           amount: ms.budget,
           reason: `Dispute resolved in client's favour — ${ms.title}`,
         });
-        this.milestonesService.update(dispute.milestoneId, { status: 'revision-needed' });
+        this.milestonesService.systemUpdate(dispute.milestoneId, { status: 'revision-needed' });
       } else if (dto.verdict === 'split') {
         // Half to the worker, half back to the client.
         const half = Math.round((ms.budget / 2) * 100) / 100;
@@ -175,7 +232,7 @@ export class DisputesService {
           reason: `Dispute split — client's share of ${ms.title}`,
         });
         settlement = { release, refund };
-        this.milestonesService.update(dispute.milestoneId, { status: 'completed' });
+        this.milestonesService.systemUpdate(dispute.milestoneId, { status: 'completed' });
         this.milestonesService.checkTaskCompletion(dispute.taskId);
       }
     }

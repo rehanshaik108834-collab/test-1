@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsNumber, Min, Max } from 'class-validator';
+import { IsString, IsOptional, IsNumber, IsIn, Min, Max } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateAuditReportDto {
@@ -6,20 +6,22 @@ export class CreateAuditReportDto {
   @IsString()
   auditRequestId: string;
 
-  @ApiProperty({ example: 't2' })
-  @IsString()
-  taskId: string;
+  /** Ignored — taken from the engagement. */
+  @ApiPropertyOptional({ example: 't2' })
+  @IsOptional() @IsString()
+  taskId?: string;
 
   @ApiPropertyOptional({ example: 'm6', description: 'Omitted for a whole-project or dispute audit' })
   @IsOptional() @IsString()
   milestoneId?: string;
 
-  @ApiProperty({ example: 'u3' })
-  @IsString()
-  expertId: string;
+  /** Ignored — the assigned reviewer files the report. */
+  @ApiPropertyOptional({ example: 'u3' })
+  @IsOptional() @IsString()
+  expertId?: string;
 
   @ApiPropertyOptional({ example: 'pass', enum: ['pass', 'fail', 'conditional'] })
-  @IsOptional() @IsString()
+  @IsOptional() @IsIn(['pass', 'fail', 'conditional'])
   verdict?: string;
 
   @ApiPropertyOptional({ example: 'Pass' })

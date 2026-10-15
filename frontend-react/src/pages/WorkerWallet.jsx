@@ -17,6 +17,7 @@ import { useValidation } from '../context/ValidationContext';
 import useRerender from '../hooks/useRerender';
 import usePageTitle from '../hooks/usePageTitle';
 import pageCss from './WorkerWallet.css?raw';
+import { newestFirst } from '../utils/helpers';
 
 const RELEASED_MS = ['completed', 'approved', 'done', 'paid'];
 const PENDING_MS = ['submitted', 'review', 'audit-requested', 'audit-passed', 'disputed'];
@@ -60,11 +61,12 @@ function computeWorkerWalletData(Store, userId) {
   const releaseTxs = allTxs.filter(t => t.type === 'milestone-release' && workerTaskIds.has(t.taskId));
   const escrowTxs = allTxs.filter(t => t.type === 'escrow-lock' && workerTaskIds.has(t.taskId));
   const userTxIds = new Set(userTxs.map(t => t.id));
-  const combinedTxs = [
+  // Newest first — the same jumbled concatenation the client wallet had.
+  const combinedTxs = newestFirst([
     ...userTxs,
     ...releaseTxs.filter(t => !userTxIds.has(t.id)),
     ...escrowTxs.filter(t => !userTxIds.has(t.id)),
-  ];
+  ]);
 
   // Map transactions for display
   const transactions = combinedTxs.map(t => {
@@ -160,9 +162,11 @@ export default function WorkerWallet() {
 
     // One call: the server debits the gross, keeps the payout fee and writes
     // the ledger row, so a partial failure cannot leave the books unbalanced.
-    const result = Store.withdrawFromWallet(session.userId, value);
-    if (!result) {
-      setAmountError('Withdrawal failed. Your balance may have changed — reopen this dialog and try again.');
+    let result;
+    try {
+      result = Store.withdrawFromWallet(session.userId, value);
+    } catch (e) {
+      setAmountError(e.message);
       return;
     }
 

@@ -26,7 +26,7 @@ const VERDICT_LABELS = { 'worker-favour': 'Worker receives full payment', 'clien
 /** Applies a verdict and notifies both parties. */
 function resolveAndNotify(Store, Auth, disputeId, verdict, resolution) {
   const d = Store.getDisputeById(disputeId);
-  Store.resolveDispute(disputeId, { verdict, resolution, expertId: Auth.getCurrentUser()?.userId || 'u4' });
+  Store.resolveDispute(disputeId, { verdict, resolution });
   // Notify both parties
   const vLabel = verdict === 'worker-favour' ? 'in favour of the Worker' : verdict === 'client-favour' ? 'in favour of the Client' : 'with a 50/50 split';
   if (d && d.raisedBy) {

@@ -6,9 +6,10 @@ export class CreateMessageDto {
   @IsString()
   taskId: string;
 
-  @ApiProperty({ example: 'u1' })
-  @IsString()
-  senderId: string;
+  /** Ignored — messages are sent as the caller. */
+  @ApiPropertyOptional({ example: 'u1' })
+  @IsOptional() @IsString()
+  senderId?: string;
 
   @ApiProperty({ example: 'u2' })
   @IsString()

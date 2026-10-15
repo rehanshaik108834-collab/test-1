@@ -18,6 +18,7 @@ import { useStore } from '../context/StoreContext';
 import { useValidation } from '../context/ValidationContext';
 import usePageTitle from '../hooks/usePageTitle';
 import pageCss from './StaffSettings.css?raw';
+import { escapeHtml } from '../utils/helpers';
 
 // What each staff role can do (read-only list).
 const SCOPES = {
@@ -68,8 +69,12 @@ export default function StaffSettings() {
     if (nameVal.length < 2) { Validate.toast('Enter a display name.', 'error'); return; }
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(emailVal)) { Validate.toast('Enter a valid email address.', 'error'); return; }
 
-    const updated = Store.updateUser(session.userId, { name: nameVal, email: emailVal });
-    if (!updated) { Validate.toast('Could not save. Please try again.', 'error'); return; }
+    try {
+      Store.updateUser(session.userId, { name: nameVal });
+    } catch (e) {
+      Validate.toast(escapeHtml(e.message), 'error');
+      return;
+    }
 
     // Keep the session in step so the top bar does not show a stale name.
     try {

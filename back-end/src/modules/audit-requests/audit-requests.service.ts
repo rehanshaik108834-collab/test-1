@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Inject, forwardRef } from '@nestjs/common';
 import { CreateAuditRequestDto } from './dto/create-audit-request.dto';
 import { UpdateAuditRequestDto } from './dto/update-audit-request.dto';
 import { CreateOfferDto, AcceptAuditDto, DeclineAuditDto } from './dto/audit-offer.dto';
@@ -10,6 +10,9 @@ import { MilestonesService } from '../milestones/milestones.service';
 import { UsersService } from '../users/users.service';
 import { DisputesService } from '../disputes/disputes.service';
 import { LedgerService } from '../ledger/ledger.service';
+import { Actor } from '../../common/decorators/actor.decorator';
+import { assertAllowed } from '../../common/guards/viewer.util';
+import { ROLES } from '../../common/constants/roles';
 
 /**
  * AuditRequestsService — the Expert Reviewer engagement.
@@ -85,15 +88,68 @@ export class AuditRequestsService {
 
     // A client can open with a price so experts see a number in their queue.
     if (openingOffer) {
-      this.addOffer(ar.id, { amount: openingOffer, offeredBy: 'client', note: 'Opening offer' });
+      this.recordOffer(ar, { amount: openingOffer, offeredBy: 'client', note: 'Opening offer' });
     }
     return this.auditRequestsRepository.findById(ar.id);
   }
 
-  update(id: string, dto: UpdateAuditRequestDto) {
-    const updated = this.auditRequestsRepository.update(id, dto);
+  /**
+   * A client opens an audit on their own project (e.g. "find another
+   * reviewer" after a decline). Ownership, the worker and the kind come from
+   * the task, not the body: a dispute audit is only ever opened by a dispute.
+   */
+  createForClient(dto: CreateAuditRequestDto, actor: Actor) {
+    const task = this.tasks.findById(dto.taskId);
+    assertAllowed(
+      task.clientId === actor.id || actor.role === ROLES.SUPERUSER,
+      'You can only request an audit of your own project.',
+    );
+    return this.create({
+      taskId: task.id,
+      clientId: task.clientId,
+      workerId: task.workerId || undefined,
+      expertId: dto.expertId,
+      milestoneId: dto.milestoneId,
+      severity: dto.severity,
+      dueDate: dto.dueDate,
+      openingOffer: dto.openingOffer,
+      project: task.title,
+      category: task.category,
+      kind: AUDIT_KIND.PROJECT,
+    });
+  }
+
+  /**
+   * Descriptive fields only, by a party to the engagement. This accepted
+   * `expertId` from any client or expert, which let a reviewer write
+   * themselves onto someone else's funded engagement and then accept it.
+   */
+  update(id: string, dto: UpdateAuditRequestDto, actor: Actor) {
+    const ar = this.findById(id);
+    this.sideOf(ar, actor);
+    const patch: Record<string, any> = {};
+    for (const key of ['severity', 'dueDate', 'project', 'worker', 'milestone'] as const) {
+      if (dto[key] !== undefined) patch[key] = dto[key];
+    }
+    return this.auditRequestsRepository.update(id, patch);
+  }
+
+  /** Lifecycle writes the platform makes itself (milestone hand-over). */
+  systemUpdate(id: string, partial: Record<string, any>) {
+    const updated = this.auditRequestsRepository.update(id, partial);
     if (!updated) throw new NotFoundException(`Audit request with id "${id}" not found`);
     return updated;
+  }
+
+  /**
+   * Which side of the engagement the caller is on. The offer endpoints took
+   * `offeredBy` from the request body, so a reviewer could post an offer
+   * "from the client" and then accept it themselves.
+   */
+  private sideOf(ar: any, actor: Actor): 'client' | 'expert' {
+    if (actor.id && actor.id === ar.clientId) return 'client';
+    if (actor.id && actor.id === ar.expertId) return 'expert';
+    throw new ForbiddenException('Only the client and the assigned reviewer can act on this audit.');
   }
 
   /**
@@ -137,8 +193,13 @@ export class AuditRequestsService {
   }
 
   /** Records an offer or counter-offer. Either side may open or counter. */
-  addOffer(id: string, dto: CreateOfferDto) {
+  addOffer(id: string, dto: CreateOfferDto, actor: Actor) {
     const ar = this.findById(id);
+    return this.recordOffer(ar, { ...dto, offeredBy: this.sideOf(ar, actor) });
+  }
+
+  private recordOffer(ar: any, dto: { amount: number; offeredBy: string; note?: string }) {
+    const id = ar.id;
     this.assertNegotiable(ar);
 
     // A new offer supersedes any outstanding one.
@@ -160,8 +221,9 @@ export class AuditRequestsService {
   }
 
   /** Accepts an outstanding offer, fixing the fee. The other side must accept. */
-  acceptOffer(id: string, offerId: string, acceptedBy: string) {
+  acceptOffer(id: string, offerId: string, actor: Actor) {
     const ar = this.findById(id);
+    const acceptedBy = this.sideOf(ar, actor);
     this.assertNegotiable(ar);
 
     const offer = (ar.offers || []).find((o: any) => o.id === offerId);
@@ -180,8 +242,9 @@ export class AuditRequestsService {
   }
 
   /** Client moves the agreed fee into escrow. Nothing can start before this. */
-  fund(id: string) {
+  fund(id: string, actor: Actor) {
     const ar = this.findById(id);
+    assertAllowed(ar.clientId === actor.id, 'Only the client on this audit can fund it.');
     if (ar.status !== AUDIT_STATUS.AGREED) {
       throw new BadRequestException(
         `Escrow can only be funded once a fee is agreed (current status: ${ar.status}).`,
@@ -199,14 +262,19 @@ export class AuditRequestsService {
    * project from draft — the client's project only goes live once an expert has
    * committed and the fee is in escrow.
    */
-  accept(id: string, dto: AcceptAuditDto) {
+  accept(id: string, dto: AcceptAuditDto, actor: Actor) {
     const ar = this.findById(id);
+    // The reviewer taking the job is the caller. `expertId` in the body was
+    // compared to the assignment but never to who was asking, so any expert
+    // could accept on the assigned reviewer's behalf. Staff still name one.
+    if (actor.role !== ROLES.SUPERUSER) dto = { ...dto, expertId: actor.id };
     if (ar.status !== AUDIT_STATUS.ESCROW_FUNDED) {
       throw new BadRequestException(
         `An audit can only be accepted once its fee is in escrow (current status: ${ar.status}).`,
       );
     }
-    // The payee comes from the request body, so it has to be checked.
+    if (!dto.expertId) throw new BadRequestException('Name the Expert Reviewer taking this audit.');
+    // The payee has to be a real, active reviewer.
     this.assertAssignableExpert(dto.expertId);
     // The reviewer accepting must be the one the client assigned.
     if (ar.expertId && ar.expertId !== dto.expertId) {
@@ -223,11 +291,32 @@ export class AuditRequestsService {
     return this.auditRequestsRepository.findById(id);
   }
 
-  decline(id: string, dto: DeclineAuditDto) {
+  decline(id: string, dto: DeclineAuditDto, actor: Actor) {
     const ar = this.findById(id);
+    assertAllowed(
+      actor.role === ROLES.SUPERUSER || (ar.expertId && ar.expertId === actor.id),
+      'Only the assigned reviewer can decline this audit.',
+    );
     if (TERMINAL.includes(ar.status)) {
       throw new BadRequestException(`This audit is already ${ar.status}.`);
     }
+    // A decline after funding used to leave the fee in audit escrow with no
+    // reviewer to pay it to and no route to get it back. It goes home.
+    let refund: any = null;
+    const funded = [AUDIT_STATUS.ESCROW_FUNDED, AUDIT_STATUS.IN_PROGRESS].includes(ar.status as any);
+    if (funded && !ar.feePaid && ar.agreedAmount > 0) {
+      const held = this.ledger.getEscrow(ar.taskId).auditHeld;
+      const amount = Math.min(held, ar.agreedAmount);
+      if (amount > 0) {
+        refund = this.ledger.refundAuditEscrow({
+          taskId: ar.taskId,
+          clientId: ar.clientId,
+          amount,
+          reason: 'Reviewer declined the audit — fee returned',
+        });
+      }
+    }
+    ar.refund = refund;
     ar.status = AUDIT_STATUS.DECLINED;
     ar.declineReason = dto.reason || null;
     // Release the assignment so the client can pick someone else.

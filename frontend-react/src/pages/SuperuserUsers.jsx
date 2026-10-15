@@ -104,14 +104,19 @@ export default function SuperuserUsers() {
       return;
     }
 
-    if (editingUserId) {
-      const updates = { name, email, role, status, avatar: initialsOf(name) };
-      if (password) updates.password = password;
-      Store.updateUser(editingUserId, updates);
-      Validate.toast('User updated successfully.', 'success');
-    } else {
-      Store.createUser({ name, email, password, role, status, avatar: initialsOf(name), avatarColor: ROLE_COLORS[role] || '' });
-      Validate.toast('User created successfully.', 'success');
+    try {
+      if (editingUserId) {
+        // Email, role and password are not changed through a profile edit —
+        // the server ignores them here.
+        Store.updateUser(editingUserId, { name, status, avatar: initialsOf(name) });
+        Validate.toast('User updated successfully.', 'success');
+      } else {
+        Store.createUser({ name, email, password, role, avatar: initialsOf(name), avatarColor: ROLE_COLORS[role] || '' });
+        Validate.toast('User created successfully.', 'success');
+      }
+    } catch (e) {
+      Validate.toast(escapeHtml(e.message), 'error');
+      return;
     }
     closeModal();
     rerender();
@@ -124,7 +129,12 @@ export default function SuperuserUsers() {
     Validate.confirm(
       `Are you sure you want to ${newStatus === 'suspended' ? 'suspend' : 'activate'} ${escapeHtml(user.name)}?`,
       () => {
-        Store.updateUser(id, { status: newStatus });
+        try {
+          Store.updateUser(id, { status: newStatus });
+        } catch (e) {
+          Validate.toast(escapeHtml(e.message), 'error');
+          return;
+        }
         rerender();
         Validate.toast(`User ${newStatus === 'suspended' ? 'suspended' : 'activated'}.`, newStatus === 'suspended' ? 'warning' : 'success');
       }
@@ -140,8 +150,13 @@ export default function SuperuserUsers() {
     Validate.confirm(
       `Permanently delete ${escapeHtml(user.name)}? This action cannot be undone.`,
       () => {
+        try {
+          Store.deleteUser(id);
+        } catch (e) {
+          Validate.toast(escapeHtml(e.message), 'error');
+          return;
+        }
         setFrozenRows(filtered);
-        Store.deleteUser(id);
         setFadingId(id);
         setTimeout(() => { setFadingId(null); setFrozenRows(null); }, 300);
         Validate.toast('User deleted.', 'error');

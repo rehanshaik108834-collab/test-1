@@ -129,7 +129,15 @@ export default function Signup() {
     setSubmitting(true);
     setTimeout(() => {
       const initials = nameVal.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
-      Store.createUser({ name: nameVal, email: emailVal, password: pw, role: selectedRole, avatar: initials, avatarColor: ROLE_COLORS[selectedRole] || '' });
+      try {
+        Store.createUser({ name: nameVal, email: emailVal, password: pw, role: selectedRole, avatar: initials, avatarColor: ROLE_COLORS[selectedRole] || '' });
+      } catch (e) {
+        // e.g. the email is taken. A refused signup used to create a
+        // local-only account and then fail to sign in with no explanation.
+        showError('signupEmail', e.message);
+        setSubmitting(false);
+        return;
+      }
       const result = Auth.login(emailVal, pw);
       if (result.success) {
         navigate(Auth.getDashboardUrl(selectedRole));

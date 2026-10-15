@@ -50,15 +50,10 @@ function createAuth(Store) {
         return { success: false, error: err.message || 'Login failed.' };
       }
     } catch (e) {
-      // API unavailable — fall back to Store lookup
-      const user = Store.getUserByEmail(email);
-      if (!user) return { success: false, error: 'No account found with this email address.' };
-      if (user.password !== password) return { success: false, error: 'Incorrect password. Please try again.' };
-      if (user.status === 'suspended') return { success: false, error: 'This account has been suspended. Contact support.' };
-
-      const session = { userId: user.id, role: user.role, name: user.name, email: user.email, avatar: user.avatar, avatarColor: user.avatarColor };
-      try { localStorage.setItem(SESSION_KEY, JSON.stringify(session)); } catch (e2) {}
-      return { success: true, user, session };
+      // No offline fallback. It compared the typed password with the cached
+      // user's — which the API never sends — so it could only ever fail, and
+      // it would have created a session with no token behind it.
+      return { success: false, error: 'The server could not be reached. Please try again.' };
     }
 
     return { success: false, error: 'Login failed. Please try again.' };

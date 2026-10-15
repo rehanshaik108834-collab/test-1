@@ -67,23 +67,19 @@ export default function SuperuserTasks() {
       return;
     }
     Validate.confirm(
-      `Permanently delete "${escapeHtml(task.title)}"? Escrow funds will be refunded to the client.`,
+      `Permanently delete "${escapeHtml(task.title)}"? This cannot be undone.`,
       () => {
-        // Refund escrow to client
-        if (task.budget && task.budget > 0 && task.clientId) {
-          Store.addToWallet(task.clientId, task.budget);
-          Store.createTransaction({
-            type: 'escrow-refund',
-            amount: task.budget,
-            fromId: 'escrow',
-            toId: task.clientId,
-            taskId: task.id,
-            description: `Escrow refund — task "${escapeHtml(task.title)}" deleted by admin`,
-          });
+        // Nothing is held for an open, unhired task, so there is nothing to
+        // refund. The old "refund" deposited the budget into the client's
+        // wallet — new money, every time a task was deleted.
+        try {
+          Store.deleteTask(id);
+        } catch (e) {
+          Validate.toast(escapeHtml(e.message), 'error');
+          return;
         }
-        Store.deleteTask(id);
         rerender();
-        Validate.toast('Task deleted. Escrow refunded to client.', 'success');
+        Validate.toast('Task deleted.', 'success');
       }
     );
   }

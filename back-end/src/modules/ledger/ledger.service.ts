@@ -453,6 +453,9 @@ export class LedgerService {
   totalRevenue() {
     return this.ledger.totalRevenue();
   }
+  isMilestoneReleased(milestoneId: string) {
+    return this.ledger.isMilestoneReleased(milestoneId);
+  }
   getBillings(clientId: string, workerId: string) {
     return this.ledger.getBillings(clientId, workerId);
   }

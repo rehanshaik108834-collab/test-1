@@ -6,9 +6,10 @@ export class CreateOfferDto {
   @IsNumber() @Min(1)
   amount: number;
 
-  @ApiProperty({ example: 'client', enum: ['client', 'expert'] })
-  @IsString()
-  offeredBy: string;
+  /** Ignored — the side is worked out from who is calling. Kept so older clients still validate. */
+  @ApiPropertyOptional({ example: 'client', enum: ['client', 'expert'] })
+  @IsOptional() @IsString()
+  offeredBy?: string;
 
   @ApiPropertyOptional({ example: 'Covers the payment flow and the auth model.' })
   @IsOptional() @IsString()
@@ -16,9 +17,10 @@ export class CreateOfferDto {
 }
 
 export class AcceptAuditDto {
-  @ApiProperty({ example: 'u3', description: 'Expert taking the engagement' })
-  @IsString()
-  expertId: string;
+  /** Ignored for an expert (it is the caller); required when staff assign one. */
+  @ApiPropertyOptional({ example: 'u3', description: 'Expert taking the engagement' })
+  @IsOptional() @IsString()
+  expertId?: string;
 }
 
 export class DeclineAuditDto {

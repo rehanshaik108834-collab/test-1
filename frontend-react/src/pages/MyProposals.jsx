@@ -14,7 +14,7 @@ import StatCard from '../components/StatCard';
 import { useAuth } from '../context/AuthContext';
 import { useStore } from '../context/StoreContext';
 import { useValidation } from '../context/ValidationContext';
-import { hoverBackground } from '../utils/helpers';
+import { hoverBackground, escapeHtml } from '../utils/helpers';
 import usePageTitle from '../hooks/usePageTitle';
 
 const FILTERS = [['all', 'All'], ['pending', 'Pending'], ['accepted', 'Accepted'], ['rejected', 'Rejected']];
@@ -74,7 +74,12 @@ export default function MyProposals() {
 
   function withdrawProposal(id) {
     Validate.confirm('Withdraw this proposal? This action cannot be undone.', () => {
-      Store.updateProposal(id, { status: 'withdrawn' });
+      try {
+        Store.updateProposal(id, { status: 'withdrawn' });
+      } catch (e) {
+        Validate.toast(escapeHtml(e.message), 'error');
+        return;
+      }
       setFading(f => [...f, id]);
       setTimeout(() => setRemoved(r => [...r, id]), 300);
       Validate.toast('Proposal withdrawn.', 'success');

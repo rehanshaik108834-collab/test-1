@@ -1,4 +1,4 @@
-import { IsString, IsOptional } from 'class-validator';
+import { IsString, IsOptional, IsNumber, Min } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateDisputeDto {
@@ -10,17 +10,19 @@ export class CreateDisputeDto {
   @IsOptional() @IsString()
   milestoneId?: string;
 
-  @ApiProperty({ example: 'u1' })
-  @IsString()
-  raisedBy: string;
+  /** Ignored — the caller raises the dispute. */
+  @ApiPropertyOptional({ example: 'u1' })
+  @IsOptional() @IsString()
+  raisedBy?: string;
 
   @ApiPropertyOptional({ example: 'James Client' })
   @IsOptional() @IsString()
   raisedByName?: string;
 
-  @ApiProperty({ example: 'u5' })
-  @IsString()
-  againstId: string;
+  /** Ignored — always the other party on the project. */
+  @ApiPropertyOptional({ example: 'u5' })
+  @IsOptional() @IsString()
+  againstId?: string;
 
   @ApiPropertyOptional({ example: 'Sarah Johnson' })
   @IsOptional() @IsString()
@@ -45,4 +47,8 @@ export class CreateDisputeDto {
   @ApiPropertyOptional({ example: 'u3', description: 'The Expert Reviewer the client selected to arbitrate' })
   @IsOptional() @IsString()
   expertId?: string;
+
+  @ApiPropertyOptional({ example: 150, description: "The client's opening offer for the reviewer's fee" })
+  @IsOptional() @IsNumber() @Min(1)
+  reviewerFee?: number;
 }

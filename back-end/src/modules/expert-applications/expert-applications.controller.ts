@@ -6,6 +6,8 @@ import { UpdateExpertApplicationStatusDto } from './dto/update-expert-applicatio
 import { RoleGuard } from '../../common/guards/role.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { ROLES } from '../../common/constants/roles';
+import { CurrentActor } from '../../common/decorators/actor.decorator';
+import type { Actor } from '../../common/decorators/actor.decorator';
 
 @ApiTags('Expert Applications')
 @Controller('expert-applications')
@@ -55,7 +57,7 @@ export class ExpertApplicationsController {
   // alone. Compliance reads applications; it does not decide them.
   @Roles(ROLES.INTAKE_ADMIN)
   @ApiOperation({ summary: 'Approve or reject expert application (auto-creates user on approval)' })
-  updateStatus(@Param('id') id: string, @Body() dto: UpdateExpertApplicationStatusDto) {
-    return this.expertApplicationsService.updateStatus(id, dto);
+  updateStatus(@Param('id') id: string, @Body() dto: UpdateExpertApplicationStatusDto, @CurrentActor() actor: Actor) {
+    return this.expertApplicationsService.updateStatus(id, dto, actor.id);
   }
 }

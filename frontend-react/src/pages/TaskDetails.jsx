@@ -14,7 +14,7 @@ import PageStyle from '../components/PageStyle';
 import { useAuth } from '../context/AuthContext';
 import { useStore } from '../context/StoreContext';
 import { useValidation } from '../context/ValidationContext';
-import { escapeHtml } from '../utils/helpers';
+import { escapeHtml, getSavedTaskIds, toggleSavedTask } from '../utils/helpers';
 import usePageTitle from '../hooks/usePageTitle';
 import pageCss from './TaskDetails.css?raw';
 
@@ -35,6 +35,16 @@ export default function TaskDetails() {
   const [searchParams] = useSearchParams();
   const urlId = searchParams.get('id');
   const role = Auth.getCurrentUser()?.role;
+
+  // "Save Task" bookmark — the button had no handler at all.
+  const userId = Auth.getCurrentUser()?.userId;
+  const [saved, setSaved] = useState(() => !!urlId && getSavedTaskIds(userId).includes(urlId));
+  function toggleSave() {
+    if (!userId || !urlId) { Validate.toast('Please log in to save tasks.', 'error'); return; }
+    const nowSaved = toggleSavedTask(userId, urlId);
+    setSaved(nowSaved);
+    Validate.toast(nowSaved ? 'Task saved.' : 'Task removed from saved.', nowSaved ? 'success' : 'info');
+  }
 
   // Apply modal
   const [applyOpen, setApplyOpen] = useState(false);
@@ -128,6 +138,8 @@ export default function TaskDetails() {
       }
     } catch (e) {
       console.error('[submitProposal] Error:', e);
+      Validate.toast(escapeHtml(e.message), 'error');
+      return;
     }
 
     setApplyOpen(false);
@@ -231,9 +243,10 @@ export default function TaskDetails() {
                 <>
                 <button className="btn-primary" style={{ width: '100%', padding: 12, borderRadius: 12, fontSize: 15, marginBottom: 12 }} onClick={() => setApplyOpen(true)}>Apply Now</button>
                 {' '}
-                <button className="btn-outline" style={{ width: '100%', padding: 12, borderRadius: 12, fontSize: 15 }}>
-                  <Icon name="bookmark" style={{ width: 16, height: 16, display: 'inline', verticalAlign: 'middle', marginRight: 6 }} />
-                  Save Task
+                <button className="btn-outline" style={{ width: '100%', padding: 12, borderRadius: 12, fontSize: 15, ...(saved ? { borderColor: '#6366f1', color: '#4f46e5', background: '#eef2ff' } : {}) }}
+                        onClick={toggleSave} aria-pressed={saved}>
+                  <Icon name={saved ? 'bookmark-check' : 'bookmark'} style={{ width: 16, height: 16, display: 'inline', verticalAlign: 'middle', marginRight: 6 }} />
+                  {saved ? 'Saved' : 'Save Task'}
                 </button>
                 </>
               ) : (

@@ -1,16 +1,17 @@
-import { IsString, IsOptional } from 'class-validator';
+import { IsString, IsOptional, IsIn, MinLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class ResolveDisputeDto {
-  @ApiProperty({ example: 'u3' })
-  @IsString()
-  expertId: string;
+  /** Ignored — the verdict is given by the assigned reviewer, who is the caller. */
+  @ApiPropertyOptional({ example: 'u3' })
+  @IsOptional() @IsString()
+  expertId?: string;
 
   @ApiProperty({ example: 'worker-favour', enum: ['worker-favour', 'client-favour', 'split'] })
-  @IsString()
+  @IsIn(['worker-favour', 'client-favour', 'split'])
   verdict: string;
 
   @ApiProperty({ example: 'After review, milestone is complete. Releasing escrow.' })
-  @IsString()
+  @IsString() @MinLength(1)
   resolution: string;
 }

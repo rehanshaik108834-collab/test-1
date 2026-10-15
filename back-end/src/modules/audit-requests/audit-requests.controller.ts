@@ -6,6 +6,8 @@ import { UpdateAuditRequestDto } from './dto/update-audit-request.dto';
 import { CreateOfferDto, AcceptAuditDto, DeclineAuditDto } from './dto/audit-offer.dto';
 import { RoleGuard } from '../../common/guards/role.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { CurrentActor } from '../../common/decorators/actor.decorator';
+import type { Actor } from '../../common/decorators/actor.decorator';
 
 @ApiTags('Audit Requests')
 @Controller('audit-requests')
@@ -51,32 +53,32 @@ export class AuditRequestsController {
   @ApiHeader({ name: 'role', required: true, description: 'User role required' })
   @Roles('client', 'superuser')
   @ApiOperation({ summary: 'Create an audit request' })
-  create(@Body() dto: CreateAuditRequestDto) {
-    return this.auditRequestsService.create(dto);
+  create(@Body() dto: CreateAuditRequestDto, @CurrentActor() actor: Actor) {
+    return this.auditRequestsService.createForClient(dto, actor);
   }
 
   @Post(':id/offers')
   @ApiHeader({ name: 'role', required: true, description: 'User role required' })
   @Roles('client', 'expert', 'superuser')
   @ApiOperation({ summary: 'Make or counter an offer for the audit fee' })
-  addOffer(@Param('id') id: string, @Body() dto: CreateOfferDto) {
-    return this.auditRequestsService.addOffer(id, dto);
+  addOffer(@Param('id') id: string, @Body() dto: CreateOfferDto, @CurrentActor() actor: Actor) {
+    return this.auditRequestsService.addOffer(id, dto, actor);
   }
 
   @Post(':id/offers/:offerId/accept')
   @ApiHeader({ name: 'role', required: true, description: 'User role required' })
   @Roles('client', 'expert', 'superuser')
   @ApiOperation({ summary: 'Accept an outstanding offer, fixing the agreed fee' })
-  acceptOffer(@Param('id') id: string, @Param('offerId') offerId: string, @Headers('role') role: string) {
-    return this.auditRequestsService.acceptOffer(id, offerId, role);
+  acceptOffer(@Param('id') id: string, @Param('offerId') offerId: string, @CurrentActor() actor: Actor) {
+    return this.auditRequestsService.acceptOffer(id, offerId, actor);
   }
 
   @Post(':id/fund')
   @ApiHeader({ name: 'role', required: true, description: 'User role required' })
   @Roles('client', 'superuser')
   @ApiOperation({ summary: 'Move the agreed fee into escrow' })
-  fund(@Param('id') id: string) {
-    return this.auditRequestsService.fund(id);
+  fund(@Param('id') id: string, @CurrentActor() actor: Actor) {
+    return this.auditRequestsService.fund(id, actor);
   }
 
   @Post(':id/accept')
@@ -86,16 +88,16 @@ export class AuditRequestsController {
     summary: 'Expert takes the engagement',
     description: 'For a project audit this also releases the project from draft.',
   })
-  accept(@Param('id') id: string, @Body() dto: AcceptAuditDto) {
-    return this.auditRequestsService.accept(id, dto);
+  accept(@Param('id') id: string, @Body() dto: AcceptAuditDto, @CurrentActor() actor: Actor) {
+    return this.auditRequestsService.accept(id, dto, actor);
   }
 
   @Post(':id/decline')
   @ApiHeader({ name: 'role', required: true, description: 'User role required' })
   @Roles('expert', 'superuser')
   @ApiOperation({ summary: 'Expert passes on the engagement' })
-  decline(@Param('id') id: string, @Body() dto: DeclineAuditDto) {
-    return this.auditRequestsService.decline(id, dto);
+  decline(@Param('id') id: string, @Body() dto: DeclineAuditDto, @CurrentActor() actor: Actor) {
+    return this.auditRequestsService.decline(id, dto, actor);
   }
 
   @Patch(':id')
@@ -103,7 +105,7 @@ export class AuditRequestsController {
   // Previously unguarded: any caller with no role header at all could mutate an audit.
   @Roles('client', 'expert', 'superuser')
   @ApiOperation({ summary: 'Update audit request fields' })
-  update(@Param('id') id: string, @Body() dto: UpdateAuditRequestDto) {
-    return this.auditRequestsService.update(id, dto);
+  update(@Param('id') id: string, @Body() dto: UpdateAuditRequestDto, @CurrentActor() actor: Actor) {
+    return this.auditRequestsService.update(id, dto, actor);
   }
 }

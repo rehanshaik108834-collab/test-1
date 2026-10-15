@@ -34,10 +34,11 @@ export class UsersService {
   }
 
   login(email: string, password: string) {
+    // One answer for both failures. Distinct "no account" / "wrong password"
+    // messages told anyone which emails are registered.
     const user = this.findByEmail(email);
-    if (!user) throw new NotFoundException('No account found with this email address.');
-    if (!verifyPassword(password, user.password)) {
-      throw new BadRequestException('Incorrect password. Please try again.');
+    if (!user || !verifyPassword(password, user.password)) {
+      throw new BadRequestException('Incorrect email or password.');
     }
     if (user.status === 'suspended') throw new BadRequestException('This account has been suspended. Contact support.');
 
@@ -77,11 +78,11 @@ export class UsersService {
    * Skips the self-service role restriction; the caller is responsible for
    * having checked authority.
    */
-  createPrivileged(dto: CreateUserDto) {
-    return this.insertUser(dto);
+  createPrivileged(dto: CreateUserDto, expertProfile?: { domains?: string[]; hourlyRate?: number }) {
+    return this.insertUser(dto, expertProfile);
   }
 
-  private insertUser(dto: CreateUserDto) {
+  private insertUser(dto: CreateUserDto, expertProfile?: { domains?: string[]; hourlyRate?: number }) {
     const existing = this.findByEmail(dto.email);
     if (existing) throw new BadRequestException('A user with this email already exists.');
 
@@ -130,6 +131,11 @@ export class UsersService {
         userId: id,
         specialization: dto.specialization || '',
         reviewsDone: 0,
+        // Clients are only ever offered reviewers whose domains cover the
+        // project category, so an expert created with none could never be
+        // picked by anyone.
+        domains: expertProfile?.domains || [],
+        hourlyRate: expertProfile?.hourlyRate || 0,
       });
     }
 
@@ -149,7 +155,6 @@ export class UsersService {
     if (dto.avatar !== undefined) baseUpdates.avatar = dto.avatar;
     if (dto.avatarColor !== undefined) baseUpdates.avatarColor = dto.avatarColor;
     if (dto.status !== undefined) baseUpdates.status = dto.status;
-    if (dto.walletBalance !== undefined) baseUpdates.walletBalance = dto.walletBalance;
     this.usersRepository.updateBase(id, baseUpdates);
 
     // ── Update role-specific sub-table fields ───────────────────────────
@@ -174,6 +179,12 @@ export class UsersService {
     }
 
     return this.usersRepository.findById(id);
+  }
+
+  /** Is this user an active client? Used when staff act on a client's behalf. */
+  isActiveClient(id: string): boolean {
+    const u = this.usersRepository.findById(id);
+    return !!u && u.role === 'client' && u.status === 'active';
   }
 
   delete(id: string) {

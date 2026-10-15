@@ -204,7 +204,12 @@ export default function ClientMyProjects() {
     setEditErrors(errors);
     if (Object.keys(errors).length) return;
 
-    Store.updateTask(editingTaskId, { title, category: edit.category, budget, deadline: edit.deadline, status: edit.status });
+    try {
+      Store.updateTask(editingTaskId, { title, category: edit.category, budget, deadline: edit.deadline, status: edit.status });
+    } catch (e) {
+      setEditErrors({ budget: e.message });
+      return;
+    }
     closeEditModal();
     refreshView();
     Validate.toast('Project updated successfully.', 'success');
@@ -217,22 +222,18 @@ export default function ClientMyProjects() {
       Validate.toast('Only open tasks with no assigned worker can be deleted.', 'error');
       return;
     }
-    Validate.confirm(`Delete "${escapeHtml(task.title)}"? Any escrow funds will be refunded to your wallet.`, () => {
-      // Refund escrow to client
-      if (task.budget && task.budget > 0 && task.clientId) {
-        Store.addToWallet(task.clientId, task.budget);
-        Store.createTransaction({
-          type: 'escrow-refund',
-          amount: task.budget,
-          fromId: 'escrow',
-          toId: task.clientId,
-          taskId: task.id,
-          description: `Escrow refund — task "${escapeHtml(task.title)}" deleted`,
-        });
+    // An open project with nobody hired has nothing in escrow — escrow is
+    // funded at hire. This used to "refund" the budget through the deposit
+    // endpoint, crediting the client money that had never left their wallet.
+    Validate.confirm(`Delete "${escapeHtml(task.title)}"? This cannot be undone.`, () => {
+      try {
+        Store.deleteTask(id);
+      } catch (e) {
+        Validate.toast(escapeHtml(e.message), 'error');
+        return;
       }
-      Store.deleteTask(id);
       refreshView();
-      Validate.toast('Project deleted. Escrow funds refunded.', 'success');
+      Validate.toast('Project deleted.', 'success');
     });
   }
 

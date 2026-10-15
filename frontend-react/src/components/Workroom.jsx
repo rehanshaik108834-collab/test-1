@@ -261,7 +261,7 @@ export default function Workroom({ variant }) {
     } catch (e) {
       console.warn('Could not set disputeTargetMilestone in localStorage', e);
     }
-    navigate('/dispute');
+    navigate('/dispute?milestoneId=' + encodeURIComponent(selected.id));
   }
 
   function sendWorkroomMsg() {
@@ -275,6 +275,7 @@ export default function Workroom({ variant }) {
     const senderUser = senderId ? Store.getUserById(senderId) : null;
 
     // Persist to backend + auto-notification
+    try {
     Store.sendMessage({
       taskId: task.id,
       senderId,
@@ -284,6 +285,10 @@ export default function Workroom({ variant }) {
       senderAvatar: senderUser?.avatar || (session?.avatar || ''),
       senderAvatarColor: senderUser?.avatarColor || '',
     });
+    } catch (e) {
+      alert(e.message);
+      return;
+    }
 
     setSent(list => [...list, {
       text,

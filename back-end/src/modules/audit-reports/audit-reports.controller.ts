@@ -4,6 +4,8 @@ import { AuditReportsService } from './audit-reports.service';
 import { CreateAuditReportDto } from './dto/create-audit-report.dto';
 import { RoleGuard } from '../../common/guards/role.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { CurrentActor } from '../../common/decorators/actor.decorator';
+import type { Actor } from '../../common/decorators/actor.decorator';
 
 @ApiTags('Audit Reports')
 @Controller('audit-reports')
@@ -36,7 +38,7 @@ export class AuditReportsController {
   // releases money from escrow.
   @Roles('expert', 'superuser')
   @ApiOperation({ summary: 'Submit audit report (updates milestone status on pass/fail)' })
-  create(@Body() dto: CreateAuditReportDto) {
-    return this.auditReportsService.create(dto);
+  create(@Body() dto: CreateAuditReportDto, @CurrentActor() actor: Actor) {
+    return this.auditReportsService.create(dto, actor);
   }
 }

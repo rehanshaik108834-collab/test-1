@@ -142,6 +142,7 @@ export default function Messages() {
     if (!text || !convo) return;
 
     // Persist via Store (also generates notification)
+    try {
     Store.sendMessage({
       taskId: convo.taskId,
       senderId: session?.userId || '',
@@ -151,6 +152,10 @@ export default function Messages() {
       senderAvatar: session?.avatar || '',
       senderAvatarColor: session?.avatarColor || '',
     });
+    } catch (e) {
+      alert(e.message);
+      return;
+    }
 
     // Add to the local conversation (the list on the left keeps its old preview, as before)
     const sent = { from: 'me', text, time: 'Just now' };

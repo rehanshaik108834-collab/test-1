@@ -16,6 +16,7 @@ import { useStore } from '../context/StoreContext';
 import { useValidation } from '../context/ValidationContext';
 import usePageTitle from '../hooks/usePageTitle';
 import pageCss from './HireGigWorkers.css?raw';
+import { escapeHtml } from '../utils/helpers';
 
 const SKILL_FILTERS = ['React', 'TypeScript', 'Node.js', 'Python', 'Django', 'AWS', 'Docker', 'Kubernetes', 'Figma', 'UI Design', 'PostgreSQL', 'MongoDB', 'React Native', 'Swift', 'Machine Learning'];
 const AVAILABILITY_FILTERS = ['Available', 'Busy', 'Not Available'];
@@ -324,7 +325,10 @@ export default function HireGigWorkers() {
         // Notify worker
         const projectTitle = (openTasks || []).find(t => t.id === projectId)?.title || 'Project';
         Store.addNotification({ userId: selectedWorker.id, type: 'invitation', text: 'You have been invited to a project', subtext: projectTitle + ' · just now', read: false });
-      } catch (e) { console.warn('Store invite failed:', e); }
+      } catch (e) {
+        Validate.toast(escapeHtml(e.message), 'error');
+        return;
+      }
     }
     setInviteOpen(false);
     const toast = document.createElement('div');

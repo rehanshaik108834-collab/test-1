@@ -12,6 +12,7 @@ import DashboardLayout from '../components/DashboardLayout';
 import Icon from '../components/Icon';
 import PageStyle from '../components/PageStyle';
 import { useStore } from '../context/StoreContext';
+import { useAuth } from '../context/AuthContext';
 import { escapeHtml } from '../utils/helpers';
 import usePageTitle from '../hooks/usePageTitle';
 import pageCss from './MilestoneReports.css?raw';
@@ -210,10 +211,15 @@ function SummaryCard({ id, icon, iconBg, iconColor, value, valueColor, label }) 
 
 export default function MilestoneReports() {
   const Store = useStore();
+  const Auth = useAuth();
   usePageTitle('Milestone Reports — Lannent');
   const [searchParams] = useSearchParams();
   const taskId = searchParams.get('taskId') || null;
-  const role = searchParams.get('role') || 'client';
+  // The layout follows who is signed in. It came from `?role=`, defaulting
+  // to client, so a link without the parameter (the worker sidebar's "Reports")
+  // drew another role's sidebar — whose Settings link then bounced the user
+  // to their dashboard.
+  const role = Auth.getCurrentUser()?.role || searchParams.get('role') || 'client';
 
   const [reports] = useState(() => getReports(Store, taskId));
   const [typeFilter, setTypeFilter] = useState('all');
@@ -225,7 +231,8 @@ export default function MilestoneReports() {
     const task = Store.getTaskById(taskId);
     if (task) projectName = task.title;
   }
-  const backUrl = (role === 'worker' ? '/worker-milestone-board' : '/project-milestone-board') + (taskId ? '?id=' + taskId : '');
+  const backUrl = role === 'expert' ? '/expert-reports'
+    : (role === 'worker' ? '/worker-milestone-board' : '/project-milestone-board') + (taskId ? '?id=' + taskId : '');
   const milestoneNames = [...new Set(reports.map(r => r.milestoneName))];
 
   const list = reports.filter(r => {
@@ -237,7 +244,7 @@ export default function MilestoneReports() {
   return (
     <>
       <PageStyle css={pageCss} />
-      <DashboardLayout role={role} activePath={role === 'worker' ? '/worker-milestone-board' : '/client-my-projects'} pageTitle="Milestone Reports" pageSubtitle={projectName}>
+      <DashboardLayout role={role} activePath={role === 'expert' ? '/expert-reports' : '/milestone-reports'} pageTitle="Milestone Reports" pageSubtitle={projectName}>
         {/* Back + Header */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
           <Link to={backUrl} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 14, color: 'var(--muted-foreground)', transition: 'color 0.15s', textDecoration: 'none' }}

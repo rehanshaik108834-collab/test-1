@@ -219,7 +219,7 @@ export default function ResolveDispute() {
     try {
       const session = Auth.getCurrentUser();
       if (disputeId) {
-        Store.resolveDispute(disputeId, { verdict: storeVerdict, resolution: trimmed, expertId: session?.userId || 'u3' });
+        Store.resolveDispute(disputeId, { verdict: storeVerdict, resolution: trimmed });
 
         const verdictLabel = storeVerdict === 'worker-favour' ? 'in favour of the Worker' : storeVerdict === 'client-favour' ? 'in favour of the Client' : 'with a partial resolution';
         // Notify the client (dispute raiser) and the respondent about the resolution
@@ -232,7 +232,12 @@ export default function ResolveDispute() {
           });
         });
       }
-    } catch (e) { console.warn('Store save failed', e); }
+    } catch (e) {
+      // Already resolved, not assigned to you, or a refund escrow cannot
+      // cover. Reporting "verdict submitted" here was wrong.
+      Validate.toast(escapeHtml(e.message), 'error');
+      return;
+    }
 
     const msgs = {
       favour_worker: `✓ Verdict submitted. Escrow of ${d.escrow} released to ${d.respondentName}.`,

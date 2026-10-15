@@ -17,9 +17,9 @@ export class UpdateUserDto extends PartialType(
   @IsOptional() @IsIn(['active', 'suspended'])
   status?: string;
 
-  @ApiPropertyOptional({ example: 10000 })
-  @IsOptional() @IsNumber()
-  walletBalance?: number;
+  // `walletBalance` is deliberately absent. A balance only changes through the
+  // ledger (deposit, withdraw, escrow), which records why; a writable field
+  // let any user PATCH themselves a balance.
 
   @ApiPropertyOptional({ example: 4.8 })
   @IsOptional() @IsNumber()
