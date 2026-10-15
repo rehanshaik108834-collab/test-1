@@ -28,3 +28,13 @@ export class DeclineAuditDto {
   @IsOptional() @IsString()
   reason?: string;
 }
+
+export class ReassignAuditDto {
+  @ApiProperty({ example: 'u9', description: 'The Expert Reviewer to ask instead' })
+  @IsString()
+  expertId: string;
+
+  @ApiProperty({ example: 200, description: 'Your opening offer for their fee' })
+  @IsNumber() @Min(1)
+  openingOffer: number;
+}

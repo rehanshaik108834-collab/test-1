@@ -39,6 +39,15 @@ describe('Lannent API (e2e)', () => {
   const del = (who: string, path: string) => api().delete('/api' + path).set(as(who));
   const balance = async (id: string) => (await get('super', `/users/${id}`)).body.data.walletBalance;
 
+  /** Payer accepts the reviewer's terms by accepting the pending offer, funds it, and the reviewer takes it on. */
+  const engageReviewer = async (payer: string, reviewer: string, arId: string) => {
+    const ar = (await get(reviewer, `/audit-requests/${arId}`)).body.data;
+    const pending = ar.offers.find((o: any) => o.status === 'pending');
+    expect((await post(reviewer, `/audit-requests/${arId}/offers/${pending.id}/accept`)).status).toBe(201);
+    expect((await post(payer, `/audit-requests/${arId}/fund`)).status).toBe(201);
+    expect((await post(reviewer, `/audit-requests/${arId}/accept`, {})).status).toBe(201);
+  };
+
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication();
@@ -143,10 +152,14 @@ describe('Lannent API (e2e)', () => {
     });
 
     it('resolves a dispute once, and only by its assigned reviewer', async () => {
-      const d = await post('client', '/disputes', { taskId: 't1', milestoneId: 'm4', reason: 'test', expertId: 'u3' });
+      const d = await post('client', '/disputes', { taskId: 't1', milestoneId: 'm4', reason: 'test', expertId: 'u3', reviewerFee: 150 });
       expect(d.status).toBe(201);
       const id = d.body.data.id;
       const verdict = { verdict: 'client-favour', resolution: 'x' };
+
+      // A verdict before the reviewer's fee is agreed, funded and accepted is refused.
+      expect((await post('expert', `/disputes/${id}/resolve`, verdict)).status).toBe(400);
+      await engageReviewer('client', 'expert', d.body.data.auditRequestId);
 
       expect((await post('priya', `/disputes/${id}/resolve`, verdict)).status).toBe(403);
       const before = await balance('u1');
@@ -156,9 +169,43 @@ describe('Lannent API (e2e)', () => {
     });
 
     it('raises a dispute as the caller, against the other party', async () => {
-      const d = await post('client', '/disputes', { taskId: 't1', milestoneId: 'm4', reason: 'r', raisedBy: 'u5', againstId: 'u8', expertId: 'u3' });
+      const d = await post('client', '/disputes', { taskId: 't1', milestoneId: 'm4', reason: 'r', raisedBy: 'u5', againstId: 'u8', expertId: 'u3', reviewerFee: 100 });
       expect(d.body.data).toMatchObject({ raisedBy: 'u1', againstId: 'u5' });
-      expect((await post('bob', '/disputes', { taskId: 't1', milestoneId: 'm3', reason: 'r' })).status).toBe(403);
+      expect((await post('bob', '/disputes', { taskId: 't1', milestoneId: 'm3', reason: 'r', expertId: 'u3', reviewerFee: 100 })).status).toBe(403);
+    });
+
+    it('requires a reviewer and a fee to raise a dispute', async () => {
+      expect((await post('client', '/disputes', { taskId: 't1', milestoneId: 'm4', reason: 'r', expertId: 'u3' })).status).toBe(400);
+      expect((await post('client', '/disputes', { taskId: 't1', milestoneId: 'm4', reason: 'r', reviewerFee: 100 })).status).toBe(400);
+    });
+
+    it('does not let milestones add up to more than the budget', async () => {
+      const task = (await post('client', '/tasks', { title: 'Capped', description: 'd', category: 'Web Development', budget: 500 })).body.data;
+      expect((await post('client', '/milestones', { taskId: task.id, title: 'A', budget: 400 })).status).toBe(201);
+      expect((await post('client', '/milestones', { taskId: task.id, title: 'B', budget: 200 })).status).toBe(400);
+    });
+
+    it('stops honouring the token of a suspended account', async () => {
+      expect((await get('worker', '/users/u2')).status).toBe(200);
+      expect((await patch('super', '/users/u2', { status: 'suspended' })).status).toBe(200);
+      expect((await get('worker', '/users/u2')).status).toBe(401);
+      await patch('super', '/users/u2', { status: 'active' });
+    });
+
+    it("hides other people's contact details and balances", async () => {
+      const other = (await get('worker', '/users/u1')).body.data;
+      expect(other.name).toBe('James Client');
+      expect(other.email).toBeUndefined();
+      expect(other.walletBalance).toBeUndefined();
+      expect((await get('worker', '/users/u2')).body.data.walletBalance).toBeDefined();
+    });
+
+    it("hides another project's submitted work", async () => {
+      // m6 is t2's submitted deliverable; bob has nothing to do with t2.
+      expect((await get('bob', '/milestones/m6')).status).toBe(404);
+      expect((await get('bob', '/milestones?taskId=t2')).body.data).toHaveLength(0);
+      // An open project's plan is visible to a worker deciding whether to bid.
+      expect((await get('worker', '/milestones?taskId=t3')).body.data.length).toBe(3);
     });
 
     it('no longer accepts hand-written transactions, and keeps them private', async () => {
@@ -249,11 +296,99 @@ describe('Lannent API (e2e)', () => {
       expect((await get('client', '/tasks/t3')).body.data.workerId).toBe('u2');
     });
 
-    it('lets a client delete an open project without crediting anything', async () => {
-      const task = (await post('client', '/tasks', { title: 'tmp', description: 'd', category: 'Web Development', budget: 100000 })).body.data;
+    it('lets a client delete an open project and returns its budget exactly', async () => {
       const before = await balance('u1');
+      const task = (await post('client', '/tasks', { title: 'tmp', description: 'd', category: 'Web Development', budget: 1000 })).body.data;
+      expect(await balance('u1')).toBe(before - 1000);
       expect((await del('client', `/tasks/${task.id}`)).status).toBe(200);
       expect(await balance('u1')).toBe(before);
+    });
+
+    it('refuses to post a project the client cannot pay for', async () => {
+      const res = await post('client', '/tasks', { title: 'Too big', description: 'd', category: 'Web Development', budget: 10_000_000 });
+      expect(res.status).toBe(400);
+      expect((await get('client', '/tasks')).body.data.some((t: any) => t.title === 'Too big')).toBe(false);
+    });
+
+    it('holds the budget at posting, charges fees at hire and leaves nothing in escrow at the end', async () => {
+      const start = await balance('u8');
+      const task = (await post('bob', '/tasks', { title: 'Full cycle', description: 'd', category: 'Web Development', budget: 1000 })).body.data;
+      expect(await balance('u8')).toBe(start - 1000);
+      expect((await get('bob', `/ledger/escrow/${task.id}`)).body.data.projectHeld).toBe(1000);
+
+      // Milestones use only $900 of the $1,000 budget.
+      const ms = (await post('bob', '/milestones', { taskId: task.id, title: 'Only part', budget: 900 })).body.data;
+      const bid = (await post('worker', '/proposals', { taskId: task.id, coverLetter: 'hi' })).body.data;
+      expect((await post('bob', `/proposals/${bid.id}/hire`)).status).toBe(201);
+      expect(await balance('u8')).toBe(Math.round((start - 1000 - 50 - 4.99) * 100) / 100); // fees only
+
+      await post('worker', `/milestones/${ms.id}/submit`, { deliverable: { title: 'Done' } });
+      expect((await post('bob', `/milestones/${ms.id}/approve`)).status).toBe(201);
+      expect((await get('bob', `/tasks/${task.id}`)).body.data.status).toBe('completed');
+      // The unused $100 came back; nothing is left held.
+      expect((await get('bob', `/ledger/escrow/${task.id}`)).body.data).toMatchObject({ projectHeld: 0, auditHeld: 0, disputeHeld: 0 });
+      expect(await balance('u8')).toBe(Math.round((start - 900 - 54.99) * 100) / 100);
+    });
+
+    it('refuses to approve work that was never submitted', async () => {
+      expect((await post('client', '/milestones/m4/approve')).status).toBe(400);
+    });
+
+    it('pays the dispute reviewer from dispute escrow when they give the verdict', async () => {
+      // Sarah (worker on t1) raises the dispute, so she pays its reviewer.
+      const d = (await post('sarah', '/disputes', { taskId: 't1', milestoneId: 'm4', reason: 'Scope mismatch', details: 'More pages were requested.', outcome: 'Release payment', expertId: 'u3', reviewerFee: 120 })).body.data;
+      expect(d).toMatchObject({ details: 'More pages were requested.', outcome: 'Release payment', payerId: 'u5' });
+      const sarahBefore = await balance('u5');
+      await engageReviewer('sarah', 'expert', d.auditRequestId);
+      expect(await balance('u5')).toBe(sarahBefore - 120);
+      expect((await get('sarah', '/ledger/escrow/t1')).body.data.disputeHeld).toBe(120);
+
+      const expertBefore = await balance('u3');
+      const r = await post('expert', `/disputes/${d.id}/resolve`, { verdict: 'worker-favour', resolution: 'Work matches the brief.' });
+      expect(r.status).toBe(201);
+      expect(await balance('u3')).toBe(expertBefore + 108); // 120 less 10% commission
+      expect((await get('sarah', '/ledger/escrow/t1')).body.data.disputeHeld).toBe(0);
+
+      const breakdown = (await get('revenue', '/revenue/project/t1')).body.data;
+      expect(breakdown.workerPaid.intoDisputeEscrow).toBe(120);
+      expect(breakdown.reviewerDispute.grossFees).toBe(120);
+      expect(breakdown.clientPaid.intoAuditEscrow).toBe(0);
+    });
+
+    it('closes a milestone refunded to the client instead of reopening it unfunded', async () => {
+      const d = (await post('client', '/disputes', { taskId: 't1', milestoneId: 'm4', reason: 'r', expertId: 'u3', reviewerFee: 100 })).body.data;
+      await engageReviewer('client', 'expert', d.auditRequestId);
+      await post('expert', `/disputes/${d.id}/resolve`, { verdict: 'client-favour', resolution: 'Not delivered.' });
+      const m4 = (await get('client', '/milestones/m4')).body.data;
+      expect(m4.status).toBe('refunded');
+      expect((await post('sarah', '/milestones/m4/submit', { deliverable: { title: 'again' } })).status).toBe(400);
+    });
+
+    it('sends a disputed milestone back for revision without moving money', async () => {
+      const d = (await post('client', '/disputes', { taskId: 't1', milestoneId: 'm4', reason: 'r', expertId: 'u3', reviewerFee: 100 })).body.data;
+      await engageReviewer('client', 'expert', d.auditRequestId);
+      const held = (await get('client', '/ledger/escrow/t1')).body.data.projectHeld;
+      await post('expert', `/disputes/${d.id}/resolve`, { verdict: 'revision', resolution: 'Fix the padding on mobile.' });
+      expect((await get('client', '/milestones/m4')).body.data).toMatchObject({ status: 'revision-needed', revisionNote: 'Fix the padding on mobile.' });
+      expect((await get('client', '/ledger/escrow/t1')).body.data.projectHeld).toBe(held);
+    });
+
+    it('lets operations settle a stuck dispute and returns the reviewer fee', async () => {
+      const d = (await post('client', '/disputes', { taskId: 't1', milestoneId: 'm4', reason: 'r', expertId: 'u3', reviewerFee: 100 })).body.data;
+      await engageReviewer('client', 'expert', d.auditRequestId);
+      const before = await balance('u1');
+      expect((await post('super', `/disputes/${d.id}/resolve`, { verdict: 'worker-favour', resolution: 'Operations override.' })).status).toBe(201);
+      expect(await balance('u1')).toBe(before + 100); // the reviewer fee comes back
+      expect((await get('client', '/ledger/escrow/t1')).body.data.disputeHeld).toBe(0);
+    });
+
+    it('lets the payer choose another reviewer after a decline', async () => {
+      const d = (await post('client', '/disputes', { taskId: 't1', milestoneId: 'm4', reason: 'r', expertId: 'u3', reviewerFee: 100 })).body.data;
+      await post('expert', `/audit-requests/${d.auditRequestId}/decline`, { reason: 'busy' });
+      const next = await post('client', `/audit-requests/${d.auditRequestId}/reassign`, { expertId: 'u9', openingOffer: 90 });
+      expect(next.status).toBe(201);
+      expect((await get('priya', `/audit-requests/${next.body.data.id}`)).status).toBe(200);
+      expect((await get('client', `/disputes/${d.id}`)).body.data.expertId).toBe('u9');
     });
 
     it('runs an audit engagement from offer to a live project', async () => {
@@ -293,6 +428,83 @@ describe('Lannent API (e2e)', () => {
       const signedIn = await login({ email: 'new.rev@gmail.com', password: 'Reviewer@123' });
       expect(signedIn.status).toBe(201);
       expect(signedIn.body.data.user.domains).toContain('Mobile Development');
+    });
+
+    it('runs the reported scenario: budget 500, audit 300, dispute 1200 — every fee in escrow, nothing left at the end', async () => {
+      const start = await balance('u1');
+      const task = (await post('client', '/tasks', {
+        title: 'Reported scenario', description: 'd', category: 'Web Development', budget: 500,
+        auditEnabled: true, auditExpertId: 'u3', auditFee: 300,
+      })).body.data;
+      // The project budget is deducted at posting and held.
+      expect(await balance('u1')).toBe(start - 500);
+      const ms = (await post('client', '/milestones', { taskId: task.id, title: 'Only milestone', budget: 500 })).body.data;
+
+      // Audit fee: agreed, funded into AUDIT escrow, accepted.
+      const ar = (await get('expert', `/audit-requests?taskId=${task.id}`)).body.data[0];
+      await engageReviewer('client', 'expert', ar.id);
+      expect(await balance('u1')).toBe(start - 800);
+      let held = (await get('client', `/ledger/escrow/${task.id}`)).body.data;
+      expect(held).toMatchObject({ projectHeld: 500, auditHeld: 300, disputeHeld: 0 });
+
+      // Hire: only the contract fees are charged now.
+      const bid = (await post('worker', '/proposals', { taskId: task.id, coverLetter: 'hi' })).body.data;
+      expect((await post('client', `/proposals/${bid.id}/hire`)).status).toBe(201);
+      await post('worker', `/milestones/${ms.id}/submit`, { deliverable: { title: 'v1' } });
+
+      // The client disputes it and offers the reviewer 1200 — funded into DISPUTE escrow.
+      const d = (await post('client', '/disputes', { taskId: task.id, milestoneId: ms.id, reason: 'Incomplete work', expertId: 'u3', reviewerFee: 1200 })).body.data;
+      await engageReviewer('client', 'expert', d.auditRequestId);
+      held = (await get('client', `/ledger/escrow/${task.id}`)).body.data;
+      expect(held).toMatchObject({ projectHeld: 500, auditHeld: 300, disputeHeld: 1200 });
+
+      // Verdict pays the worker and the reviewer's dispute fee; the reviewer
+      // then files the milestone audit, which releases the audit fee.
+      expect((await post('expert', `/disputes/${d.id}/resolve`, { verdict: 'worker-favour', resolution: 'Meets the brief.' })).status).toBe(201);
+      expect((await post('expert', '/audit-reports', { auditRequestId: ar.id, milestoneId: ms.id, verdict: 'pass', findings: 'Clean and complete.' })).status).toBe(201);
+
+      expect((await get('client', `/tasks/${task.id}`)).body.data.status).toBe('completed');
+      expect((await get('client', `/ledger/escrow/${task.id}`)).body.data).toMatchObject({ projectHeld: 0, auditHeld: 0, disputeHeld: 0 });
+
+      const b = (await get('revenue', `/revenue/project/${task.id}`)).body.data;
+      expect(b.clientPaid.intoAuditEscrow).toBe(300);
+      expect(b.clientPaid.intoDisputeEscrow).toBe(1200);
+      expect(b.reviewerAudit.grossFees).toBe(300);
+      expect(b.reviewerDispute.grossFees).toBe(1200);
+      expect(b.stillHeld.total).toBe(0);
+    });
+
+    it('refuses to delete a user who still has projects or money', async () => {
+      expect((await del('super', '/users/u1')).status).toBe(400);
+    });
+
+    it('saves every profile field the settings pages send, and changes a password', async () => {
+      const res = await patch('worker', '/users/u2', {
+        phone: '+919876543210', bio: 'Builds things.', jobTitle: 'React Developer', experienceLevel: 'Senior',
+        hourlyRate: 70, availability: 'Part-time', languages: ['English'],
+        portfolioProjects: [{ id: 'p1', title: 'Shop', url: 'https://example.com' }],
+      });
+      expect(res.status).toBe(200);
+      expect(res.body.data).toMatchObject({ phone: '+919876543210', bio: 'Builds things.', jobTitle: 'React Developer', hourlyRate: 70, availability: 'Part-time' });
+      const exp = await patch('expert', '/users/u3', { domains: ['Security'], availability: { status: 'Busy', maxCases: 1, type: 'Audits only' } });
+      expect(exp.body.data.domains).toEqual(['Security']);
+
+      expect((await post('worker', '/users/u2/password', { currentPassword: 'wrong', newPassword: 'Another1pass!' })).status).toBe(400);
+      expect((await post('worker', '/users/u2/password', { currentPassword: 'Password@123', newPassword: 'Another1pass!' })).status).toBe(201);
+      expect((await login({ email: 'worker@gmail.com', password: 'Another1pass!' })).status).toBe(201);
+    });
+
+    it('notifies the worker when they are hired', async () => {
+      await post('client', '/proposals/p1/hire');
+      const notes = (await get('sarah', '/notifications')).body.data;
+      expect(notes.some((n: any) => n.type === 'hire' && n.link)).toBe(true);
+    });
+
+    it('lets the intake desk open an applicant résumé', async () => {
+      const up = await api().post('/api/files/application').attach('file', Buffer.from('%PDF-1.4 test'), { filename: 'cv.pdf', contentType: 'application/pdf' });
+      expect(up.status).toBe(201);
+      expect((await get('intake', `/files/${up.body.data.id}/meta`)).status).toBe(200);
+      expect((await get('worker', `/files/${up.body.data.id}/meta`)).status).toBe(403);
     });
 
     it("opens a dispute's fee negotiation with the client's proposed fee", async () => {

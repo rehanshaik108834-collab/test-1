@@ -10,15 +10,18 @@ import { AuditRequestsService } from '../audit-requests/audit-requests.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { AppLoggerService } from '../../common/logging/app-logger.service';
 import { Actor } from '../../common/decorators/actor.decorator';
-import { assertAllowed } from '../../common/guards/viewer.util';
+import { assertAllowed, canViewAnyRecord, canViewTask } from '../../common/guards/viewer.util';
+import { round2 } from '../ledger/fee-config';
 import { ROLES } from '../../common/constants/roles';
 
 /** Statuses a worker moves their own milestone between while working on it. */
 const WORKER_SETTABLE = ['pending', 'in-progress'];
 /** Statuses from which a worker may pick the milestone back up. */
 const WORKER_FROM = ['pending', 'in-progress', 'revision-needed'];
-/** A milestone that has been paid, one way or another. */
-const SETTLED = ['completed', 'approved', 'audit-passed', 'done'];
+/** A milestone whose money has moved, one way or another — paid out or refunded. */
+export const SETTLED = ['completed', 'approved', 'audit-passed', 'done', 'refunded'];
+/** Statuses a worker can submit (or resubmit) work from. */
+const SUBMITTABLE = ['pending', 'in-progress', 'revision-needed', 'submitted'];
 
 /**
  * MilestonesService — Business Logic Layer
@@ -39,14 +42,65 @@ export class MilestonesService {
     private readonly log: AppLoggerService,
   ) {}
 
-  findAll(query?: { taskId?: string }) {
-    return this.milestonesRepository.findAll(query);
+  /**
+   * Internal callers get every milestone. A viewer sees the full record on
+   * projects they are part of; on someone else's project they see only an
+   * open project's plan (so a worker can judge it before bidding) and never
+   * the submitted work.
+   */
+  findAll(query?: { taskId?: string }, viewer?: { id?: string; role?: string }) {
+    const all = this.milestonesRepository.findAll(query);
+    if (!viewer || canViewAnyRecord(viewer.role)) return all;
+    const out: any[] = [];
+    const access: Record<string, 'full' | 'plan' | 'none'> = {};
+    for (const m of all) {
+      if (!(m.taskId in access)) access[m.taskId] = this.accessTo(m.taskId, viewer);
+      if (access[m.taskId] === 'full') out.push(m);
+      else if (access[m.taskId] === 'plan') out.push({ ...m, deliverable: null, revisionNote: null });
+    }
+    return out;
   }
 
-  findById(id: string) {
+  findById(id: string, viewer?: { id?: string; role?: string }) {
     const ms = this.milestonesRepository.findById(id);
     if (!ms) throw new NotFoundException(`Milestone with id "${id}" not found`);
-    return ms;
+    if (!viewer || canViewAnyRecord(viewer.role)) return ms;
+    const access = this.accessTo(ms.taskId, viewer);
+    if (access === 'none') throw new NotFoundException(`Milestone with id "${id}" not found`);
+    return access === 'full' ? ms : { ...ms, deliverable: null, revisionNote: null };
+  }
+
+  private accessTo(taskId: string, viewer: { id?: string; role?: string }): 'full' | 'plan' | 'none' {
+    let task: any = null;
+    try { task = this.tasksService.findById(taskId); } catch { return 'none'; }
+    if (canViewTask(viewer.id, viewer.role, task, ...this.tasksService.reviewersOf(taskId))) return 'full';
+    return task.status === 'open' ? 'plan' : 'none';
+  }
+
+  /** What the milestones on a task add up to. */
+  totalBudget(taskId: string, exceptId?: string) {
+    return round2(
+      this.milestonesRepository
+        .filterByTaskId(taskId)
+        .filter(m => m.id !== exceptId)
+        .reduce((a, m) => a + (Number(m.budget) || 0), 0),
+    );
+  }
+
+  removeAllForTask(taskId: string) {
+    return this.milestonesRepository.deleteByTaskId(taskId);
+  }
+
+  /** Milestones are paid from the project budget, so together they cannot exceed it. */
+  private assertWithinBudget(task: any, budget: number, exceptId?: string) {
+    const others = this.totalBudget(task.id, exceptId);
+    if (round2(others + budget) > task.budget) {
+      const left = round2(task.budget - others);
+      throw new BadRequestException(
+        `Milestones cannot add up to more than the project budget of $${task.budget}. ` +
+          `$${left > 0 ? left : 0} is left to allocate.`,
+      );
+    }
   }
 
   /** The milestone's task, plus whether the caller is its client or its worker. */
@@ -68,6 +122,7 @@ export class MilestonesService {
     if (['completed', 'cancelled'].includes(task.status)) {
       throw new BadRequestException(`Milestones cannot be added to a ${task.status} project.`);
     }
+    this.assertWithinBudget(task, dto.budget);
     const ms = {
       ...dto,
       id: this.milestonesRepository.generateId(),
@@ -94,7 +149,7 @@ export class MilestonesService {
    */
   update(id: string, dto: UpdateMilestoneDto, actor: Actor) {
     const ms = this.findById(id);
-    const { isClient, isWorker } = this.roleOn(ms, actor);
+    const { task, isClient, isWorker } = this.roleOn(ms, actor);
     assertAllowed(isClient || isWorker, 'Only the client and the worker on this project can change its milestones.');
 
     const patch: Record<string, any> = {};
@@ -107,6 +162,7 @@ export class MilestonesService {
         if (!['pending', 'in-progress'].includes(ms.status)) {
           throw new BadRequestException('The budget cannot change once work has been submitted.');
         }
+        this.assertWithinBudget(task, dto.budget, ms.id);
         patch.budget = dto.budget;
       }
     }
@@ -120,8 +176,17 @@ export class MilestonesService {
       if (isWorker && WORKER_SETTABLE.includes(dto.status) && WORKER_FROM.includes(ms.status)) {
         patch.status = dto.status;
       } else if (isClient && dto.status === 'revision-needed' && ['submitted', 'review'].includes(ms.status)) {
-        // "Request changes" on a submission.
+        // "Request changes" on a submission. The client's note is what the
+        // worker revises against, so it is kept with the milestone.
         patch.status = dto.status;
+        patch.revisionNote = dto.revisionNote ? String(dto.revisionNote).trim() : null;
+        patch.revisionRequestedAt = new Date().toISOString();
+        this.notificationsService.notify(task.workerId, {
+          type: 'revision',
+          text: `Changes requested on "${ms.title}"`,
+          subtext: patch.revisionNote ? patch.revisionNote.slice(0, 120) : task.title,
+          link: `/worker-milestone-board?id=${task.id}`,
+        });
       } else {
         throw new BadRequestException(
           `A milestone cannot move from "${ms.status}" to "${dto.status}" this way. ` +
@@ -142,16 +207,29 @@ export class MilestonesService {
 
   submitDeliverable(id: string, deliverable: any, actor: Actor) {
     const ms = this.findById(id);
-    const { isWorker } = this.roleOn(ms, actor);
+    const { task, isWorker } = this.roleOn(ms, actor);
     assertAllowed(isWorker, 'Only the worker hired on this project can submit its milestones.');
     if (SETTLED.includes(ms.status)) {
-      throw new BadRequestException('This milestone has already been paid.');
+      throw new BadRequestException('This milestone has already been settled.');
+    }
+    if (ms.status === 'disputed') {
+      throw new BadRequestException('This milestone is under dispute. Wait for the reviewer\'s verdict.');
+    }
+    if (!SUBMITTABLE.includes(ms.status)) {
+      throw new BadRequestException(`A milestone cannot be submitted from "${ms.status}".`);
     }
     ms.status = 'submitted';
     ms.submittedAt = new Date().toISOString().slice(0, 10);
+    ms.progress = 100;
     if (deliverable) ms.deliverable = deliverable;
 
     this.handOverToAuditor(ms);
+    this.notificationsService.notify(task.clientId, {
+      type: 'milestone-submitted',
+      text: `New deliverable: "${ms.title}"`,
+      subtext: `${task.title} — ready for your review`,
+      link: `/review-deliverable?milestoneId=${ms.id}`,
+    });
 
     return ms;
   }
@@ -193,12 +271,12 @@ export class MilestonesService {
         milestone: ms.title,
       });
 
-      this.notificationsService.create({
-        userId: engagement.expertId,
+      this.notificationsService.notify(engagement.expertId, {
         type: 'audit-needed',
         text: 'New deliverable awaiting technical audit',
         subtext: `${ms.title || 'Milestone'} — ${task.title || 'Project'}`,
-      } as any);
+        link: `/expert-audit-preview?id=${engagement.id}`,
+      });
     } catch (e) {
       // Submission succeeded; only the audit hand-off failed. The reviewer
       // would just never see the milestone, with no clue why.
@@ -221,6 +299,12 @@ export class MilestonesService {
       // would pay the worker and still leave the verdict free to refund it.
       throw new BadRequestException('This milestone is under dispute. The reviewer verdict will settle it.');
     }
+    if (SETTLED.includes(ms.status)) {
+      throw new BadRequestException('This milestone has already been settled.');
+    }
+    if (!['submitted', 'review'].includes(ms.status)) {
+      throw new BadRequestException('There is nothing to approve yet — the worker has not submitted this milestone.');
+    }
 
     // Release before marking complete: if escrow cannot cover the milestone the
     // approval must fail rather than mark it paid. LedgerService is idempotent
@@ -240,6 +324,13 @@ export class MilestonesService {
 
     this.checkTaskCompletion(ms.taskId);
 
+    this.notificationsService.notify(ms.workerId, {
+      type: 'payment',
+      text: `"${ms.title}" approved — $${release.net ?? 0} paid to your wallet`,
+      subtext: `${task.title} · $${ms.budget} less the service fee`,
+      link: '/worker-wallet',
+    });
+
     return { ...ms, release };
   }
 
@@ -250,11 +341,10 @@ export class MilestonesService {
       const allMilestones = this.milestonesRepository.filterByTaskId(taskId);
       if (!allMilestones.length) return;
 
-      const done = allMilestones.filter(m =>
-        ['completed', 'approved', 'audit-passed', 'done'].includes(m.status)
-      ).length;
+      const done = allMilestones.filter(m => SETTLED.includes(m.status)).length;
       const pct = Math.round((done / allMilestones.length) * 100);
 
+      if (!task.workerId) return;
       this.tasksService.setProgress(taskId, pct, pct === 100 ? 'completed' : 'in-progress');
     } catch (e) {
       this.log.warn(

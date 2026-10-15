@@ -13,7 +13,7 @@ import EmptyState from '../components/EmptyState';
 import Icon from '../components/Icon';
 import PageStyle from '../components/PageStyle';
 import { useStore } from '../context/StoreContext';
-import { escapeHtml } from '../utils/helpers';
+import { downloadPdf } from '../utils/pdf';
 import usePageTitle from '../hooks/usePageTitle';
 import pageCss from './ExpertReportDispute.css?raw';
 
@@ -30,7 +30,7 @@ function buildReport(Store, rawDispute) {
   const _expert = rawDispute.expertId ? Store.getUserById(rawDispute.expertId) : null;
 
   // Severity is set on the audit engagement the dispute opened.
-  const _engagement = (Store.getAuditRequests() || []).find(a => a.disputeId === rawDispute.id);
+  const _engagement = (Store.getAuditRequests() || []).filter(a => a.disputeId === rawDispute.id && !a.replacedBy).pop();
   const _severity = _engagement ? _engagement.severity : 'Medium';
 
   // What the reviewer actually examines: the claim, and the disputed
@@ -39,14 +39,13 @@ function buildReport(Store, rawDispute) {
   const _deliverable = _milestone ? _milestone.deliverable : null;
 
   const _evidence = [
-    { label: 'The claim', text: rawDispute.reason || 'No reason recorded.' },
+    { label: 'The claim', text: [rawDispute.reason, rawDispute.details].filter(Boolean).join(' — ') || 'No reason recorded.' },
   ];
+  if (rawDispute.outcome) _evidence.push({ label: 'Outcome requested', text: rawDispute.outcome });
   if (_milestone) {
     _evidence.push({
       label: 'Disputed milestone',
-      // The original escaped the title here and then escaped the whole text
-      // again when rendering, so a title with "&" showed as "&amp;". Kept.
-      text: `${escapeHtml(_milestone.title)} — $${Number(_milestone.budget || 0).toLocaleString()}, status ${_milestone.status}`,
+      text: `${_milestone.title} — $${Number(_milestone.budget || 0).toLocaleString()}, status ${_milestone.status}`,
     });
   }
   if (_deliverable) {
@@ -93,7 +92,12 @@ function buildReport(Store, rawDispute) {
     resolution: rawDispute.resolution || 'Resolution pending.',
     decision: rawDispute.verdict === 'worker-favour' ? 'In Favour of Worker'
             : rawDispute.verdict === 'client-favour' ? 'In Favour of Client'
-            : rawDispute.verdict || 'Pending Review',
+            : rawDispute.verdict === 'split' ? 'Split 50/50'
+            : rawDispute.verdict === 'revision' ? 'Sent Back for Revision'
+            : 'Pending Review',
+    overridden: !!rawDispute.overriddenBy,
+    verdictRaw: rawDispute.verdict || null,
+    reviewerFee: _engagement && _engagement.agreedAmount ? `$${Number(_engagement.agreedAmount).toLocaleString()}` : null,
     verdictIcon: rawDispute.verdict === 'worker-favour' ? 'check-circle'
                : rawDispute.verdict === 'client-favour' ? 'user-check'
                : 'clock',
@@ -105,7 +109,7 @@ function buildReport(Store, rawDispute) {
     raisedDate: rawDispute.createdAt ? fmtDate(rawDispute.createdAt) : 'N/A',
     raisedBy: _raiser ? (_raiser.role === 'worker' ? 'Gig Worker' : 'Client') : 'User',
     respondent: _respondent ? (_respondent.role === 'worker' ? 'Gig Worker' : 'Client') : 'User',
-    disputeDescription: rawDispute.reason || 'No description provided for this dispute.',
+    disputeDescription: rawDispute.details || rawDispute.reason || 'No description provided for this dispute.',
     // The evidence is the disputed milestone itself — the claim, and what
     // the worker actually submitted.
     evidenceReviewed: _evidence,
@@ -171,25 +175,46 @@ export default function ExpertReportDispute() {
   // to their dashboard.
   const role = Auth.getCurrentUser()?.role || searchParams.get('role') || 'expert';
 
-  // Load from Store — fall back to first resolved dispute
+  // Only the dispute in the link — falling back to "some resolved dispute"
+  // showed a stranger's case under the wrong title.
   const [r] = useState(() => {
-    let rawDispute = rid ? Store.getDisputeById(rid) : null;
-    if (!rawDispute) {
-      const all = Store.getDisputes();
-      rawDispute = all.find(d => d.status === 'resolved') || all[0] || null;
-    }
+    const rawDispute = rid ? Store.getDisputeById(rid) : null;
     return rawDispute ? buildReport(Store, rawDispute) : null;
   });
+
+  function downloadReport() {
+    downloadPdf(`dispute-report-${rid}.pdf`, {
+      title: 'Dispute Resolution Report',
+      subtitle: `${r.project} — ${r.milestone}`,
+      meta: `${r.caseId} · raised ${r.raisedDate}${r.status === 'Published' ? ` · resolved ${r.generatedDate}` : ' · not yet resolved'}`,
+      sections: [
+        { heading: 'Case', rows: [
+          ['Status', r.status === 'Published' ? 'Resolved' : 'Open'],
+          ['Decision', r.decision + (r.overridden ? ' (operations override)' : '')],
+          ['Escrow in question', r.escrow],
+          ['Severity', r.severity],
+          ['Raised by', `${r.raisedByName} (${r.raisedBy})`],
+          ['Against', `${r.respondentName} (${r.respondent})`],
+          ['Expert Reviewer', r.expertName],
+          ...(r.reviewerFee ? [['Reviewer fee', r.reviewerFee]] : []),
+        ] },
+        { heading: 'Dispute', text: r.disputeDescription },
+        { heading: 'Evidence reviewed', rows: r.evidenceReviewed.map(e => [e.label, e.text]) },
+        ...(r.files.length ? [{ heading: 'Submitted files and links', bullets: r.files.map(f => f.name) }] : []),
+        { heading: 'Expert analysis and resolution', text: r.expertAnalysis || 'The reviewer has not given a verdict yet.' },
+      ],
+    });
+  }
 
   if (!r) {
     return (
       <EmptyState
-        role="expert"
-        activePath="/expert-dispute-cases"
+        role={role}
+        activePath={role === 'expert' ? '/expert-dispute-cases' : '/milestone-reports'}
         pageTitle="Dispute Report"
-        message="No dispute report found."
-        linkHref="/expert-dispute-cases"
-        linkLabel="Back to Cases"
+        message={rid ? 'This dispute could not be found, or you are not part of it.' : 'No dispute was selected.'}
+        linkHref={role === 'expert' ? '/expert-dispute-cases' : '/milestone-reports'}
+        linkLabel="Back"
       />
     );
   }
@@ -391,7 +416,7 @@ export default function ExpertReportDispute() {
                 <Icon name="printer" style={{ width: 14, height: 14 }} /> Print Report
               </button>
               {' '}
-              <button className="btn-act" onClick={() => alert('Downloading PDF…')}>
+              <button className="btn-act" onClick={downloadReport}>
                 <Icon name="download" style={{ width: 14, height: 14 }} /> Download PDF
               </button>
             </div>

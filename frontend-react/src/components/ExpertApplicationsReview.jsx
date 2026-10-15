@@ -12,10 +12,8 @@
 import { useState } from 'react';
 import DashboardLayout from './DashboardLayout';
 import Icon from './Icon';
-import { useAuth } from '../context/AuthContext';
 import { useStore } from '../context/StoreContext';
 import { useValidation } from '../context/ValidationContext';
-import { escapeHtml } from '../utils/helpers';
 import useRerender from '../hooks/useRerender';
 
 const AVATAR_COLORS = [
@@ -162,9 +160,7 @@ function ApplicationDetails({ app, showDocuments, onClose, onAction }) {
  */
 export default function ExpertApplicationsReview({ role, activePath, showDocuments }) {
   const Store = useStore();
-  const Auth = useAuth();
   const Validate = useValidation();
-  const session = Auth.getCurrentUser();
   const rerender = useRerender();
   const [activeFilter, setActiveFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -198,15 +194,15 @@ export default function ExpertApplicationsReview({ role, activePath, showDocumen
       Store.updateExpertApplicationStatus(appId, status);
     } catch (e) {
       closeConfirm();
-      Validate.toast(escapeHtml(e.message), 'error');
+      Validate.toast((e.message), 'error');
       return;
     }
     closeConfirm();
     rerender();
     const app = Store.getExpertApplicationById(appId);
     const msg = status === 'approved'
-      ? `✓ ${escapeHtml(app?.name)}'s application approved. Expert account created.`
-      : `✗ ${escapeHtml(app?.name)}'s application rejected.`;
+      ? `✓ ${(app?.name)}'s application approved. Expert account created.`
+      : `✗ ${(app?.name)}'s application rejected.`;
     Validate.toast(msg, status === 'approved' ? 'success' : 'error');
   }
 

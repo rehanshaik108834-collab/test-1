@@ -34,9 +34,10 @@ export default function SuperuserDashboard() {
 
   const totalUsers = users.length;
   const activeTasks = tasks.filter(t => t.status === 'in-progress').length;
-  const escrowTotal = transactions.filter(t => t.type === 'escrow-lock').reduce((s, t) => s + t.amount, 0);
-  const released = transactions.filter(t => t.type === 'milestone-release').reduce((s, t) => s + t.amount, 0);
-  const escrowBalance = escrowTotal - released;
+  // What is held right now comes from the ledger; summing lock rows minus
+  // net release rows over-counted it by every fee and refund.
+  const escrowBalance = Store.getLedgerSummary().totalHeld || 0;
+  const released = transactions.filter(t => t.type === 'milestone-release').reduce((s, t) => s + (t.grossAmount != null ? t.grossAmount : t.amount), 0);
 
   // Role breakdown
   const clients = users.filter(u => u.role === 'client').length;

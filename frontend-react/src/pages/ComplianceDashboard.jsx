@@ -10,6 +10,7 @@ import { useState } from 'react';
 import DashboardLayout from '../components/DashboardLayout';
 import PageStyle from '../components/PageStyle';
 import { useAuth } from '../context/AuthContext';
+import { useValidation } from '../context/ValidationContext';
 import { LANNENT_API } from '../context/StoreContext';
 import usePageTitle from '../hooks/usePageTitle';
 import pageCss from './ComplianceDashboard.css?raw';
@@ -73,11 +74,38 @@ function AuditRows({ data }) {
 
 export default function ComplianceDashboard() {
   const Auth = useAuth();
+  const Validate = useValidation();
   usePageTitle('Audit Log — Lannent');
 
   // The summary line is computed once on load; the filter only swaps the rows.
   const [initialData] = useState(() => fetchLog(''));
   const [data, setData] = useState(initialData);
+  const [kind, setKind] = useState('');
+
+  /**
+   * The export is an authenticated route; a plain link carried no token and
+   * saved the 401 error page as the CSV. Fetch it with the token instead.
+   */
+  async function exportCsv() {
+    const h = {};
+    const token = localStorage.getItem('lannent_token');
+    if (token) h.Authorization = 'Bearer ' + token;
+    try {
+      const res = await fetch(`${API}/audit-log/export${kind ? '?kind=' + encodeURIComponent(kind) : ''}`, { headers: h });
+      if (!res.ok) throw new Error(`The export failed (${res.status}).`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `lannent-audit-${new Date().toISOString().slice(0, 10)}${kind ? '-' + kind : ''}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+    } catch (e) {
+      Validate.toast(e.message, 'error');
+    }
+  }
   const note = initialData
     ? `${initialData.total} event${initialData.total === 1 ? '' : 's'} matching · ${initialData.stored} stored${initialData.droppedFromCapacity ? ' · ' + initialData.droppedFromCapacity + ' dropped at capacity' : ''}`
     : 'unavailable';
@@ -87,7 +115,7 @@ export default function ComplianceDashboard() {
       <PageStyle css={pageCss} />
       <DashboardLayout role={(Auth.getCurrentUser() || {}).role} activePath="/compliance-dashboard" pageTitle="Audit Log" pageSubtitle="Every financial read and every value-moving change, with the actor who asked.">
         <div className="filters">
-          <select id="kindFilter" onChange={ev => setData(fetchLog(ev.target.value))}>
+          <select id="kindFilter" value={kind} onChange={ev => { setKind(ev.target.value); setData(fetchLog(ev.target.value)); }}>
             <option value="">All events</option>
             <option value="money">Money movements</option>
             <option value="fee.change">Fee changes</option>
@@ -97,7 +125,7 @@ export default function ComplianceDashboard() {
           {' '}
           <span style={{ fontSize: 12.5, color: 'var(--muted-foreground)' }}>{note}</span>
           {' '}
-          <a href={`${API}/audit-log/export`} style={{ marginLeft: 'auto', fontSize: 13, color: '#4f46e5', textDecoration: 'none' }}>Export CSV</a>
+          <button type="button" onClick={exportCsv} style={{ marginLeft: 'auto', fontSize: 13, color: '#4f46e5', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Export CSV</button>
         </div>
         <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden' }}>
           <div style={{ overflowX: 'auto' }}>

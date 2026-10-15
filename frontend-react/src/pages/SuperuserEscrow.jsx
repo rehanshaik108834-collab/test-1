@@ -20,9 +20,10 @@ const TYPE_CONFIG = {
   'deposit':           { bg: '#faf5ff', color: '#a855f7', icon: 'arrow-down-circle', label: 'Deposit' },
   'refund':            { bg: '#fff7ed', color: '#f97316', icon: 'rotate-ccw', label: 'Refund' },
   'withdrawal':        { bg: '#fef2f2', color: '#ef4444', icon: 'arrow-up-circle', label: 'Withdrawal' },
-  'dispute-release':   { bg: '#f5f3ff', color: '#8b5cf6', icon: 'scale', label: 'Dispute Release' },
   'audit-escrow-lock': { bg: '#eef2ff', color: '#6366f1', icon: 'lock', label: 'Audit Escrow' },
   'audit-release':     { bg: '#ecfeff', color: '#0891b2', icon: 'clipboard-check', label: 'Audit Payout' },
+  'dispute-escrow-lock': { bg: '#fffbeb', color: '#d97706', icon: 'lock', label: 'Dispute Escrow' },
+  'dispute-fee-release': { bg: '#f5f3ff', color: '#8b5cf6', icon: 'scale', label: 'Dispute Payout' },
   'platform-fee':      { bg: '#f0fdfa', color: '#0d9488', icon: 'percent', label: 'Platform Fee' },
 };
 
@@ -102,7 +103,7 @@ export default function SuperuserEscrow() {
       (from?.name || tx.fromId).toLowerCase().includes(q) ||
       (to?.name || tx.toId).toLowerCase().includes(q) ||
       (task?.title || '').toLowerCase().includes(q) ||
-      tx.description.toLowerCase().includes(q);
+      (tx.description || '').toLowerCase().includes(q);
     const matchType = typeFilter === 'all' || tx.type === typeFilter;
     return matchSearch && matchType;
   });
@@ -125,9 +126,7 @@ export default function SuperuserEscrow() {
           {' '}
           <select className="su-filter" id="txTypeFilter" value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
             <option value="all">All Types</option>
-            <option value="escrow-lock">Escrow Lock</option>
-            <option value="milestone-release">Milestone Release</option>
-            <option value="deposit">Deposit</option>
+            {Object.entries(TYPE_CONFIG).map(([value, c]) => <option key={value} value={value}>{c.label}</option>)}
           </select>
         </div>
 

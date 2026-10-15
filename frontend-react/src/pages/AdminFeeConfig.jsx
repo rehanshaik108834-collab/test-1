@@ -153,8 +153,13 @@ export default function AdminFeeConfig() {
 
   function saveConfig() {
     if (bad) { Validate.toast('Every rate must be zero or greater.', 'error'); return; }
-    const result = Store.updateFeeConfig(draft);
-    if (!result) { Validate.toast('Could not save the fee configuration.', 'error'); return; }
+    let result;
+    try {
+      result = Store.updateFeeConfig(draft);
+    } catch (e) {
+      Validate.toast(e.message, 'error');
+      return;
+    }
     setCfg(result);
     Validate.toast('Fee rates saved. They apply to future charges only.', 'success');
   }

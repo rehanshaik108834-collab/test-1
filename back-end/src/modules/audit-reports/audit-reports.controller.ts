@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Param, Body, Query, Headers, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Param, Body, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiHeader, ApiQuery } from '@nestjs/swagger';
 import { AuditReportsService } from './audit-reports.service';
 import { CreateAuditReportDto } from './dto/create-audit-report.dto';
@@ -20,16 +20,15 @@ export class AuditReportsController {
   findAll(
     @Query('taskId') taskId?: string,
     @Query('auditRequestId') auditRequestId?: string,
-    @Headers('user-id') userId?: string,
-    @Headers('role') role?: string,
+    @CurrentActor() actor?: Actor,
   ) {
-    return this.auditReportsService.findAll({ taskId, auditRequestId }, { id: userId, role });
+    return this.auditReportsService.findAll({ taskId, auditRequestId }, actor);
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get audit report by ID' })
-  findOne(@Param('id') id: string, @Headers('user-id') userId?: string, @Headers('role') role?: string) {
-    return this.auditReportsService.findById(id, { id: userId, role });
+  findOne(@Param('id') id: string, @CurrentActor() actor: Actor) {
+    return this.auditReportsService.findById(id, actor);
   }
 
   @Post()

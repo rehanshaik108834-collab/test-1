@@ -15,7 +15,7 @@ import useSmoothScroll from '../hooks/useSmoothScroll';
 import pageCss from './ExpertLanding.css?raw';
 
 export default function ExpertLanding() {
-  usePageTitle('Expert Reviewer — GigBoard');
+  usePageTitle('Expert Reviewer — Lannent');
   useScrollReveal();   // shared reveal from main.js
   useSmoothScroll();   // smooth "#section" links + navbar shadow
 

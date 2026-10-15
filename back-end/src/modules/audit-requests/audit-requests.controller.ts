@@ -1,9 +1,9 @@
-import { Controller, Get, Post, Patch, Param, Body, Query, Headers, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Param, Body, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiHeader, ApiQuery } from '@nestjs/swagger';
 import { AuditRequestsService } from './audit-requests.service';
 import { CreateAuditRequestDto } from './dto/create-audit-request.dto';
 import { UpdateAuditRequestDto } from './dto/update-audit-request.dto';
-import { CreateOfferDto, AcceptAuditDto, DeclineAuditDto } from './dto/audit-offer.dto';
+import { CreateOfferDto, AcceptAuditDto, DeclineAuditDto, ReassignAuditDto } from './dto/audit-offer.dto';
 import { RoleGuard } from '../../common/guards/role.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentActor } from '../../common/decorators/actor.decorator';
@@ -26,27 +26,26 @@ export class AuditRequestsController {
     @Query('status') status?: string,
     @Query('taskId') taskId?: string,
     @Query('kind') kind?: string,
-    @Headers('user-id') userId?: string,
-    @Headers('role') role?: string,
+    @CurrentActor() actor?: Actor,
   ) {
-    return this.auditRequestsService.findAll({ expertId, status, taskId, kind }, { id: userId, role });
+    return this.auditRequestsService.findAll({ expertId, status, taskId, kind }, actor);
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get audit request by ID' })
-  findOne(@Param('id') id: string, @Headers('user-id') userId?: string, @Headers('role') role?: string) {
-    return this.auditRequestsService.findById(id, { id: userId, role });
+  findOne(@Param('id') id: string, @CurrentActor() actor: Actor) {
+    return this.auditRequestsService.findById(id, actor);
   }
 
   @Get(':id/preview')
   @ApiHeader({ name: 'role', required: true, description: 'User role required' })
-  @Roles('expert', 'client', 'superuser')
+  @Roles('expert', 'client', 'worker', 'superuser', 'compliance-admin')
   @ApiOperation({
     summary: 'Preview the work before accepting',
     description: 'Project, milestones, client, worker and — for a dispute audit — the claim itself.',
   })
-  preview(@Param('id') id: string, @Headers('user-id') userId?: string, @Headers('role') role?: string) {
-    return this.auditRequestsService.preview(id, { id: userId, role });
+  preview(@Param('id') id: string, @CurrentActor() actor: Actor) {
+    return this.auditRequestsService.preview(id, actor);
   }
 
   @Post()
@@ -57,9 +56,16 @@ export class AuditRequestsController {
     return this.auditRequestsService.createForClient(dto, actor);
   }
 
+  @Post(':id/reassign')
+  @Roles('client', 'worker')
+  @ApiOperation({ summary: 'After a decline, ask a different reviewer' })
+  reassign(@Param('id') id: string, @Body() dto: ReassignAuditDto, @CurrentActor() actor: Actor) {
+    return this.auditRequestsService.reassign(id, dto, actor);
+  }
+
   @Post(':id/offers')
   @ApiHeader({ name: 'role', required: true, description: 'User role required' })
-  @Roles('client', 'expert', 'superuser')
+  @Roles('client', 'worker', 'expert')
   @ApiOperation({ summary: 'Make or counter an offer for the audit fee' })
   addOffer(@Param('id') id: string, @Body() dto: CreateOfferDto, @CurrentActor() actor: Actor) {
     return this.auditRequestsService.addOffer(id, dto, actor);
@@ -67,7 +73,7 @@ export class AuditRequestsController {
 
   @Post(':id/offers/:offerId/accept')
   @ApiHeader({ name: 'role', required: true, description: 'User role required' })
-  @Roles('client', 'expert', 'superuser')
+  @Roles('client', 'worker', 'expert')
   @ApiOperation({ summary: 'Accept an outstanding offer, fixing the agreed fee' })
   acceptOffer(@Param('id') id: string, @Param('offerId') offerId: string, @CurrentActor() actor: Actor) {
     return this.auditRequestsService.acceptOffer(id, offerId, actor);
@@ -75,7 +81,7 @@ export class AuditRequestsController {
 
   @Post(':id/fund')
   @ApiHeader({ name: 'role', required: true, description: 'User role required' })
-  @Roles('client', 'superuser')
+  @Roles('client', 'worker')
   @ApiOperation({ summary: 'Move the agreed fee into escrow' })
   fund(@Param('id') id: string, @CurrentActor() actor: Actor) {
     return this.auditRequestsService.fund(id, actor);
@@ -103,7 +109,7 @@ export class AuditRequestsController {
   @Patch(':id')
   @ApiHeader({ name: 'role', required: true, description: 'User role required' })
   // Previously unguarded: any caller with no role header at all could mutate an audit.
-  @Roles('client', 'expert', 'superuser')
+  @Roles('client', 'worker', 'expert')
   @ApiOperation({ summary: 'Update audit request fields' })
   update(@Param('id') id: string, @Body() dto: UpdateAuditRequestDto, @CurrentActor() actor: Actor) {
     return this.auditRequestsService.update(id, dto, actor);

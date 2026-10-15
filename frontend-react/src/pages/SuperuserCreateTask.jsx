@@ -2,38 +2,27 @@
  * LANNENT — SuperuserCreateTask
  * Converted from front-end/pages/superuser-create-task.html.
  *
- * The superuser is no longer permitted to create tasks, so — exactly like the
- * original page — this route always redirects:
- *   signed out → login
- *   superuser  → superuser dashboard
- *   anyone else → their own dashboard
- * The create-task form below (CreateTaskForm) is kept, converted, for reference
- * but is never reached.
+ * Operations creates a task on a client's behalf. The project's budget moves
+ * from that client's wallet into escrow when it is created — exactly as when
+ * the client posts it themselves — so the form shows the client's balance.
  */
 import { Fragment, useState } from 'react';
-import { Navigate, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import Icon from '../components/Icon';
 import PageStyle from '../components/PageStyle';
-import { useAuth } from '../context/AuthContext';
 import { useStore } from '../context/StoreContext';
 import { useValidation } from '../context/ValidationContext';
 import usePageTitle from '../hooks/usePageTitle';
 import pageCss from './SuperuserCreateTask.css?raw';
-import { escapeHtml } from '../utils/helpers';
 
-const CATEGORIES = ['Web Development', 'Mobile Development', 'Backend / API', 'UI/UX Design', 'AI / Machine Learning', 'DevOps / Cloud'];
+import { CATEGORIES } from '../utils/categories';
 const EMPTY_MILESTONE = { title: '', description: '', budget: '', deadline: '' };
 const NO_ERRORS = { mTitle: '', mDesc: '', mBudget: '', mDeadline: '' };
 
 export default function SuperuserCreateTask() {
-  const Auth = useAuth();
   usePageTitle('Create Task — Super User — Lannent');
-  // Superuser is no longer permitted to create tasks — redirect to dashboard.
-  const session = Auth.getCurrentUser();
-  if (!session) return <Navigate to="/login" />;
-  if (session.role === 'superuser') return <Navigate to="/superuser-dashboard" />;
-  return <Navigate to={Auth.getDashboardUrl(session.role)} />;
+  return <CreateTaskForm />;
 }
 
 /** One required-field label. */
@@ -107,7 +96,7 @@ export function CreateTaskForm() {
   const Store = useStore();
   const Validate = useValidation();
   const navigate = useNavigate();
-  const [clients] = useState(() => Store.getUsers().filter(u => u.role === 'client'));
+  const [clients] = useState(() => Store.getUsers().filter(u => u.role === 'client' && u.status === 'active'));
 
   // ── Form state ──
   const [taskTitle, setTaskTitle] = useState('');
@@ -136,8 +125,11 @@ export function CreateTaskForm() {
   const budgetOk = totalBudget > 0 && milestoneCost === totalBudget;
   const summaryBudget = parseFloat(budget || 0);
 
+  const selectedClient = clientId ? Store.getUserById(clientId) : null;
+  const clientBalance = selectedClient ? selectedClient.walletBalance || 0 : 0;
+  const clientCanPay = !selectedClient || clientBalance >= totalBudget;
   const ready = taskTitle.trim().length >= 5 && description.trim().length >= 10 &&
-                parseFloat(budget) > 0 && deadline && clientId && milestones.length > 0 && budgetOk;
+                parseFloat(budget) > 0 && deadline && clientId && milestones.length > 0 && budgetOk && clientCanPay;
 
   // ── Milestone actions ──
   const updateNew = (field, errKey) => e => {
@@ -204,6 +196,7 @@ export function CreateTaskForm() {
     if (!clientId) { Validate.toast('Please select a client.', 'error'); valid = false; }
     if (milestones.length === 0) { Validate.toast('Add at least one milestone before posting.', 'error'); valid = false; }
     if (!budgetOk && milestones.length > 0) { Validate.toast('Total milestone budgets must exactly equal the task budget.', 'error'); valid = false; }
+    if (!clientCanPay) { Validate.toast(`The client's wallet holds $${clientBalance.toLocaleString()}, less than the $${totalBudget.toLocaleString()} budget.`, 'error'); valid = false; }
     return valid;
   };
 
@@ -213,8 +206,8 @@ export function CreateTaskForm() {
 
     setTimeout(() => {
       try {
-        const task = Store.createTask({
-          title: taskTitle,
+        Store.createTaskWithMilestones({
+          title: taskTitle.trim(),
           category,
           description: description.trim(),
           skills: [],
@@ -223,24 +216,16 @@ export function CreateTaskForm() {
           currency,
           auditEnabled: false,
           clientId,
-        });
-        milestones.forEach(m => {
-          Store.createMilestone({ taskId: task.id, title: m.title, description: m.description, budget: parseFloat(m.budget), dueDate: m.deadline || undefined });
-        });
+        }, milestones.map(m => ({ title: m.title, description: m.description, budget: parseFloat(m.budget), dueDate: m.deadline || undefined })));
       } catch (e) {
-        Validate.toast(escapeHtml(e.message), 'error');
+        Validate.toast((e.message), 'error');
         setPublishState('idle');
         return;
       }
-      Validate.toast('Task created and assigned to client successfully!', 'success');
+      Validate.toast(`Task created for ${clientName}. Its $${parseFloat(budget).toLocaleString()} budget is now held in escrow.`, 'success');
       setPublishState('done');
       setTimeout(() => { navigate('/superuser-tasks'); }, 1200);
     }, 800);
-  };
-
-  const saveDraft = () => {
-    if (!taskTitle.trim()) { Validate.toast('Enter a task title to save draft.', 'error'); return; }
-    Validate.toast('Draft saved successfully.', 'info');
   };
 
   const clientName = clientId ? (Store.getUserById(clientId)?.name || 'Unknown') : 'Not selected';
@@ -287,7 +272,7 @@ export function CreateTaskForm() {
                 <Label>Select Client</Label>
                 <select className="form-select" id="clientSelect" value={clientId} onChange={e => setClientId(e.target.value)}>
                   <option value="">— Select a client —</option>
-                  {clients.map(c => <option key={c.id} value={c.id}>{`${c.name} — ${c.email}`}</option>)}
+                  {clients.map(c => <option key={c.id} value={c.id}>{`${c.name} — ${c.email} — wallet $${(c.walletBalance || 0).toLocaleString()}`}</option>)}
                 </select>
               </div>
             </div>
@@ -408,10 +393,6 @@ export function CreateTaskForm() {
 
             {/* Actions */}
             <div className="action-buttons">
-              <button type="button" className="save-draft" onClick={saveDraft}>
-                <Icon name="save" style={{ width: 16, height: 16 }} /> Save Draft
-              </button>
-              {' '}
               <button type="button" className="publish" id="publishBtn" disabled={!ready || publishState !== 'idle'} onClick={handleTaskSubmit}>
                 {publishState === 'idle' ? <Fragment><Icon name="send" style={{ width: 16, height: 16 }} /> Post Task</Fragment> : null}
                 {publishState === 'publishing' ? <Fragment><div className="btn-spinner" style={{ width: 18, height: 18, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.6s linear infinite' }}></div> Publishing...</Fragment> : null}
@@ -428,6 +409,12 @@ export function CreateTaskForm() {
               <SummaryItem kind="milestones" icon="milestone" label="Milestones" id="sumMilestones" value={milestones.length} />
               <SummaryItem kind="deadline" icon="calendar" label="Deadline" id="sumDeadline" value={deadline ? deadline : 'Not set'} />
               <SummaryItem kind="client" icon="user" label="Assigned Client" id="sumClient" value={clientName} />
+              {selectedClient && (
+                <div style={{ fontSize: 12, margin: '6px 0 10px', color: clientCanPay ? 'var(--muted-foreground)' : '#b91c1c' }}>
+                  {`Client wallet: $${clientBalance.toLocaleString()}. `}
+                  {clientCanPay ? 'The budget moves into escrow when the task is created.' : 'Not enough to fund this budget.'}
+                </div>
+              )}
             </div>
           </div>
         </div>

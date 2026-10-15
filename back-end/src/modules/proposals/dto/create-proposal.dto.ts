@@ -6,9 +6,10 @@ export class CreateProposalDto {
   @IsString()
   taskId: string;
 
-  @ApiProperty({ example: 'u5' })
-  @IsString()
-  workerId: string;
+  /** Ignored for a worker (they bid as themselves); the invited worker when a client invites. */
+  @ApiPropertyOptional({ example: 'u5' })
+  @IsOptional() @IsString()
+  workerId?: string;
 
   @ApiPropertyOptional({ example: 'Sarah Johnson' })
   @IsOptional() @IsString()

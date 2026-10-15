@@ -77,3 +77,26 @@ export function hoverBackground(hoverColor, normalColor = 'transparent') {
     onMouseLeave: e => { e.currentTarget.style.background = normalColor; },
   };
 }
+
+/**
+ * After a profile save, the top bar and every page read the name and avatar
+ * from the stored session — so it is updated to match the server's record.
+ */
+export function syncSessionFromUser(user) {
+  if (!user) return;
+  try {
+    const session = JSON.parse(localStorage.getItem('lannent_session') || 'null');
+    if (!session || session.userId !== user.id) return;
+    localStorage.setItem('lannent_session', JSON.stringify({
+      ...session, name: user.name, email: user.email, avatar: user.avatar, avatarColor: user.avatarColor,
+    }));
+  } catch (e) { /* storage unavailable */ }
+}
+
+/** Splits a stored "+919876543210" into its country code and the digits after it. */
+export function splitPhone(phone, countryCode) {
+  const p = String(phone || '');
+  const code = countryCode || '';
+  if (code && p.startsWith(code)) return { code, digits: p.slice(code.length) };
+  return { code: code || '+91', digits: p.replace(/^\+/, '') };
+}

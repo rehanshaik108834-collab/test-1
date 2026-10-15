@@ -44,6 +44,19 @@ export class AuthService {
     }
   }
 
+  /**
+   * Checks a verified token still belongs to a usable account. A token
+   * outlives the decision to suspend or delete its owner by up to twelve
+   * hours otherwise.
+   */
+  accountProblem(userId: string): string | null {
+    let user: any = null;
+    try { user = this.users.findById(userId); } catch { user = null; }
+    if (!user) return 'This account no longer exists.';
+    if (user.status === 'suspended') return 'This account has been suspended. Contact support.';
+    return null;
+  }
+
   /** Confirms a token is still good and reports who it belongs to. */
   whoami(token: string) {
     const claims = this.verify(token);

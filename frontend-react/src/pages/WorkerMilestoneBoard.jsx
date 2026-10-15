@@ -17,10 +17,12 @@ import StatCard from '../components/StatCard';
 import { useAuth } from '../context/AuthContext';
 import { useStore } from '../context/StoreContext';
 import usePageTitle from '../hooks/usePageTitle';
+import useRerender from '../hooks/useRerender';
+import { useValidation } from '../context/ValidationContext';
 import pageCss from './WorkerMilestoneBoard.css?raw';
 
 const PRIORITY_COLORS = { High: '#ef4444', Medium: '#f59e0b', Low: '#10b981' };
-const DONE_STATUSES = ['done', 'approved', 'completed', 'audit-passed'];
+const DONE_STATUSES = ['done', 'approved', 'completed', 'audit-passed', 'refunded'];
 
 /** The worker's milestones grouped into the four board columns. */
 function loadWorkerMilestones(Store, Auth, taskId) {
@@ -37,6 +39,7 @@ function loadWorkerMilestones(Store, Auth, taskId) {
         due: m.dueDate ? new Date(m.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—',
         assignee: session.avatar || 'AW', assigneeColor: session.avatarColor || 'linear-gradient(135deg,#10b981,#059669)',
         priority: m.priority || 'Medium', progress: m.progress || 0, status: m.status || 'todo',
+        revisionNote: m.status === 'revision-needed' ? m.revisionNote : null,
       };
       if (DONE_STATUSES.includes(m.status)) colMap.done.push(card);
       else if (m.status === 'review' || m.status === 'submitted') colMap.review.push(card);
@@ -53,8 +56,9 @@ function loadWorkerMilestones(Store, Auth, taskId) {
 const sumAmounts = cards => cards.reduce((s, m) => s + parseFloat((m.amount || '$0').replace(/[^0-9.]/g, '') || 0), 0);
 
 /** One milestone card; `col` decides the action at the bottom. */
-function MilestoneCard({ m, col }) {
+function MilestoneCard({ m, col, onChange }) {
   const Store = useStore();
+  const Validate = useValidation();
   const navigate = useNavigate();
   const pc = PRIORITY_COLORS[m.priority] || '#6366f1';
 
@@ -68,10 +72,10 @@ function MilestoneCard({ m, col }) {
     try {
       Store.updateMilestone(m.rawId, { status: 'in-progress' });
     } catch (e) {
-      alert(e.message);
+      Validate.toast(e.message, 'error');
       return;
     }
-    window.location.reload();
+    onChange();
   }
 
   return (
@@ -103,7 +107,14 @@ function MilestoneCard({ m, col }) {
       </div>
       {col === 'done' ? (
         <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid rgba(0,0,0,0.05)', textAlign: 'center' }}>
-          <span style={{ fontSize: 12, color: '#10b981', fontWeight: 600 }}>✓ Completed</span>
+          {m.status === 'refunded'
+            ? <span style={{ fontSize: 12, color: '#64748b', fontWeight: 600 }}>Refunded to the client after a dispute</span>
+            : <span style={{ fontSize: 12, color: '#10b981', fontWeight: 600 }}>✓ Paid</span>}
+        </div>
+      ) : ''}
+      {m.revisionNote ? (
+        <div style={{ marginTop: 10, padding: 8, borderRadius: 8, background: '#fffbeb', border: '1px solid #fde68a', fontSize: 12, color: '#78350f', lineHeight: 1.5 }}>
+          <strong>Changes requested:</strong> {m.revisionNote}
         </div>
       ) : ''}
       {col === 'disputed' ? (
@@ -123,8 +134,13 @@ function MilestoneCard({ m, col }) {
           </button>
         </div>
       ) : col === 'todo' ? (
-        <div style={{ marginTop: 10 }}>
-          <button onClick={e => { e.stopPropagation(); startWorking(); }} style={{ width: '100%', padding: 7, borderRadius: 8, background: '#eef2ff', color: '#4f46e5', border: 'none', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Start Working</button>
+        <div style={{ marginTop: 10, display: 'flex', gap: 6 }}>
+          <button onClick={e => { e.stopPropagation(); startWorking(); }} style={{ flex: 1, padding: 7, borderRadius: 8, background: '#eef2ff', color: '#4f46e5', border: 'none', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+            {m.status === 'revision-needed' ? 'Start revising' : 'Start Working'}
+          </button>
+          {m.status === 'revision-needed' && (
+            <button onClick={e => { e.stopPropagation(); submitDeliverable(); }} style={{ flex: 1, padding: 7, borderRadius: 8, background: 'linear-gradient(135deg,#f59e0b,#d97706)', color: 'white', border: 'none', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Resubmit</button>
+          )}
         </div>
       ) : ''}
     </div>
@@ -140,6 +156,7 @@ export default function WorkerMilestoneBoard() {
   const task = taskId ? Store.getTaskById(taskId) : null;
   const taskTitle = task ? task.title : 'Milestone Board';
 
+  const rerender = useRerender();
   const milestones = loadWorkerMilestones(Store, Auth, taskId);
   const allMs = [...milestones.todo, ...milestones.inprogress, ...milestones.review, ...milestones.disputed, ...milestones.done];
   // The badge said "In Progress" whatever the project's state.
@@ -150,15 +167,12 @@ export default function WorkerMilestoneBoard() {
       : { cls: 'badge badge-blue', text: 'In Progress' };
   const doneMs = milestones.done.length;
   const totalBudget = sumAmounts(allMs);
-  const earnedAmt = sumAmounts(milestones.done);
-  const escrowAmt = totalBudget - earnedAmt;
+  const earnedAmt = sumAmounts(milestones.done.filter(m => m.status !== 'refunded'));
+  const escrowAmt = taskId ? (Store.getMyEscrow().projects.find(p => p.taskId === taskId)?.projectHeld || 0) : totalBudget - earnedAmt;
   const taskDeadline = task && task.deadline ? new Date(task.deadline).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—';
   const progressPct = allMs.length ? Math.round((doneMs / allMs.length) * 100) : 0;
   const progressDone = doneMs + milestones.inprogress.length;
 
-  try { localStorage.setItem('userRole', 'worker'); } catch (err) {
-    console.warn('localStorage unavailable, cannot set user role to', 'worker');
-  }
 
   return (
     <>
@@ -183,7 +197,7 @@ export default function WorkerMilestoneBoard() {
         {/* Summary cards */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16, marginBottom: 24 }}>
           <StatCard value={allMs.length} label="Total Milestones" icon="flag" iconBg="#eef2ff" iconColor="#6366f1" />
-          <StatCard value={`$${earnedAmt.toLocaleString()}`} valueStyle={{ color: '#10b981' }} label="Earned so far" icon="check-circle" iconBg="#ecfdf5" iconColor="#10b981" />
+          <StatCard value={`$${earnedAmt.toLocaleString()}`} valueStyle={{ color: '#10b981' }} label="Approved (before fees)" icon="check-circle" iconBg="#ecfdf5" iconColor="#10b981" />
           <StatCard value={`$${escrowAmt.toLocaleString()}`} valueStyle={{ color: '#6366f1' }} label="In Escrow" icon="lock" iconBg="#eef2ff" iconColor="#6366f1" />
           <StatCard value={taskDeadline} label="Final Deadline" icon="calendar" iconBg="#fffbeb" iconColor="#f59e0b" />
         </div>
@@ -219,10 +233,10 @@ export default function WorkerMilestoneBoard() {
           ) : (
             <>
               <KanbanColumn title="To Do" count={milestones.todo.length} dot="#94a3b8" titleColor="#64748b" countBg="#f1f5f9" countColor="#64748b">
-                {milestones.todo.map(m => <MilestoneCard key={m.id} m={m} col="todo" />)}
+                {milestones.todo.map(m => <MilestoneCard key={m.id} m={m} col="todo" onChange={rerender} />)}
               </KanbanColumn>
               <KanbanColumn title="In Progress" count={milestones.inprogress.length} dot="#6366f1" dotAnimation="pulse 2s infinite" titleColor="#6366f1" countBg="#e0e7ff" countColor="#4f46e5" background="#eef2ff">
-                {milestones.inprogress.map(m => <MilestoneCard key={m.id} m={m} col="inprogress" />)}
+                {milestones.inprogress.map(m => <MilestoneCard key={m.id} m={m} col="inprogress" onChange={rerender} />)}
               </KanbanColumn>
               <KanbanColumn title="In Review" count={milestones.review.length} dot="#f59e0b" titleColor="#d97706" countBg="#fef9c3" countColor="#b45309" background="#fffbeb">
                 {milestones.review.map(m => <MilestoneCard key={m.id} m={m} col="review" />)}

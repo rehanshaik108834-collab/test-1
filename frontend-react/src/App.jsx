@@ -10,7 +10,7 @@
  * the same roles.
  */
 import { Fragment, useRef } from 'react';
-import { BrowserRouter, Routes, Route, Outlet, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Outlet, Navigate, useLocation } from 'react-router-dom';
 import { useStore } from './context/StoreContext';
 import RequireRole from './components/RequireRole';
 
@@ -18,7 +18,6 @@ import RequireRole from './components/RequireRole';
 import Home from './pages/Home';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
-import ForgotPassword from './pages/ForgotPassword';
 import ExpertLanding from './pages/ExpertLanding';
 import ExpertLogin from './pages/ExpertLogin';
 import ExpertSignup from './pages/ExpertSignup';
@@ -30,7 +29,7 @@ import ClientMyProjects from './pages/ClientMyProjects';
 import PostTask from './pages/PostTask';
 import HireGigWorkers from './pages/HireGigWorkers';
 import WorkerApplications from './pages/WorkerApplications';
-import ClientAuditOffers from './pages/ClientAuditOffers';
+import AuditOffers from './pages/ClientAuditOffers';
 import ClientWallet from './pages/ClientWallet';
 import ProfileSettings from './pages/ProfileSettings';
 import ProjectMilestoneBoard from './pages/ProjectMilestoneBoard';
@@ -55,7 +54,7 @@ import ExpertAuditRequests from './pages/ExpertAuditRequests';
 import ExpertAuditPreview from './pages/ExpertAuditPreview';
 import ExpertDisputeCases from './pages/ExpertDisputeCases';
 import ExpertReports from './pages/ExpertReports';
-import ExpertMessages from './pages/ExpertMessages';
+import ExpertWallet from './pages/ExpertWallet';
 import ExpertSettings from './pages/ExpertSettings';
 import ResolveDispute from './pages/ResolveDispute';
 
@@ -74,7 +73,6 @@ import SuperuserDashboard from './pages/SuperuserDashboard';
 import SuperuserUsers from './pages/SuperuserUsers';
 import SuperuserTasks from './pages/SuperuserTasks';
 import SuperuserEscrow from './pages/SuperuserEscrow';
-import SuperuserExpertApplications from './pages/SuperuserExpertApplications';
 import SuperuserDisputes from './pages/SuperuserDisputes';
 import SuperuserCreateTask from './pages/SuperuserCreateTask';
 
@@ -85,6 +83,9 @@ import AdminFeeConfig from './pages/AdminFeeConfig';
 import AdminExpertApplications from './pages/AdminExpertApplications';
 import ComplianceDashboard from './pages/ComplianceDashboard';
 import StaffSettings from './pages/StaffSettings';
+import Profile from './pages/Profile';
+
+const ALL_SIGNED_IN = ['client', 'worker', 'expert', 'superuser', 'revenue-admin', 'intake-admin', 'compliance-admin'];
 
 /**
  * PageLoader — makes every navigation behave like the full page load it used
@@ -132,7 +133,6 @@ export default function App() {
           <Route path="/" element={<Home />} />
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
-          <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/expert-landing" element={<ExpertLanding />} />
           <Route path="/expert-login" element={<ExpertLogin />} />
           <Route path="/expert-signup" element={<ExpertSignup />} />
@@ -143,7 +143,8 @@ export default function App() {
           <Route path="/post-task" element={guard(['client'], <PostTask />)} />
           <Route path="/hire-gig-workers" element={guard(['client'], <HireGigWorkers />)} />
           <Route path="/worker-applications" element={guard(['client'], <WorkerApplications />)} />
-          <Route path="/client-audit-offers" element={guard(['client'], <ClientAuditOffers />)} />
+          <Route path="/audit-offers" element={guard(['client', 'worker'], <AuditOffers />)} />
+          <Route path="/client-audit-offers" element={<Navigate to="/audit-offers" replace />} />
           <Route path="/client-wallet" element={guard(['client'], <ClientWallet />)} />
           <Route path="/profile-settings" element={guard(['client'], <ProfileSettings />)} />
           <Route path="/project-milestone-board" element={guard(['client'], <ProjectMilestoneBoard />)} />
@@ -168,7 +169,8 @@ export default function App() {
           <Route path="/expert-audit-preview" element={guard(['expert'], <ExpertAuditPreview />)} />
           <Route path="/expert-dispute-cases" element={guard(['expert'], <ExpertDisputeCases />)} />
           <Route path="/expert-reports" element={guard(['expert'], <ExpertReports />)} />
-          <Route path="/expert-messages" element={guard(['expert'], <ExpertMessages />)} />
+          <Route path="/expert-wallet" element={guard(['expert'], <ExpertWallet />)} />
+          <Route path="/expert-messages" element={<Navigate to="/messages" replace />} />
           <Route path="/expert-settings" element={guard(['expert'], <ExpertSettings />)} />
           <Route path="/resolve-dispute" element={guard(['expert'], <ResolveDispute />)} />
 
@@ -187,10 +189,10 @@ export default function App() {
           <Route path="/superuser-users" element={guard(['superuser'], <SuperuserUsers />)} />
           <Route path="/superuser-tasks" element={guard(['superuser'], <SuperuserTasks />)} />
           <Route path="/superuser-escrow" element={guard(['superuser'], <SuperuserEscrow />)} />
-          <Route path="/superuser-expert-applications" element={guard(['superuser'], <SuperuserExpertApplications />)} />
-          {/* These two do their own redirects (see the pages) */}
-          <Route path="/superuser-disputes" element={<SuperuserDisputes />} />
-          <Route path="/superuser-create-task" element={<SuperuserCreateTask />} />
+          {/* Reviewer intake is the intake desk's job, not operations'. */}
+          <Route path="/superuser-expert-applications" element={<Navigate to="/superuser-dashboard" replace />} />
+          <Route path="/superuser-disputes" element={guard(['superuser'], <SuperuserDisputes />)} />
+          <Route path="/superuser-create-task" element={guard(['superuser'], <SuperuserCreateTask />)} />
 
           {/* ── ADMIN DESKS ── */}
           {/* Old admin desk: always redirects to the user's own dashboard (see the page) */}
@@ -200,6 +202,9 @@ export default function App() {
           <Route path="/admin-expert-applications" element={guard(['intake-admin', 'compliance-admin'], <AdminExpertApplications />)} />
           <Route path="/compliance-dashboard" element={guard(['compliance-admin'], <ComplianceDashboard />)} />
           <Route path="/staff-settings" element={guard(['superuser', 'revenue-admin', 'intake-admin', 'compliance-admin'], <StaffSettings />)} />
+
+          {/* ── EVERY SIGNED-IN ROLE ── */}
+          <Route path="/profile" element={guard(ALL_SIGNED_IN, <Profile />)} />
 
           {/* ── 404 ── */}
           <Route path="*" element={<NotFound />} />

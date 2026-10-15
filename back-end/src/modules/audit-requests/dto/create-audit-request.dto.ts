@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsNumber } from 'class-validator';
+import { IsString, IsOptional, IsNumber, Min } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateAuditRequestDto {
@@ -14,9 +14,10 @@ export class CreateAuditRequestDto {
   @IsOptional() @IsString()
   workerId?: string;
 
-  @ApiProperty({ example: 'u1' })
-  @IsString()
-  clientId: string;
+  /** Ignored from callers — the project's client. */
+  @ApiPropertyOptional({ example: 'u1' })
+  @IsOptional() @IsString()
+  clientId?: string;
 
   @ApiPropertyOptional({ example: 'u3' })
   @IsOptional() @IsString()
@@ -55,7 +56,7 @@ export class CreateAuditRequestDto {
   disputeId?: string;
 
   @ApiPropertyOptional({ example: 250, description: 'Opening offer from the client' })
-  @IsOptional() @IsNumber()
+  @IsOptional() @IsNumber() @Min(1)
   openingOffer?: number;
 
   @ApiPropertyOptional({ example: 'Web Development', description: 'Task category, used to check the reviewer covers this domain' })

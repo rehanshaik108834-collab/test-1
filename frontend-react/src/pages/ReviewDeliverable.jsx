@@ -18,7 +18,6 @@ import { useStore } from '../context/StoreContext';
 import { useValidation } from '../context/ValidationContext';
 import usePageTitle from '../hooks/usePageTitle';
 import pageCss from './ReviewDeliverable.css?raw';
-import { escapeHtml } from '../utils/helpers';
 
 const CHECKLIST = [
   { id: 1, label: 'Code meets project requirements' },
@@ -88,7 +87,7 @@ function AuditPanel({ engagement, report, reviewer }) {
       <div style={CARD_STYLE}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, marginBottom: 14, flexWrap: 'wrap' }}>
           <h3 style={{ fontSize: 15, fontWeight: 600 }}>Expert Reviewer's verdict</h3>
-          <Link to={`/expert-report-audit?id=${engagement.id}`} style={{ fontSize: 12.5, color: 'var(--muted-foreground)', textDecoration: 'underline', textUnderlineOffset: 2 }}>Read the full report</Link>
+          <Link to={`/expert-report-audit?id=${engagement.id}&milestoneId=${report.milestoneId || ''}`} style={{ fontSize: 12.5, color: 'var(--muted-foreground)', textDecoration: 'underline', textUnderlineOffset: 2 }}>Read the full report</Link>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', borderRadius: 12, background: v.bg, border: `1px solid ${v.border}`, marginBottom: 16 }}>
           <Icon name={v.icon} style={{ width: 22, height: 22, color: v.text, flex: 'none' }} />
@@ -209,9 +208,13 @@ export default function ReviewDeliverable() {
   // Match this milestone specifically, or a project-wide audit not yet
   // pointed at one. Falling back to any engagement on the task showed
   // another milestone's verdict on this page.
-  const engagements = (Store.getAuditRequests() || []).filter(a => a.taskId === milestone.taskId && a.kind !== 'dispute-audit');
-  const engagement = engagements.find(a => a.milestoneId === milestone.id) || engagements.find(a => !a.milestoneId) || null;
-  const auditReport = engagement ? Store.getAuditReportByRequest(engagement.id) : null;
+  const engagements = (Store.getAuditRequests() || []).filter(a => a.taskId === milestone.taskId && a.kind !== 'dispute-audit'
+    && !['declined', 'cancelled'].includes(a.status));
+  const engagement = engagements.find(a => a.expertId) || engagements[0] || null;
+  const reviewable = ['submitted', 'review'].includes(milestone.status);
+  // The report for THIS milestone — the engagement covers the whole project,
+  // and its first report is usually about a different milestone.
+  const auditReport = engagement ? Store.getAuditReportByRequest(engagement.id, milestone.id) : null;
   const reviewer = engagement && engagement.expertId ? Store.getUserById(engagement.expertId) : null;
 
   const deliverable = {
@@ -220,7 +223,7 @@ export default function ReviewDeliverable() {
     worker: worker ? worker.name : 'Gig Worker',
     workerAvatar: worker ? worker.avatar : 'GW',
     workerColor: worker ? worker.avatarColor : 'linear-gradient(135deg,#6366f1,#4f46e5)',
-    workerId: milestone.workerId || 'u2',
+    workerId: milestone.workerId,
     submittedDate: milestone.submittedAt ? new Date(milestone.submittedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Recently submitted',
     budget: milestone.budget || 0,
     id: milestone.id,
@@ -234,22 +237,24 @@ export default function ReviewDeliverable() {
   }
 
   function handleApprove() {
+    if (!reviewable) { Validate.toast('This milestone is not waiting for your review.', 'error'); return; }
     if (!allChecked) { Validate.toast('Please complete the checklist before approving.', 'error'); return; }
     setConfirmOpen(true);
   }
 
   function confirmRelease() {
     setConfirmOpen(false);
+    let result;
     try {
-      Store.approveDeliverable(milestone.id);
+      result = Store.approveDeliverable(milestone.id);
     } catch (e) {
       // e.g. escrow cannot cover it, or the milestone is under dispute. This
       // used to be logged and then reported as "released".
-      Validate.toast(escapeHtml(e.message), 'error');
+      Validate.toast((e.message), 'error');
       return;
     }
-    Store.addNotification({ userId: deliverable.workerId, type: 'payment', text: `$${deliverable.budget.toLocaleString()} released from escrow`, subtext: deliverable.milestone + ' approved · just now', read: false });
-    Validate.toast('✓ $' + deliverable.budget.toLocaleString() + ' released to ' + escapeHtml(deliverable.worker), 'success');
+    const net = result && result.release && result.release.net != null ? result.release.net : null;
+    Validate.toast(`✓ $${deliverable.budget.toLocaleString()} released to ${deliverable.worker}${net != null ? ` ($${net.toLocaleString()} after the service fee)` : ''}.`, 'success');
     setTimeout(() => navigate('/client-my-projects'), 2000);
   }
 
@@ -258,13 +263,15 @@ export default function ReviewDeliverable() {
     setCommentsError('');
     // 'revision-needed' is the status the board and the server understand;
     // 'todo' was not one of them.
+    if (!reviewable) { Validate.toast('This milestone is not waiting for your review.', 'error'); return; }
     try {
-      Store.updateMilestone(milestone.id, { status: 'revision-needed' });
+      // The comments go with the request — they are what the worker revises against.
+      Store.updateMilestone(milestone.id, { status: 'revision-needed', revisionNote: comments.trim() });
     } catch (e) {
-      Validate.toast(escapeHtml(e.message), 'error');
+      Validate.toast((e.message), 'error');
       return;
     }
-    Validate.toast('Revision request sent to ' + escapeHtml(deliverable.worker), 'success');
+    Validate.toast('Revision request sent to ' + (deliverable.worker), 'success');
     setTimeout(() => navigate('/client-my-projects'), 1800);
   }
 
@@ -311,7 +318,9 @@ export default function ReviewDeliverable() {
               <div style={{ fontWeight: 700, color: '#10b981', fontSize: 18 }}>{`$${deliverable.budget.toLocaleString()}`}</div>
               <div style={{ fontSize: 11, color: '#065f46' }}>Milestone Value</div>
             </div>
-            <span className="badge badge-orange" style={{ fontSize: 13, padding: '8px 16px' }}>Pending Review</span>
+            <span className={`badge ${reviewable ? 'badge-orange' : 'badge-blue'}`} style={{ fontSize: 13, padding: '8px 16px' }}>
+              {reviewable ? 'Pending Review' : milestone.status.replace(/-/g, ' ')}
+            </span>
           </div>
         </div>
 
@@ -339,7 +348,17 @@ export default function ReviewDeliverable() {
               )}
             </div>
 
-            {role === 'client' ? (
+            {role === 'client' && !reviewable ? (
+              <div style={CARD_STYLE}>
+                <div style={{ fontSize: 14, color: 'var(--muted-foreground)' }}>
+                  {milestone.status === 'revision-needed' ? 'You requested changes. The worker will resubmit.'
+                    : milestone.status === 'disputed' ? 'This milestone is under dispute. The reviewer\'s verdict will settle it.'
+                    : ['completed', 'approved'].includes(milestone.status) ? 'This milestone has been approved and paid.'
+                    : milestone.status === 'refunded' ? 'This milestone was refunded to you after a dispute.'
+                    : 'The worker has not submitted this milestone yet.'}
+                </div>
+              </div>
+            ) : role === 'client' ? (
               <>
                 <div style={CARD_STYLE}>
                   <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 16 }}>Your Review Comments</h3>
@@ -368,7 +387,7 @@ export default function ReviewDeliverable() {
               <div style={CARD_STYLE}>
                 <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 16 }}>Expert Action</h3>
                 <p style={{ fontSize: 14, color: 'var(--muted-foreground)', marginBottom: 20 }}>After reviewing the checklist and files, submit your final audit report.</p>
-                <button onClick={() => navigate(`/expert-report-audit?id=${searchParams.get('auditId')}`)} className="btn-primary" style={{ padding: '12px 24px', borderRadius: 12, width: '100%' }}>
+                <button onClick={() => navigate(`/expert-report-audit?id=${engagement ? engagement.id : ''}&milestoneId=${milestone.id}`)} disabled={!engagement} className="btn-primary" style={{ padding: '12px 24px', borderRadius: 12, width: '100%' }}>
                   <Icon name="clipboard-check" style={BUTTON_ICON_STYLE} />
                   Submit Audit Report
                 </button>

@@ -175,7 +175,7 @@ function DistributionChart({ d }) {
           V${first ? r : 0}
           ${first ? `a${r},${r} 0 0 1 ${r},-${r}` : ''} Z`;
         return (
-          <path key={i} d={path} fill={`var(--series-${(i % 5) + 1})`} className="dist-seg" data-i={i} style={{ cursor: 'pointer' }}
+          <path key={i} d={path} fill={`var(--series-${(i % 6) + 1})`} className="dist-seg" data-i={i} style={{ cursor: 'pointer' }}
                 onMouseMove={e => showTip(e, `${esc(s.label)}<br><b>${money(s.amount)}</b> · ${s.share}% of ${money(d.totalFunded)}`)}
                 onMouseLeave={hideTip} />
         );
@@ -229,6 +229,7 @@ function ProjectBreakdown({ b, onClose }) {
         <BreakdownCard title="Client paid in">
           <Line label="Into project escrow" value={money(b.clientPaid.intoProjectEscrow)} />
           <Line label="Into audit escrow" value={money(b.clientPaid.intoAuditEscrow)} />
+          <Line label="Into dispute escrow" value={money(b.clientPaid.intoDisputeEscrow || 0)} />
           <Line label="Marketplace fee" value={money(b.clientPaid.marketplaceFee)} fee />
           <Line label="Contract initiation" value={money(b.clientPaid.initiationFee)} fee />
           <Line label="Total charged" value={money(b.clientPaid.total)} total />
@@ -252,13 +253,16 @@ function ProjectBreakdown({ b, onClose }) {
           <Line label="Agreed fees" value={money(b.reviewerDispute.grossFees)} />
           <Line label="Platform commission" value={'−' + money(b.reviewerDispute.commission)} fee />
           <Line label="Net received" value={money(b.reviewerDispute.netReceived)} total good />
+          {b.workerPaid && b.workerPaid.intoDisputeEscrow > 0 ? <Line label="Paid in by the worker" value={money(b.workerPaid.intoDisputeEscrow)} /> : null}
           <Line label="Disputes" value={String(b.reviewerDispute.count) + (b.reviewerDispute.reviewers.length ? ' · ' + b.reviewerDispute.reviewers.join(', ') : '')} />
         </BreakdownCard>
 
         <BreakdownCard title="Still held & refunded">
           <Line label="Project escrow" value={money(b.stillHeld.project)} />
           <Line label="Audit escrow" value={money(b.stillHeld.audit)} />
+          <Line label="Dispute escrow" value={money(b.stillHeld.dispute || 0)} />
           <Line label="Refunded to client" value={money(b.refundedToClient)} />
+          {b.refunded > b.refundedToClient ? <Line label="Refunded to worker" value={money(b.refunded - b.refundedToClient)} /> : null}
           <Line label="Total held" value={money(b.stillHeld.total)} total />
         </BreakdownCard>
 
@@ -434,7 +438,7 @@ export default function AdminRevenue() {
               <div className="viz-legend" id="distLegend">
                 {d && d.totalFunded ? d.segments.filter(x => x.amount > 0).map((x, i) => (
                   <span key={i} className="viz-legend-item">
-                    <span className="viz-swatch" style={{ background: `var(--series-${(i % 5) + 1})` }}></span>
+                    <span className="viz-swatch" style={{ background: `var(--series-${(i % 6) + 1})` }}></span>
                     {`${x.label} · `}<b style={{ color: 'var(--foreground)', fontVariantNumeric: 'tabular-nums' }}>{money(x.amount)}</b>
                   </span>
                 )) : ''}

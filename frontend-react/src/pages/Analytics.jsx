@@ -62,7 +62,9 @@ function buildInsights(Store, clientId) {
     completed: myMilestones.filter(ms => DONE_MS.indexOf(ms.status) !== -1 && monthKey(ms.approvedAt) === m).length,
   }));
 
-  const sumOf = (type, m) => myTxs.filter(t => t.type === type && monthKey(t.createdAt) === m).reduce((a, t) => a + (t.amount || 0), 0);
+  // Gross amounts: a release row's `amount` is what the worker netted after fees.
+  const sumOf = (type, m) => myTxs.filter(t => t.type === type && monthKey(t.createdAt) === m)
+    .reduce((a, t) => a + (t.grossAmount != null ? t.grossAmount : t.amount || 0), 0);
   const revenueData = months.map(m => {
     const locked = sumOf('escrow-lock', m);
     const released = sumOf('milestone-release', m);
@@ -122,7 +124,7 @@ function buildInsights(Store, clientId) {
   const events = [];
   myTxs.forEach(t => {
     if (t.type === 'milestone-release') {
-      events.push({ at: t.createdAt, icon: 'dollar-sign', title: 'Escrow Released', desc: '$' + (t.amount || 0).toLocaleString() + ' — ' + (t.description || 'Milestone payment'), time: ago(t.createdAt), color: '#7c3aed', bg: '#faf5ff' });
+      events.push({ at: t.createdAt, icon: 'dollar-sign', title: 'Escrow Released', desc: '$' + (t.grossAmount != null ? t.grossAmount : t.amount || 0).toLocaleString() + ' — ' + (t.description || 'Milestone payment'), time: ago(t.createdAt), color: '#7c3aed', bg: '#faf5ff' });
     } else if (t.type === 'escrow-lock') {
       events.push({ at: t.createdAt, icon: 'users', title: 'Escrow Funded', desc: '$' + (t.amount || 0).toLocaleString() + ' — ' + (t.description || 'Project funded'), time: ago(t.createdAt), color: '#2563eb', bg: '#eff6ff' });
     }
@@ -242,7 +244,7 @@ export default function Analytics() {
   const Auth = useAuth();
   usePageTitle('Project Insights — Lannent');
   const session = Auth.getCurrentUser();
-  const [data] = useState(() => buildInsights(Store, session ? session.userId : 'u1'));
+  const [data] = useState(() => buildInsights(Store, session.userId));
   const { kpi } = data;
 
   return (

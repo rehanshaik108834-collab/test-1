@@ -13,7 +13,6 @@ import PageStyle from '../components/PageStyle';
 import { useAuth } from '../context/AuthContext';
 import { useStore } from '../context/StoreContext';
 import { useValidation } from '../context/ValidationContext';
-import { escapeHtml } from '../utils/helpers';
 import useFieldErrors from '../hooks/useFieldErrors';
 import useRerender from '../hooks/useRerender';
 import usePageTitle from '../hooks/usePageTitle';
@@ -23,11 +22,14 @@ const ROLE_OPTIONS = [
   ['client', 'Client'], ['worker', 'Worker'], ['expert', 'Expert'], ['superuser', 'Super User'],
   ['revenue-admin', 'Revenue Admin'], ['intake-admin', 'Intake Admin'], ['compliance-admin', 'Compliance Admin'],
 ];
+// Expert Reviewers join through the intake desk's application review, which
+// records the domains they cover — an account made here would have none and
+// could never be offered to a client.
+const CREATE_ROLE_OPTIONS = ROLE_OPTIONS.filter(([value]) => value !== 'expert');
 const ROLE_BADGES = { client: 'badge-blue', worker: 'badge-green', expert: 'badge-purple', superuser: 'badge-red', 'revenue-admin': 'badge-orange', 'intake-admin': 'badge-blue', 'compliance-admin': 'badge-purple' };
 const ROLE_COLORS = { client: 'linear-gradient(135deg,#6366f1,#4f46e5)', worker: 'linear-gradient(135deg,#10b981,#059669)', expert: 'linear-gradient(135deg,#a855f7,#7c3aed)', superuser: 'linear-gradient(135deg,#ef4444,#dc2626)', 'revenue-admin': 'linear-gradient(135deg,#f97316,#ea580c)', 'intake-admin': 'linear-gradient(135deg,#3b82f6,#2563eb)', 'compliance-admin': 'linear-gradient(135deg,#8b5cf6,#7c3aed)' };
 
 const EMPTY_FORM = { name: '', email: '', password: '', role: '', status: 'active' };
-const initialsOf = name => name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
 
 export default function SuperuserUsers() {
   const Store = useStore();
@@ -91,7 +93,7 @@ export default function SuperuserUsers() {
       { fieldId: 'mEmail', value: email, checks: [Validate.email] },
       { fieldId: 'mRole', value: role, checks: [v => Validate.selected(v, 'role')] },
     ];
-    if (!editingUserId) {
+    if (!editingUserId || password) {
       rules.push({ fieldId: 'mPassword', value: password, checks: [Validate.password] });
     }
     const { valid } = validateForm(rules);
@@ -106,16 +108,17 @@ export default function SuperuserUsers() {
 
     try {
       if (editingUserId) {
-        // Email, role and password are not changed through a profile edit —
-        // the server ignores them here.
-        Store.updateUser(editingUserId, { name, status, avatar: initialsOf(name) });
-        Validate.toast('User updated successfully.', 'success');
+        // A role is fixed when the account is made; everything else here is saved.
+        Store.updateUser(editingUserId, { name, email, status });
+        if (password) Store.resetUserPassword(editingUserId, password);
+        Validate.toast('User updated.', 'success');
       } else {
-        Store.createUser({ name, email, password, role, avatar: initialsOf(name), avatarColor: ROLE_COLORS[role] || '' });
-        Validate.toast('User created successfully.', 'success');
+        const created = Store.createUser({ name, email, password, role, avatarColor: ROLE_COLORS[role] || '' });
+        if (status === 'suspended') Store.updateUser(created.id, { status });
+        Validate.toast('User created.', 'success');
       }
     } catch (e) {
-      Validate.toast(escapeHtml(e.message), 'error');
+      Validate.toast((e.message), 'error');
       return;
     }
     closeModal();
@@ -127,12 +130,12 @@ export default function SuperuserUsers() {
     if (!user) return;
     const newStatus = user.status === 'active' ? 'suspended' : 'active';
     Validate.confirm(
-      `Are you sure you want to ${newStatus === 'suspended' ? 'suspend' : 'activate'} ${escapeHtml(user.name)}?`,
+      `Are you sure you want to ${newStatus === 'suspended' ? 'suspend' : 'activate'} ${user.name}?`,
       () => {
         try {
           Store.updateUser(id, { status: newStatus });
         } catch (e) {
-          Validate.toast(escapeHtml(e.message), 'error');
+          Validate.toast((e.message), 'error');
           return;
         }
         rerender();
@@ -148,12 +151,12 @@ export default function SuperuserUsers() {
     if (session && session.userId === id) { Validate.toast('You cannot delete your own account.', 'error'); return; }
 
     Validate.confirm(
-      `Permanently delete ${escapeHtml(user.name)}? This action cannot be undone.`,
+      `Permanently delete ${user.name}? This action cannot be undone.`,
       () => {
         try {
           Store.deleteUser(id);
         } catch (e) {
-          Validate.toast(escapeHtml(e.message), 'error');
+          Validate.toast((e.message), 'error');
           return;
         }
         setFrozenRows(filtered);
@@ -248,18 +251,19 @@ export default function SuperuserUsers() {
               <FieldError id="mEmail" message={errors.mEmail} />
             </div>
             <div className="form-group">
-              <label className="form-label">Password <span className="req" id="pwRequired">*</span></label>
+              <label className="form-label">Password {!editingUserId ? <span className="req" id="pwRequired">*</span> : null}</label>
               {' '}
-              <input className="form-input" id="mPassword" type="password" placeholder="Leave blank to keep existing" value={form.password} onChange={setField('password', 'mPassword')} style={errorStyle('mPassword')} />
+              <input className="form-input" id="mPassword" type="password" placeholder={editingUserId ? 'Leave blank to keep the current password' : 'At least 8 characters with A-z, 0-9 and a symbol'} value={form.password} onChange={setField('password', 'mPassword')} style={errorStyle('mPassword')} />
               <FieldError id="mPassword" message={errors.mPassword} />
             </div>
             <div className="form-group">
               <label className="form-label">Role <span className="req">*</span></label>
               {' '}
-              <select className="form-select" id="mRole" value={form.role} onChange={setField('role', 'mRole')} style={errorStyle('mRole')}>
+              <select className="form-select" id="mRole" value={form.role} onChange={setField('role', 'mRole')} style={errorStyle('mRole')} disabled={!!editingUserId}>
                 <option value="">Select role</option>
-                {ROLE_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                {(editingUserId ? ROLE_OPTIONS : CREATE_ROLE_OPTIONS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
               </select>
+              {!editingUserId ? <div style={{ fontSize: 12, color: 'var(--muted-foreground)', marginTop: 4 }}>Expert Reviewers join through an application reviewed by the intake desk.</div> : null}
               <FieldError id="mRole" message={errors.mRole} />
             </div>
             <div className="form-group">

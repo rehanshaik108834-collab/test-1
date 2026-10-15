@@ -25,15 +25,16 @@ export default function WorkerDashboard() {
 
   // Live stats from store
   const session = Auth.getCurrentUser();
-  const userId = session?.userId || 'u2';
+  const userId = session.userId;
   const myTasks = Store.getTasksByWorker(userId);
   const activeProjects = myTasks.filter(t => t.status === 'in-progress').length;
   const completedProjects = myTasks.filter(t => t.status === 'completed').length;
-  const earned = Store.getTransactionsByUser(userId).filter(t => t.type === 'milestone-release').reduce((s, t) => s + t.amount, 0);
+  const earned = Store.getTransactions().filter(t => t.type === 'milestone-release' && t.toId === userId)
+    .reduce((s, t) => s + (t.netAmount != null ? t.netAmount : t.amount || 0), 0);
   const proposals = Store.getProposalsByWorker(userId).length;
   const pendingProposals = Store.getProposalsByWorker(userId).filter(p => p.status === 'pending').length;
 
-  const activeTasks = myTasks.filter(t => t.status !== 'completed').slice(0, 3);
+  const activeTasks = myTasks.filter(t => !['completed', 'cancelled'].includes(t.status)).slice(0, 3);
   const recommendedTasks = Store.getTasks().filter(t => t.status === 'open' && t.workerId !== userId && t.clientId !== userId).slice(0, 3);
 
   return (

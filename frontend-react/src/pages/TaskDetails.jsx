@@ -14,7 +14,7 @@ import PageStyle from '../components/PageStyle';
 import { useAuth } from '../context/AuthContext';
 import { useStore } from '../context/StoreContext';
 import { useValidation } from '../context/ValidationContext';
-import { escapeHtml, getSavedTaskIds, toggleSavedTask } from '../utils/helpers';
+import { getSavedTaskIds, toggleSavedTask } from '../utils/helpers';
 import usePageTitle from '../hooks/usePageTitle';
 import pageCss from './TaskDetails.css?raw';
 
@@ -52,7 +52,10 @@ export default function TaskDetails() {
   const [coverLetter, setCoverLetter] = useState('');
   // The page shows the proposal count from when it was opened (it is not
   // refreshed after submitting, as before).
-  const [proposalCount] = useState(() => (urlId ? Store.getProposalsByTask(urlId).filter(p => p.type !== 'invitation').length : 0));
+  const [proposalCount, setProposalCount] = useState(() => (urlId ? Store.getProposalsByTask(urlId).filter(p => p.type !== 'invitation').length : 0));
+  // A worker who already has a live proposal here sees that, not "Apply Now".
+  const [applied, setApplied] = useState(() => !!urlId && Store.getProposals().some(p =>
+    p.taskId === urlId && p.workerId === userId && p.type !== 'invitation' && p.status === 'pending'));
 
   const task = urlId ? Store.getTaskById(urlId) : null;
 
@@ -126,23 +129,15 @@ export default function TaskDetails() {
         skills: currentUser.skills || [],
         status: 'pending',
       });
-
-      // Notify the task's client about the new proposal
-      if (latest && latest.clientId) {
-        Store.addNotification({
-          userId: latest.clientId,
-          type: 'proposal',
-          text: `New proposal from ${escapeHtml(currentUser.name || 'a worker')}`,
-          subtext: `${escapeHtml(latest.title)} — Bid: $${taskBudget.toLocaleString()}, Timeline: ${timeline}`,
-        });
-      }
     } catch (e) {
       console.error('[submitProposal] Error:', e);
-      Validate.toast(escapeHtml(e.message), 'error');
+      Validate.toast((e.message), 'error');
       return;
     }
 
     setApplyOpen(false);
+    setApplied(true);
+    setProposalCount(c => c + 1);
     Validate.toast('✓ Proposal submitted successfully!', 'success');
   }
 
@@ -176,7 +171,7 @@ export default function TaskDetails() {
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--muted-foreground)' }}>
                       <Icon name="clock" style={{ width: 13, height: 13 }} />
-                      Posted recently
+                      {task.createdAt ? 'Posted ' + new Date(task.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Posted recently'}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--muted-foreground)' }}>
                       <Icon name="map-pin" style={{ width: 13, height: 13 }} />
@@ -241,13 +236,19 @@ export default function TaskDetails() {
               </div>
               {taskStatus === 'open' ? (
                 <>
-                <button className="btn-primary" style={{ width: '100%', padding: 12, borderRadius: 12, fontSize: 15, marginBottom: 12 }} onClick={() => setApplyOpen(true)}>Apply Now</button>
+                {role !== 'worker' ? (
+                  <div style={{ width: '100%', padding: 12, borderRadius: 12, fontSize: 14, fontWeight: 600, textAlign: 'center', marginBottom: 12, background: '#eef2ff', color: '#3730a3' }}>Open for proposals</div>
+                ) : applied ? (
+                  <Link to="/my-proposals" className="btn-outline" style={{ display: 'block', width: '100%', padding: 12, borderRadius: 12, fontSize: 15, marginBottom: 12, textAlign: 'center', textDecoration: 'none' }}>✓ Proposal submitted — view it</Link>
+                ) : (
+                  <button className="btn-primary" style={{ width: '100%', padding: 12, borderRadius: 12, fontSize: 15, marginBottom: 12 }} onClick={() => setApplyOpen(true)}>Apply Now</button>
+                )}
                 {' '}
-                <button className="btn-outline" style={{ width: '100%', padding: 12, borderRadius: 12, fontSize: 15, ...(saved ? { borderColor: '#6366f1', color: '#4f46e5', background: '#eef2ff' } : {}) }}
+                {role === 'worker' && <button className="btn-outline" style={{ width: '100%', padding: 12, borderRadius: 12, fontSize: 15, ...(saved ? { borderColor: '#6366f1', color: '#4f46e5', background: '#eef2ff' } : {}) }}
                         onClick={toggleSave} aria-pressed={saved}>
                   <Icon name={saved ? 'bookmark-check' : 'bookmark'} style={{ width: 16, height: 16, display: 'inline', verticalAlign: 'middle', marginRight: 6 }} />
                   {saved ? 'Saved' : 'Save Task'}
-                </button>
+                </button>}
                 </>
               ) : (
                 <div style={{ width: '100%', padding: 12, borderRadius: 12, fontSize: 14, fontWeight: 600, textAlign: 'center', marginBottom: 12, ...STATUS_BOX_COLORS[taskStatus === 'in-progress' || taskStatus === 'completed' ? taskStatus : 'other'] }}>{taskStatus === 'in-progress' ? '🔄 In Progress — Not Accepting Proposals' : taskStatus === 'completed' ? '✅ Completed' : '⚠️ ' + statusLabel}</div>

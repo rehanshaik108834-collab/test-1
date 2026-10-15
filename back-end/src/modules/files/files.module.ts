@@ -3,13 +3,13 @@ import { FilesController } from './files.controller';
 import { FilesService } from './files.service';
 import { FilesRepository } from './files.repository';
 import { TasksModule } from '../tasks/tasks.module';
-import { AuditRequestsModule } from '../audit-requests/audit-requests.module';
+import { ContactsModule } from '../contacts/contacts.module';
 
 import { RequireAuthMiddleware } from '../../common/middleware/require-auth.middleware';
 import { UploadGuardMiddleware } from '../../common/middleware/upload-guard.middleware';
 
 @Module({
-  imports: [forwardRef(() => TasksModule), forwardRef(() => AuditRequestsModule)],
+  imports: [forwardRef(() => TasksModule), forwardRef(() => ContactsModule)],
   controllers: [FilesController],
   providers: [FilesService, FilesRepository],
   exports: [FilesService],

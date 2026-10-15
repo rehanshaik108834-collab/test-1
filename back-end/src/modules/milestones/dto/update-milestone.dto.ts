@@ -28,6 +28,10 @@ export class UpdateMilestoneDto extends PartialType(OmitType(CreateMilestoneDto,
   @ApiPropertyOptional({ example: 60 })
   @IsOptional() @IsNumber() @Min(0) @Max(100)
   progress?: number;
+
+  @ApiPropertyOptional({ example: 'The checkout button should match the design.', description: 'Sent with a change request' })
+  @IsOptional() @IsString() @MaxLength(2000)
+  revisionNote?: string;
 }
 
 /** A file in the store, as a deliverable references it. */

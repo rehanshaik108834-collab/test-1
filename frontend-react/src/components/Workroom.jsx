@@ -39,10 +39,10 @@ const VARIANTS = {
     myProjectsPath: '/worker-my-projects',
     boardPath: '/worker-milestone-board',
     pageTitle: 'Worker Workroom',
-    listTitle: 'In Progress Milestones',
-    listStatuses: ['inprogress'],
-    listEmpty: 'No milestones currently in progress.',
-    listLabels: { inprogress: 'In Progress', pending: 'Pending' },
+    listTitle: 'Milestones to work on',
+    listStatuses: ['inprogress', 'revision-needed', 'pending'],
+    listEmpty: 'No milestones waiting on you.',
+    listLabels: { inprogress: 'In Progress', pending: 'Not started', 'revision-needed': 'Changes requested' },
     noWorker: { name: 'You', avatar: 'ME', avatarColor: 'linear-gradient(135deg,#10b981,#059669)' },
     action: { id: 'btnSubmitDeliverable', icon: 'upload', label: 'Submit Deliverable' },
     // The id has to travel in the URL. Without it the submit page had
@@ -52,8 +52,8 @@ const VARIANTS = {
   },
 };
 
-const STATUS_COLORS = { completed: '#10b981', inprogress: '#6366f1', pending: '#94a3b8', review: '#f59e0b', disputed: '#ef4444' };
-const STATUS_BGS = { completed: '#ecfdf5', inprogress: '#eef2ff', pending: '#f1f5f9', review: '#fffbeb', disputed: '#fef2f2' };
+const STATUS_COLORS = { completed: '#10b981', inprogress: '#6366f1', pending: '#94a3b8', review: '#f59e0b', disputed: '#ef4444', 'revision-needed': '#b45309', refunded: '#64748b' };
+const STATUS_BGS = { completed: '#ecfdf5', inprogress: '#eef2ff', pending: '#f1f5f9', review: '#fffbeb', disputed: '#fef2f2', 'revision-needed': '#fffbeb', refunded: '#f1f5f9' };
 const ACTION_BUTTON_STYLE = { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 10, borderRadius: 12, fontSize: 13 };
 const CLIENT_COLOR = 'linear-gradient(135deg,#6366f1,#4f46e5)';
 const WORKER_COLOR = 'linear-gradient(135deg,#10b981,#059669)';
@@ -78,7 +78,9 @@ function statusLabel(status) {
     : status === 'inprogress' ? 'In Progress'
     : status === 'completed' ? 'Completed'
     : status === 'disputed' ? 'Disputed'
-    : status === 'pending' ? 'Pending'
+    : status === 'pending' ? 'Not started'
+    : status === 'revision-needed' ? 'Changes requested'
+    : status === 'refunded' ? 'Refunded'
     : status;
 }
 
@@ -92,39 +94,39 @@ function showToast(msg, type = 'success') {
   setTimeout(() => t.remove(), 2800);
 }
 
-/**
- * The milestone list. If an earlier page left "milestonesData" in
- * localStorage, that list is shown instead (as the original did).
- */
+/** The project's milestones, as the server has them. */
 function loadMilestones(Store, task) {
-  let milestones = Store.getMilestonesByTask(task.id).map(m => ({
+  return Store.getMilestonesByTask(task.id).map(m => ({
     id: m.id,
     title: m.title || 'Untitled Milestone',
     amount: formatAmount(m.budget || 0),
     status: normalizeStatus(m.status),
     statusLabel: statusLabel(normalizeStatus(m.status)),
   }));
-  if (!milestones.length) {
-    milestones = [{ id: 'none', title: 'No milestones available', amount: '$0', status: 'pending', statusLabel: 'Pending' }];
-  }
-  try {
-    const stored = localStorage.getItem('milestonesData');
-    if (stored) return JSON.parse(stored);
-  } catch (e) {
-    console.warn('localStorage unavailable for milestonesData', e);
-  }
-  return milestones;
+}
+
+/** A file shared in the chat. Clicking it downloads with the viewer's credentials. */
+function Attachment({ a, light }) {
+  const Store = useStore();
+  if (!a) return null;
+  return (
+    <a href={Store.fileUrl(a)} download={a.name}
+       style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 6, fontSize: 13, color: light ? '#fff' : '#4f46e5', textDecoration: 'underline' }}>
+      <Icon name="paperclip" style={{ width: 13, height: 13 }} />{a.name}
+    </a>
+  );
 }
 
 /** One chat bubble from the project's message history. */
-function ChatMessage({ m, role }) {
-  const isMe = (role === 'client' && m.sender === 'client') || (role === 'worker' && m.sender === 'worker');
+function ChatMessage({ m, meId }) {
+  const isMe = m.senderId === meId;
   return (
     <div style={{ display: 'flex', ...(isMe ? { flexDirection: 'row-reverse' } : {}), gap: 10, maxWidth: '75%', ...(isMe ? { marginLeft: 'auto' } : {}) }}>
       <div style={{ width: 32, height: 32, borderRadius: '50%', background: m.color, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 10, fontWeight: 700, flexShrink: 0 }}>{m.avatar}</div>
       <div>
         <div style={{ padding: '10px 14px', borderRadius: 16, ...(isMe ? { background: '#6366f1', color: 'white', borderBottomRightRadius: 4 } : { background: 'var(--card)', border: '1px solid var(--border)', borderBottomLeftRadius: 4 }), fontSize: 14, lineHeight: 1.5 }}>
           {m.content}
+          <Attachment a={m.attachment} light={isMe} />
         </div>
         <div style={{ fontSize: 11, color: 'var(--muted-foreground)', marginTop: 4, ...(isMe ? { textAlign: 'right' } : {}) }}>{m.time}</div>
       </div>
@@ -132,14 +134,17 @@ function ChatMessage({ m, role }) {
   );
 }
 
-/** A message sent from this page (added below the history, as before). */
+/** A message sent from this page (added below the history). */
 function SentMessage({ m }) {
-  const isClient = m.isClient;
+  const isClient = true;
   return (
     <div style={{ display: 'flex', flexDirection: isClient ? 'row-reverse' : 'row', gap: 10, maxWidth: '75%', ...(isClient ? { marginLeft: 'auto' } : {}) }}>
       <div style={{ width: 32, height: 32, borderRadius: '50%', background: m.color, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 10, fontWeight: 700, flexShrink: 0 }}>{m.avatar}</div>
       <div>
-        <div style={{ padding: '10px 14px', borderRadius: 16, ...(isClient ? { background: '#6366f1', color: 'white', borderBottomRightRadius: 4 } : { background: 'var(--card)', border: '1px solid var(--border)', borderBottomLeftRadius: 4 }), fontSize: 14, lineHeight: 1.5 }}>{m.text}</div>
+        <div style={{ padding: '10px 14px', borderRadius: 16, ...(isClient ? { background: '#6366f1', color: 'white', borderBottomRightRadius: 4 } : { background: 'var(--card)', border: '1px solid var(--border)', borderBottomLeftRadius: 4 }), fontSize: 14, lineHeight: 1.5 }}>
+          {m.text}
+          <Attachment a={m.attachment} light />
+        </div>
         <div style={{ fontSize: 11, color: 'var(--muted-foreground)', marginTop: 4, ...(isClient ? { textAlign: 'right' } : {}) }}>Just now</div>
       </div>
     </div>
@@ -177,17 +182,19 @@ function buildView(Store, task, noWorker) {
   };
 
   // Chat history (or a welcome line for a brand-new project)
-  let initialMessages = Store.getMessagesByTask(task.id).map(m => ({
+  const initialMessages = Store.getMessagesByTask(task.id)
+    .slice()
+    .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))
+    .map(m => ({
     id: m.id,
+    senderId: m.senderId,
+    attachment: m.attachment,
     sender: m.senderId === task.clientId ? 'client' : 'worker',
     avatar: m.senderAvatar || (m.senderId === task.clientId ? (client.avatar || 'CL') : (worker.avatar || 'WK')),
     color: m.senderAvatarColor || (m.senderId === task.clientId ? (client.avatarColor || CLIENT_COLOR) : (worker.avatarColor || WORKER_COLOR)),
     content: m.content,
-    time: new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    time: new Date(m.createdAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
   }));
-  if (!initialMessages.length) {
-    initialMessages = [{ id: '1', sender: 'client', avatar: client.avatar || 'CL', color: client.avatarColor || CLIENT_COLOR, content: 'Welcome to the workspace for "' + project.name + '".', time: 'Just now' }];
-  }
 
   return { escrowView, client, worker, project, initialMessages };
 }
@@ -204,11 +211,7 @@ export default function Workroom({ variant }) {
   const taskId = searchParams.get('id');
 
   // The viewer's role, remembered for the chat (as the original did on load)
-  const [role] = useState(() => {
-    const r = Auth.getCurrentUser()?.role || cfg.defaultRole;
-    try { localStorage.setItem('userRole', r); } catch (err) { console.warn('localStorage unavailable, cannot set user role to', r); }
-    return r;
-  });
+  const [role] = useState(() => Auth.getCurrentUser()?.role || cfg.defaultRole);
 
   const [task] = useState(() => (taskId ? Store.getTaskById(taskId) : null));
   const [milestones] = useState(() => (task ? loadMilestones(Store, task) : []));
@@ -216,6 +219,9 @@ export default function Workroom({ variant }) {
   const [selectedMilestoneId, setSelectedMilestoneId] = useState(null);
   const [draft, setDraft] = useState('');
   const [sent, setSent] = useState([]);   // messages sent from this page
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef(null);
+  const meId = Auth.getCurrentUser()?.userId;
   const chatRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -264,43 +270,51 @@ export default function Workroom({ variant }) {
     navigate('/dispute?milestoneId=' + encodeURIComponent(selected.id));
   }
 
-  function sendWorkroomMsg() {
+  /** The other party on the project: the worker for the client, the client for the worker. */
+  const receiverId = meId === task.clientId ? task.workerId : task.clientId;
+
+  function sendWorkroomMsg(attachment) {
     const text = draft.trim();
-    if (!text) return;
-    const curRole = localStorage.getItem('userRole') || cfg.defaultRole;
-    const isClient = curRole === 'client';
-    const session = Auth.getCurrentUser();
-    const senderId = isClient ? task.clientId : task.workerId;
-    const receiverId = isClient ? task.workerId : task.clientId;
-    const senderUser = senderId ? Store.getUserById(senderId) : null;
+    if (!text && !attachment) return;
+    if (!receiverId) { showToast('Nobody is hired on this project yet, so there is no one to message.', 'warn'); return; }
+    const senderUser = Store.getUserById(meId);
 
     // Persist to backend + auto-notification
     try {
-    Store.sendMessage({
-      taskId: task.id,
-      senderId,
-      receiverId,
-      content: text,
-      senderName: senderUser?.name || (session?.name || ''),
-      senderAvatar: senderUser?.avatar || (session?.avatar || ''),
-      senderAvatarColor: senderUser?.avatarColor || '',
-    });
+      Store.sendMessage({ taskId: task.id, receiverId, content: text, attachment });
     } catch (e) {
-      alert(e.message);
+      showToast(e.message, 'error');
       return;
     }
 
     setSent(list => [...list, {
       text,
-      isClient,
-      avatar: senderUser?.avatar || (isClient ? 'CL' : 'WK'),
-      color: senderUser?.avatarColor || (isClient ? CLIENT_COLOR : WORKER_COLOR),
+      attachment,
+      avatar: senderUser?.avatar || '?',
+      color: senderUser?.avatarColor || CLIENT_COLOR,
     }]);
     setDraft('');
     if (inputRef.current) inputRef.current.style.height = 'auto';
   }
 
   // Auto-grow the message box up to 120px
+  /** Uploads the chosen file to this project and shares it in the chat. */
+  async function attachFile(e) {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    if (!receiverId) { showToast('Nobody is hired on this project yet, so there is no one to send it to.', 'warn'); return; }
+    setUploading(true);
+    try {
+      const ref = await Store.uploadFile(file, { taskId: task.id, purpose: 'message' });
+      sendWorkroomMsg(ref);
+    } catch (err) {
+      showToast(err.message || 'The file could not be uploaded.', 'error');
+    } finally {
+      setUploading(false);
+    }
+  }
+
   function onDraftInput(e) {
     setDraft(e.target.value);
     e.target.style.height = 'auto';
@@ -351,29 +365,33 @@ export default function Workroom({ variant }) {
             <Icon name="message-square" style={{ width: 18, height: 18, color: '#6366f1' }} />
             {' '}
             <span style={{ fontWeight: 600, fontSize: 14 }}>Project Workroom Chat</span>
-            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#22c55e' }}>
-              <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e', animation: 'pulse 2s infinite' }}></div>
-              Live
-            </div>
+
           </div>
 
           <div className="chat-msgs" id="chatMsgs" ref={chatRef}>
-            {initialMessages.map(m => <ChatMessage key={m.id} m={m} role={role} />)}
+            {!initialMessages.length && !sent.length ? (
+              <div style={{ textAlign: 'center', color: 'var(--muted-foreground)', fontSize: 13, padding: 24 }}>
+                No messages yet. {receiverId ? 'Say hello to get the project started.' : 'You can message here once someone is hired.'}
+              </div>
+            ) : null}
+            {initialMessages.map(m => <ChatMessage key={m.id} m={m} meId={meId} />)}
             {sent.map((m, i) => <SentMessage key={'sent' + i} m={m} />)}
           </div>
 
           <div className="chat-footer-bar">
-            <button className="topnav-btn" title="Attach file" onClick={() => document.getElementById('fileInput').click()}>
-              <Icon name="paperclip" style={{ width: 16, height: 16 }} />
+            <button className="topnav-btn" title={uploading ? 'Uploading…' : 'Attach a file (PDF, image, Office document or zip, up to 10MB)'}
+                    disabled={uploading} onClick={() => fileRef.current && fileRef.current.click()}>
+              <Icon name={uploading ? 'loader' : 'paperclip'} style={{ width: 16, height: 16 }} />
             </button>
             {' '}
-            <input type="file" id="fileInput" style={{ display: 'none' }} />
+            <input type="file" ref={fileRef} style={{ display: 'none' }} onChange={attachFile}
+                   accept=".zip,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.jpg,.jpeg,.png,.gif,.svg,.webp,.txt,.md,.csv,.json" />
             {' '}
             <textarea id="workroomInput" placeholder="Type your message..." rows="1" ref={inputRef} value={draft} onChange={onDraftInput}
                       onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendWorkroomMsg(); } }}
                       style={{ flex: 1, padding: '10px 14px', borderRadius: 12, border: '1px solid var(--border)', background: 'var(--input-bg)', fontSize: 14, fontFamily: 'inherit', outline: 'none', resize: 'none', minHeight: 40, maxHeight: 120 }} />
             {' '}
-            <button id="workroomSend" onClick={sendWorkroomMsg} style={{ width: 40, height: 40, borderRadius: 12, background: '#6366f1', color: 'white', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
+            <button id="workroomSend" onClick={() => sendWorkroomMsg()} style={{ width: 40, height: 40, borderRadius: 12, background: '#6366f1', color: 'white', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
               <Icon name="send" style={{ width: 16, height: 16 }} />
             </button>
           </div>

@@ -42,6 +42,12 @@ export class MilestonesRepository {
     return this.milestones.filter(m => m.taskId === taskId);
   }
 
+  deleteByTaskId(taskId: string): number {
+    const before = this.milestones.length;
+    this.milestones = this.milestones.filter(m => m.taskId !== taskId);
+    return before - this.milestones.length;
+  }
+
   resetToSeed(): void {
     this.milestones = JSON.parse(JSON.stringify(SEED_MILESTONES));
   }

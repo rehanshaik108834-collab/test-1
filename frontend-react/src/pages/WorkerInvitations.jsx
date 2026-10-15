@@ -14,12 +14,12 @@ import StatCard from '../components/StatCard';
 import { useAuth } from '../context/AuthContext';
 import { useStore } from '../context/StoreContext';
 import { useValidation } from '../context/ValidationContext';
-import { hoverBackground, escapeHtml } from '../utils/helpers';
+import { hoverBackground } from '../utils/helpers';
 import useRerender from '../hooks/useRerender';
 import usePageTitle from '../hooks/usePageTitle';
 
 const FILTERS = [['all', 'All'], ['pending', 'Pending'], ['accepted', 'Accepted'], ['declined', 'Declined']];
-const STATUS_BADGES = { 'Pending': 'badge-orange', 'Accepted': 'badge-green', 'Declined': 'badge-red' };
+const STATUS_BADGES = { 'Pending': 'badge-orange', 'Accepted': 'badge-green', 'Declined': 'badge-red', 'Withdrawn': 'badge-gray' };
 
 /** The worker's invitations, shaped for display. */
 function loadInvitations(Store, userId) {
@@ -32,7 +32,7 @@ function loadInvitations(Store, userId) {
       projectName: task ? task.title : 'Unknown Task',
       client: client ? client.name : 'Unknown Client',
       budget: task ? task.budget : 0,
-      status: status === 'pending' ? 'Pending' : status === 'hired' ? 'Accepted' : 'Declined',
+      status: status === 'pending' ? 'Pending' : status === 'hired' ? 'Accepted' : status === 'closed' ? 'Withdrawn' : 'Declined',
       rawStatus: p.status,
       received: p.createdAt ? new Date(p.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Recently',
       message: p.coverLetter || '',
@@ -70,7 +70,7 @@ export default function WorkerInvitations() {
       try {
         Store.acceptInvitation(id);
       } catch (e) {
-        Validate.toast(escapeHtml(e.message), 'error');
+        Validate.toast((e.message), 'error');
         return;
       }
       refreshPage();
@@ -83,7 +83,7 @@ export default function WorkerInvitations() {
       try {
         Store.declineInvitation(id);
       } catch (e) {
-        Validate.toast(escapeHtml(e.message), 'error');
+        Validate.toast((e.message), 'error');
         return;
       }
       refreshPage();

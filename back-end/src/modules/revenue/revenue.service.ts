@@ -9,7 +9,9 @@ import { FEE_CONFIG, round2 } from '../ledger/fee-config';
 import { UpdateFeeConfigDto } from './dto/update-fee-config.dto';
 
 /** Money that left escrow and reached a person. */
-const PAYOUT_TYPES = ['milestone-release', 'audit-release'];
+const PAYOUT_TYPES = ['milestone-release', 'audit-release', 'dispute-fee-release'];
+/** Money that entered escrow. */
+const LOCK_TYPES = ['escrow-lock', 'audit-escrow-lock', 'dispute-escrow-lock'];
 
 /**
  * RevenueService — read-only aggregation over the ledger, plus fee tuning.
@@ -124,7 +126,7 @@ export class RevenueService {
         const deposits = txs.filter((t: any) => t.type === 'deposit' && t.toId === u.id);
         const withdrawals = txs.filter((t: any) => t.type === 'withdrawal' && t.fromId === u.id);
         const escrowFunded = txs.filter(
-          (t: any) => ['escrow-lock', 'audit-escrow-lock'].includes(t.type) && t.fromId === u.id,
+          (t: any) => LOCK_TYPES.includes(t.type) && t.fromId === u.id,
         );
 
         const feesPaid = round2(
@@ -143,7 +145,7 @@ export class RevenueService {
           feesPaid,
           totalDeposited: round2(deposits.reduce((a: number, t: any) => a + this.gross(t), 0)),
           totalWithdrawn: round2(withdrawals.reduce((a: number, t: any) => a + this.gross(t), 0)),
-          escrowFunded: round2(escrowFunded.reduce((a: number, t: any) => a + this.gross(t), 0)),
+          escrowFunded: round2(escrowFunded.reduce((a: number, t: any) => a + (t.netAmount ?? t.amount ?? 0), 0)),
           // Effective rate this user paid on what they earned.
           effectiveRate: grossEarned > 0 ? round2((feesPaid / grossEarned) * 100) : 0,
         };
@@ -164,7 +166,7 @@ export class RevenueService {
     // An escrow-lock row's grossAmount is what the client was charged in total
     // (budget + marketplace + initiation); only netAmount entered escrow.
     const funded = sum(
-      txs.filter((t: any) => ['escrow-lock', 'audit-escrow-lock'].includes(t.type)),
+      txs.filter((t: any) => LOCK_TYPES.includes(t.type)),
       (t) => t.netAmount ?? t.amount ?? 0,
     );
     const workerNet = sum(
@@ -173,6 +175,10 @@ export class RevenueService {
     );
     const expertNet = sum(
       txs.filter((t: any) => t.type === 'audit-release'),
+      (t) => t.netAmount ?? t.amount ?? 0,
+    );
+    const disputeNet = sum(
+      txs.filter((t: any) => t.type === 'dispute-fee-release'),
       (t) => t.netAmount ?? t.amount ?? 0,
     );
     const refunded = sum(txs.filter((t: any) => t.type === 'refund'));
@@ -189,7 +195,8 @@ export class RevenueService {
 
     const segments = [
       { label: 'Paid to workers', amount: workerNet },
-      { label: 'Paid to reviewers', amount: expertNet },
+      { label: 'Paid to reviewers (audits)', amount: expertNet },
+      { label: 'Paid to reviewers (disputes)', amount: disputeNet },
       { label: 'Platform commission', amount: escrowFees },
       { label: 'Refunded to clients', amount: refunded },
       { label: 'Still held in escrow', amount: stillHeld },
@@ -224,7 +231,7 @@ export class RevenueService {
         );
         const funded = round2(
           txs
-            .filter((t: any) => ['escrow-lock', 'audit-escrow-lock'].includes(t.type) && t.taskId === taskId)
+            .filter((t: any) => LOCK_TYPES.includes(t.type) && t.taskId === taskId)
             .reduce((a: number, t: any) => a + (t.netAmount ?? t.amount ?? 0), 0),
         );
         return {
@@ -235,7 +242,11 @@ export class RevenueService {
           budget: task?.budget || 0,
           funded,
           platformRevenue: rev,
-          escrowHeld: this.ledger.getEscrow(taskId).projectHeld + this.ledger.getEscrow(taskId).auditHeld,
+          escrowHeld: round2(
+            this.ledger.getEscrow(taskId).projectHeld +
+            this.ledger.getEscrow(taskId).auditHeld +
+            this.ledger.getEscrow(taskId).disputeHeld,
+          ),
         };
       })
       .sort((a, b) => b.platformRevenue - a.platformRevenue);
@@ -258,20 +269,16 @@ export class RevenueService {
     const feeOf = (type: string) =>
       round2(revenue.filter((r) => r.feeType === type).reduce((a, r) => a + r.amount, 0));
 
-    // An audit payout belongs to an engagement; its kind says whether the money
-    // was earned auditing the project or arbitrating a dispute on it.
-    const auditReleases = txs.filter((t: any) => t.type === 'audit-release');
-    const kindOf = (t: any) => {
-      const ar = t.auditRequestId
-        ? this.safe(() => this.auditRequests.findById(t.auditRequestId))
-        : null;
-      return ar?.kind || 'project-audit';
-    };
-    const auditRows = auditReleases.filter((t: any) => kindOf(t) === 'project-audit');
-    const disputeRows = auditReleases.filter((t: any) => kindOf(t) === 'dispute-audit');
+    // Audit and dispute fees move through separate escrow buckets and are
+    // recorded under separate transaction types, so they are never summed.
+    const auditRows = txs.filter((t: any) => t.type === 'audit-release');
+    const disputeRows = txs.filter((t: any) => t.type === 'dispute-fee-release');
 
     const escrowLocks = txs.filter((t: any) => t.type === 'escrow-lock');
     const auditLocks = txs.filter((t: any) => t.type === 'audit-escrow-lock');
+    const disputeLocks = txs.filter((t: any) => t.type === 'dispute-escrow-lock');
+    const clientDisputeLocks = disputeLocks.filter((t: any) => t.fromId === task.clientId);
+    const workerDisputeLocks = disputeLocks.filter((t: any) => t.fromId !== task.clientId);
     const releases = txs.filter((t: any) => t.type === 'milestone-release');
     const refunds = txs.filter((t: any) => t.type === 'refund');
 
@@ -297,9 +304,17 @@ export class RevenueService {
       clientPaid: {
         intoProjectEscrow: sum(escrowLocks, net),
         intoAuditEscrow: sum(auditLocks, net),
+        intoDisputeEscrow: sum(clientDisputeLocks, net),
         marketplaceFee: marketplace,
         initiationFee: initiation,
-        total: round2(sum(escrowLocks, net) + sum(auditLocks, net) + marketplace + initiation),
+        total: round2(
+          sum(escrowLocks, net) + sum(auditLocks, net) + sum(clientDisputeLocks, net) + marketplace + initiation,
+        ),
+      },
+
+      // A worker who raises a dispute pays its reviewer.
+      workerPaid: {
+        intoDisputeEscrow: sum(workerDisputeLocks, net),
       },
 
       // What the gig worker took out
@@ -327,9 +342,10 @@ export class RevenueService {
         reviewers: [...new Set(disputeRows.map((t: any) => t.toId))].map(nameOf),
       },
 
-      refundedToClient: sum(refunds, gross),
-      stillHeld: { project: escrow.projectHeld, audit: escrow.auditHeld,
-                   total: round2(escrow.projectHeld + escrow.auditHeld) },
+      refunded: sum(refunds, gross),
+      refundedToClient: sum(refunds.filter((t: any) => t.toId === task.clientId), gross),
+      stillHeld: { project: escrow.projectHeld, audit: escrow.auditHeld, dispute: escrow.disputeHeld,
+                   total: round2(escrow.projectHeld + escrow.auditHeld + escrow.disputeHeld) },
 
       platformEarnings: {
         marketplaceFee: marketplace,

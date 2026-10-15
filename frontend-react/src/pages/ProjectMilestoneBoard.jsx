@@ -45,8 +45,9 @@ function loadMilestonesFromStore(Store, Auth, taskId) {
       status: m.status || 'todo',
       rawId: m.id,
       taskId: m.taskId,
+      revision: m.status === 'revision-needed',
     };
-    if (m.status === 'completed' || m.status === 'approved' || m.status === 'audit-passed') colMap.done.push(card);
+    if (['completed', 'approved', 'audit-passed', 'refunded'].includes(m.status)) colMap.done.push(card);
     else if (m.status === 'review' || m.status === 'submitted') colMap.review.push(card);
     else if (m.status === 'disputed') colMap.disputed.push(card);
     else if (m.status === 'in-progress') colMap.inProgress.push(card);
@@ -93,7 +94,9 @@ function MilestoneCard({ m, col }) {
       </div>
       {col === 'done' ? (
         <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid rgba(0,0,0,0.05)', textAlign: 'center' }}>
-          <span style={{ fontSize: 12, color: '#10b981', fontWeight: 600 }}>✓ Approved &amp; Paid</span>
+          {m.status === 'refunded'
+            ? <span style={{ fontSize: 12, color: '#64748b', fontWeight: 600 }}>Refunded to you after a dispute</span>
+            : <span style={{ fontSize: 12, color: '#10b981', fontWeight: 600 }}>✓ Approved &amp; Paid</span>}
         </div>
       ) : ''}
       {col === 'review' ? (
@@ -105,6 +108,7 @@ function MilestoneCard({ m, col }) {
         </div>
       ) : ''}
       {col === 'disputed' ? <div style={{ marginTop: 10, textAlign: 'center', color: '#b91c1c', fontWeight: 700, fontSize: 12 }}>⚠ Dispute Active</div> : ''}
+      {m.revision ? <div style={{ marginTop: 10, textAlign: 'center', color: '#b45309', fontWeight: 600, fontSize: 12 }}>↺ Changes requested — waiting for the worker</div> : ''}
     </div>
   );
 }
@@ -115,17 +119,19 @@ export default function ProjectMilestoneBoard() {
   usePageTitle('Milestone Board — Lannent');
   const [searchParams] = useSearchParams();
   const taskId = searchParams.get('id');
-  const task = taskId ? Store.getTaskById(taskId) : null;
-
   const milestones = loadMilestonesFromStore(Store, Auth, taskId);
   const allMs = [...milestones.todo, ...milestones.inProgress, ...milestones.review, ...milestones.disputed, ...milestones.done];
   const doneMs = milestones.done.length;
-  const totalBudget = sumAmounts(allMs);
-  const releasedAmt = sumAmounts(milestones.done);
+  const boardTaskId = taskId || Store.getTasksByClient(Auth.getCurrentUser()?.userId)[0]?.id;
+  const boardTask = boardTaskId ? Store.getTaskById(boardTaskId) : null;
+  const releasedAmt = sumAmounts(milestones.done.filter(m => m.status !== 'refunded'));
   const released = '$' + releasedAmt.toLocaleString();
-  const pending = '$' + (totalBudget - releasedAmt).toLocaleString();
-  const taskTitle = task ? task.title : 'Milestone Board';
-  const taskDeadline = task && task.deadline ? new Date(task.deadline).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—';
+  const heldNow = boardTaskId ? (Store.getMyEscrow().projects.find(p => p.taskId === boardTaskId)?.projectHeld || 0) : 0;
+  const pending = '$' + heldNow.toLocaleString();
+  const daysLeft = boardTask && boardTask.deadline ? Math.ceil((new Date(boardTask.deadline) - new Date()) / 86400000) : null;
+  const statusLabel = boardTask ? boardTask.status.replace(/-/g, ' ') : '';
+  const taskTitle = boardTask ? boardTask.title : 'Milestone Board';
+  const taskDeadline = boardTask && boardTask.deadline ? new Date(boardTask.deadline).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—';
   const progressPct = allMs.length ? Math.round((doneMs / allMs.length) * 100) : 0;
 
   return (
@@ -140,13 +146,13 @@ export default function ProjectMilestoneBoard() {
           </Link>
           <span style={{ color: 'var(--border)' }}>›</span>
           <span style={{ fontSize: 14, fontWeight: 500 }}>{taskTitle}</span>
-          <span className="badge badge-blue" style={{ marginLeft: 'auto' }}>In Progress</span>
-          <Link to={`/milestone-reports?role=client&taskId=${taskId || ''}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 34, padding: '0 14px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--card)', fontSize: 13, fontWeight: 500, color: 'var(--foreground)', textDecoration: 'none', transition: 'background 0.15s' }}
+          {statusLabel ? <span className={`badge ${boardTask.status === 'completed' ? 'badge-green' : milestones.disputed.length ? 'badge-red' : 'badge-blue'}`} style={{ marginLeft: 'auto', textTransform: 'capitalize' }}>{milestones.disputed.length ? 'Disputed' : statusLabel}</span> : null}
+          <Link to={`/milestone-reports?role=client&taskId=${boardTaskId || ''}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 34, padding: '0 14px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--card)', fontSize: 13, fontWeight: 500, color: 'var(--foreground)', textDecoration: 'none', transition: 'background 0.15s' }}
                 onMouseEnter={e => { e.currentTarget.style.background = 'var(--secondary)'; }} onMouseLeave={e => { e.currentTarget.style.background = 'var(--card)'; }}>
             <Icon name="file-text" style={{ width: 14, height: 14 }} />
             Reports
           </Link>
-          <Link to={`/project-workroom?id=${taskId}`} className="btn-primary" style={{ fontSize: 13, padding: '6px 14px', marginLeft: 4 }}>
+          <Link to={`/project-workroom?id=${boardTaskId || ''}`} className="btn-primary" style={{ fontSize: 13, padding: '6px 14px', marginLeft: 4 }}>
             <Icon name="door-open" style={{ width: 14, height: 14, display: 'inline', verticalAlign: 'middle', marginRight: 6 }} />
             Go to Workroom
           </Link>
@@ -166,7 +172,7 @@ export default function ProjectMilestoneBoard() {
             <span style={{ fontWeight: 600, fontSize: 15 }}>Overall Progress</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <span style={{ fontSize: 14, fontWeight: 700, color: '#6366f1' }}>{`${progressPct}%`}</span>
-              <Link to="/messages" className="btn-primary" style={{ fontSize: 13, padding: '6px 14px' }}>
+              <Link to={`/messages?taskId=${boardTaskId || ''}`} className="btn-primary" style={{ fontSize: 13, padding: '6px 14px' }}>
                 <Icon name="message-square" style={{ width: 14, height: 14, display: 'inline', verticalAlign: 'middle', marginRight: 6 }} />
                 Message Worker
               </Link>
@@ -177,7 +183,7 @@ export default function ProjectMilestoneBoard() {
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: 12, color: 'var(--muted-foreground)' }}>
             <span>{`${doneMs} of ${allMs.length} milestones completed`}</span>
-            <span>22 days remaining</span>
+            <span>{daysLeft === null ? 'No deadline set' : daysLeft >= 0 ? `${daysLeft} day${daysLeft === 1 ? '' : 's'} remaining` : `${-daysLeft} day${daysLeft === -1 ? '' : 's'} past the deadline`}</span>
           </div>
         </div>
 

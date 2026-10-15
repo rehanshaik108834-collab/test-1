@@ -15,6 +15,7 @@ import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
 import { escapeHtml } from '../utils/helpers';
 import usePageTitle from '../hooks/usePageTitle';
+import { downloadPdf } from '../utils/pdf';
 import pageCss from './MilestoneReports.css?raw';
 
 const NBSP_DOT = ' ·  ';   // "&nbsp;·&nbsp; " separator
@@ -52,7 +53,8 @@ function getReports(Store, taskId) {
       findings: r.findings,
       project: r.projectTitle,
       workerName: r.workerName,
-      viewUrl: '/expert-report-audit?id=' + r.auditRequestId,
+      viewUrl: `/expert-report-audit?id=${r.auditRequestId}&milestoneId=${r.milestoneId || ''}`,
+      raw: r,
     }));
 
   let storeDisputes = Store.getDisputes().map(d => ({
@@ -71,6 +73,7 @@ function getReports(Store, taskId) {
     project: d.project,
     workerName: d.againstName,
     viewUrl: '/expert-report-dispute?id=' + d.id,
+    raw: d,
   }));
 
   // ── PROJECT-LEVEL FILTERING ──
@@ -131,14 +134,49 @@ function VerdictChip({ r }) {
   return <div className="report-verdict" style={{ background: v.bg, borderColor: v.border, color: v.text }}>{v.label}</div>;
 }
 
-/** Small toast in the bottom-right corner (this page's own variant). */
-function showToast(msg, type = 'success') {
-  const t = document.createElement('div');
-  const bg = type === 'success' ? '#10b981' : type === 'info' ? '#6366f1' : '#ef4444';
-  t.style.cssText = `position:fixed;bottom:24px;right:24px;background:${bg};color:white;padding:14px 20px;border-radius:12px;font-size:14px;font-weight:500;z-index:300;box-shadow:0 8px 24px rgba(0,0,0,0.15);animation:fadeUp 0.4s ease;`;
-  t.textContent = msg;
-  document.body.appendChild(t);
-  setTimeout(() => t.remove(), 3000);
+const VERDICT_TEXT = {
+  pass: 'Pass', fail: 'Fail', conditional: 'Pass with conditions',
+  'worker-favour': 'In favour of the worker', 'client-favour': 'In favour of the client',
+  split: 'Split 50/50', revision: 'Sent back for revision',
+};
+
+/** Builds and saves the PDF for one report card. */
+function downloadReportPdf(r) {
+  const x = r.raw || {};
+  if (r.type === 'technical-audit') {
+    downloadPdf(`audit-report-${r.id}.pdf`, {
+      title: 'Technical Audit Report',
+      subtitle: `${r.project || 'Project'} — ${r.milestoneName}`,
+      meta: `Report ${r.id} · filed ${fmtDate(r.date)}`,
+      sections: [
+        { heading: 'Verdict', rows: [['Verdict', VERDICT_TEXT[x.verdict] || 'Pending'], ['Reviewer', r.reviewer], ['Worker', r.workerName || '-']] },
+        { heading: 'Quality scores', rows: [
+          ['Code quality', `${x.codequality || 0} / 5`], ['Security', `${x.security || 0} / 5`],
+          ['Performance', `${x.performance || 0} / 5`], ['Documentation', `${x.documentation || 0} / 5`],
+        ] },
+        { heading: 'Technical findings', text: x.findings || 'No findings recorded.' },
+      ],
+    });
+  } else {
+    downloadPdf(`dispute-report-${r.id}.pdf`, {
+      title: 'Dispute Resolution Report',
+      subtitle: `${r.project || 'Project'} — ${r.milestoneName}`,
+      meta: `Case ${r.id} · raised ${fmtDate(x.createdAt)}${x.resolvedAt ? ' · resolved ' + fmtDate(x.resolvedAt) : ''}`,
+      sections: [
+        { heading: 'Case', rows: [
+          ['Status', x.status === 'resolved' ? 'Resolved' : 'Open'],
+          ['Decision', VERDICT_TEXT[x.verdict] || 'Pending'],
+          ['Amount in question', x.amount || '-'],
+          ['Raised by', x.raisedByName || '-'],
+          ['Against', x.againstName || '-'],
+          ['Expert Reviewer', r.reviewer],
+        ] },
+        { heading: 'Dispute', text: [x.reason, x.details].filter(Boolean).join(' — ') || 'No details recorded.' },
+        ...(x.outcome ? [{ heading: 'Outcome requested', text: x.outcome }] : []),
+        { heading: 'Resolution', text: x.resolution || 'The reviewer has not given a verdict yet.' },
+      ],
+    });
+  }
 }
 
 /** One report card. */
@@ -185,7 +223,7 @@ function ReportCard({ r, index, role }) {
           <Icon name="eye" style={{ width: 14, height: 14 }} />
           View Report
         </Link>
-        <button className="btn-download" onClick={() => showToast('Downloading PDF…', 'info')}>
+        <button className="btn-download" onClick={() => downloadReportPdf(r)}>
           <Icon name="download" style={{ width: 14, height: 14 }} />
           Download PDF
         </button>

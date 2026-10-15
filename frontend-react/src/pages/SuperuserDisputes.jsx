@@ -7,49 +7,43 @@
  * to their dashboard (signed-out visitors go to login), exactly as before.
  */
 import { useState } from 'react';
-import { Navigate } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import FieldError from '../components/FieldError';
 import PageStyle from '../components/PageStyle';
 import StatCard from '../components/StatCard';
-import { useAuth } from '../context/AuthContext';
 import { useStore } from '../context/StoreContext';
 import { useValidation } from '../context/ValidationContext';
-import { escapeHtml } from '../utils/helpers';
 import useFieldErrors from '../hooks/useFieldErrors';
 import useRerender from '../hooks/useRerender';
 import usePageTitle from '../hooks/usePageTitle';
 import pageCss from './SuperuserDisputes.css?raw';
 
-const VERDICT_LABELS = { 'worker-favour': 'Worker receives full payment', 'client-favour': 'Client receives full refund', 'split': 'Funds split equally between both parties' };
+const VERDICT_LABELS = {
+  'worker-favour': 'The worker receives the milestone payment',
+  'client-favour': 'The milestone escrow is refunded to the client and the milestone closed',
+  split: 'The milestone escrow is split equally',
+  revision: 'The worker revises the milestone; its escrow stays held',
+};
 
-/** Applies a verdict and notifies both parties. */
-function resolveAndNotify(Store, Auth, disputeId, verdict, resolution) {
-  const d = Store.getDisputeById(disputeId);
-  Store.resolveDispute(disputeId, { verdict, resolution });
-  // Notify both parties
-  const vLabel = verdict === 'worker-favour' ? 'in favour of the Worker' : verdict === 'client-favour' ? 'in favour of the Client' : 'with a 50/50 split';
-  if (d && d.raisedBy) {
-    Store.addNotification({ userId: d.raisedBy, type: 'dispute-resolved', text: `Dispute resolved: ${escapeHtml(d.project)}`, subtext: `Verdict ${vLabel}` });
-  }
-  if (d && d.againstId) {
-    Store.addNotification({ userId: d.againstId, type: 'dispute-resolved', text: `Dispute resolved: ${escapeHtml(d.project)}`, subtext: `Verdict ${vLabel}` });
+/** Applies a verdict as an operations override. The server notifies both parties. */
+function resolveAsOperations(Store, Validate, disputeId, verdict, resolution) {
+  try {
+    Store.resolveDispute(disputeId, { verdict, resolution });
+    return true;
+  } catch (e) {
+    Validate.toast(e.message, 'error');
+    return false;
   }
 }
 
 export default function SuperuserDisputes() {
   const Store = useStore();
-  const Auth = useAuth();
   const Validate = useValidation();
   usePageTitle('All Disputes — Lannent');
-  const session = Auth.getCurrentUser();
   const rerender = useRerender();
 
-  // Stats are counted once when the page opens (as in the original).
-  const [stats] = useState(() => {
-    const all = Store.getDisputes();
-    return { total: all.length, open: all.filter(d => d.status === 'open').length, resolved: all.filter(d => d.status === 'resolved').length };
-  });
+  const allDisputes = Store.getDisputes();
+  const stats = { total: allDisputes.length, open: allDisputes.filter(d => d.status === 'open').length, resolved: allDisputes.filter(d => d.status === 'resolved').length };
   const [statusFilter, setStatusFilter] = useState('all');
 
   // Override dialog
@@ -59,18 +53,15 @@ export default function SuperuserDisputes() {
   const [overrideResolution, setOverrideResolution] = useState('');
   const { errors, clearError, clearAllErrors, validateForm, errorStyle } = useFieldErrors();
 
-  // Superuser is no longer permitted to access the disputes page — redirect to dashboard.
-  if (!session) return <Navigate to="/login" />;
-  if (session.role === 'superuser') return <Navigate to="/superuser-dashboard" />;
 
   const disputes = Store.getDisputes().filter(d => statusFilter === 'all' || d.status === statusFilter);
 
   function quickResolve(disputeId, verdict) {
     Validate.confirm(
-      `Apply verdict: "${verdict.replace(/-/g, ' ')}"? ${VERDICT_LABELS[verdict]}.`,
+      `Override with "${verdict.replace(/-/g, ' ')}"? ${VERDICT_LABELS[verdict]}. Any reviewer fee held for this dispute goes back to whoever paid it.`,
       () => {
-        resolveAndNotify(Store, Auth, disputeId, verdict, VERDICT_LABELS[verdict]);
-        Validate.toast('Dispute resolved successfully.', 'success');
+        if (!resolveAsOperations(Store, Validate, disputeId, verdict, `Operations override: ${VERDICT_LABELS[verdict]}.`)) return;
+        Validate.toast('Dispute settled.', 'success');
         rerender();
       }
     );
@@ -97,7 +88,7 @@ export default function SuperuserDisputes() {
     ]);
     if (!valid) return;
 
-    resolveAndNotify(Store, Auth, activeDisputeId, overrideVerdict, resolution);
+    if (!resolveAsOperations(Store, Validate, activeDisputeId, overrideVerdict, resolution)) return;
     closeOverrideModal();
     Validate.toast('Dispute override applied.', 'success');
     rerender();
@@ -141,12 +132,13 @@ export default function SuperuserDisputes() {
                 <span><strong>Raised by:</strong>{' ' + d.raisedByName}</span>
                 <span><strong>Against:</strong>{' ' + d.againstName}</span>
                 <span><strong>Amount:</strong>{' ' + d.amount}</span>
+                <span><strong>Reviewer:</strong>{' ' + (d.expertId ? (Store.getUserById(d.expertId)?.name || d.expertId) : 'none assigned')}</span>
                 {d.milestone ? <span><strong>Milestone:</strong>{' ' + d.milestone}</span> : ''}
               </div>
-              <div className="dispute-reason">{d.reason}</div>
+              <div className="dispute-reason">{[d.reason, d.details].filter(Boolean).join(' — ')}</div>
               {d.status === 'resolved' ? (
                 <div className="resolution-box">
-                  <strong>{`Resolution (${d.verdict?.replace(/-/g, ' ')}):`}</strong>{' ' + d.resolution}
+                  <strong>{`Resolution (${d.verdict?.replace(/-/g, ' ')}${d.overriddenBy ? ', operations override' : ''}):`}</strong>{' ' + d.resolution}
                   {d.resolvedAt ? <><br /><span style={{ opacity: 0.7 }}>{`Resolved on ${d.resolvedAt}`}</span></> : ''}
                 </div>
               ) : (
@@ -154,6 +146,7 @@ export default function SuperuserDisputes() {
                   <button className="btn-worker" onClick={() => quickResolve(d.id, 'worker-favour')}>✓ Favour Worker</button>
                   <button className="btn-client" onClick={() => quickResolve(d.id, 'client-favour')}>✓ Favour Client</button>
                   <button className="btn-split" onClick={() => quickResolve(d.id, 'split')}>⟺ Split 50/50</button>
+                  <button className="btn-split" onClick={() => quickResolve(d.id, 'revision')}>↺ Send for revision</button>
                   <button className="btn-edit" onClick={() => openOverrideModal(d.id)} style={{ padding: '8px 16px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--background)', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>Custom Override</button>
                 </div>
               )}
@@ -166,7 +159,7 @@ export default function SuperuserDisputes() {
              onClick={e => { if (e.target.id === 'overrideModal') closeOverrideModal(); }}>
           <div className="modal">
             <p style={{ fontSize: 18, fontWeight: 600, marginBottom: 6 }} id="overrideDisputeTitle">{overrideTitle}</p>
-            <p style={{ fontSize: 14, color: 'var(--muted-foreground)', marginBottom: 20 }}>As Super User, your override is binding and final.</p>
+            <p style={{ fontSize: 14, color: 'var(--muted-foreground)', marginBottom: 20 }}>An operations override is binding and final. Any reviewer fee held for the case is returned to whoever paid it.</p>
             <div className="form-group">
               <label className="form-label">
                 Verdict <span style={{ color: '#ef4444' }}>*</span>
@@ -178,6 +171,7 @@ export default function SuperuserDisputes() {
                 <option value="worker-favour">Favour Worker — release payment</option>
                 <option value="client-favour">Favour Client — refund escrow</option>
                 <option value="split">Split 50/50 — divide equally</option>
+                <option value="revision">Send back for revision — escrow stays held</option>
               </select>
               <FieldError id="overrideVerdict" message={errors.overrideVerdict} />
             </div>

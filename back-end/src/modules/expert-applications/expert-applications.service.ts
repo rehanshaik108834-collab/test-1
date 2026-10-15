@@ -4,6 +4,7 @@ import { UpdateExpertApplicationStatusDto } from './dto/update-expert-applicatio
 import { ExpertApplicationsRepository } from './expert-applications.repository';
 import { UsersService } from '../users/users.service';
 import { hashPassword } from '../../common/security/password.util';
+import { assertStrongPassword } from '../users/users.service';
 import { AppLoggerService } from '../../common/logging/app-logger.service';
 
 /**
@@ -69,6 +70,7 @@ export class ExpertApplicationsService {
 
   create(dto: CreateExpertApplicationDto) {
     // One live application per address, and none for an existing account.
+    assertStrongPassword(dto.password);
     const email = dto.email.trim().toLowerCase();
     const clash = this.expertApplicationsRepository
       .findAll()
@@ -83,6 +85,7 @@ export class ExpertApplicationsService {
       reviewedAt: null,
       reviewedBy: null,
       ...dto,
+      email,
       // The applicant chooses a password on the form and it sits in this record
       // until approval creates their account. Hashed on the way in, so an
       // application never holds a readable one.

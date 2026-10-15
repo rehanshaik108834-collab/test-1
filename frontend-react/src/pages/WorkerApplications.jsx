@@ -14,7 +14,6 @@ import PageStyle from '../components/PageStyle';
 import { useAuth } from '../context/AuthContext';
 import { useStore } from '../context/StoreContext';
 import { useValidation } from '../context/ValidationContext';
-import { escapeHtml } from '../utils/helpers';
 import usePageTitle from '../hooks/usePageTitle';
 import pageCss from './WorkerApplications.css?raw';
 
@@ -53,17 +52,16 @@ function buildAllProposals(Store, Auth) {
         workerName: p.workerName || worker?.name || 'Worker',
         avatar: p.avatar || worker?.avatar || 'WK',
         avatarColor: p.avatarColor || worker?.avatarColor || '',
-        rating: worker?.rating || 4.5,
-        reviewCount: worker?.reviewCount || 10,
+        rating: worker?.rating || 0,
         location: worker?.location || 'Remote',
         bidPrice: p.bidPrice || '$0',
         timeline: p.timeline || '2 weeks',
         coverLetter: p.coverLetter || '',
         skills: p.skills || worker?.skills || [],
         completedProjects: worker?.completedProjects || 0,
-        successRate: worker?.successRate || 90,
-        hourlyRate: worker?.hourlyRate || '$50/hr',
-        responseTime: worker?.responseTime || 'Within 24 hours',
+        experience: worker?.experienceLevel || 'Not set',
+        hourlyRate: worker?.hourlyRate ? `$${worker.hourlyRate}/hr` : '—',
+        availability: typeof worker?.availability === 'string' && worker.availability ? worker.availability : 'Availability not set',
         status: p.status || 'pending',
         fromStore: true,
         type: p.type || 'application',
@@ -112,7 +110,7 @@ function ProposalDetail({ p, onHire, onReject }) {
               <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 4 }}>{p.workerName}</h2>
               <div style={{ fontSize: 13, color: 'var(--muted-foreground)', display: 'flex', alignItems: 'center', gap: 12 }}>
                 <span><Icon name="map-pin" style={metaIcon} />{' ' + p.location}</span>
-                <span><Icon name="clock" style={metaIcon} />{' ' + p.responseTime}</span>
+                <span><Icon name="clock" style={metaIcon} />{' ' + p.availability}</span>
               </div>
             </div>
           </div>
@@ -122,9 +120,9 @@ function ProposalDetail({ p, onHire, onReject }) {
           </div>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 16 }}>
-          <WorkerStat value={`${p.successRate}%`} label="Success Rate" background="#ecfdf5" valueColor="#10b981" labelColor="#065f46" />
+          <WorkerStat value={p.experience} label="Experience" background="#ecfdf5" valueColor="#10b981" labelColor="#065f46" valueSize={14} />
           <WorkerStat value={p.completedProjects} label="Projects Done" background="#eef2ff" valueColor="#4f46e5" labelColor="#3730a3" />
-          <WorkerStat value={`${p.rating}★`} label="Rating" background="#fffbeb" valueColor="#d97706" labelColor="#92400e" />
+ <WorkerStat value={p.rating ? `${p.rating}★` : 'New'} label="Rating" background="#fffbeb" valueColor="#d97706" labelColor="#92400e" />
           <WorkerStat value={p.hourlyRate} label="Hourly Rate" background="#faf5ff" valueColor="#7c3aed" labelColor="#5b21b6" valueSize={16} />
         </div>
         <div style={{ display: 'flex', gap: 12 }}>
@@ -239,13 +237,13 @@ export default function WorkerApplications() {
     } catch (e) {
       // Usually not enough in the wallet to fund escrow. This used to be
       // logged and followed by "Worker hired!" regardless.
-      Validate.toast(escapeHtml(e.message), 'error');
+      Validate.toast((e.message), 'error');
       return;
     }
 
     // Update UI — mark hired, disable others in current project
     setAllProposals(list => list.map(p => (p.taskId === selectedProjectId ? { ...p, status: p.id === selectedProposalId ? 'hired' : 'rejected' } : p)));
-    Validate.toast('✓ Worker hired! Escrow funds locked.', 'success');
+    Validate.toast(`✓ Worker hired. ${money(hireQuote ? hireQuote.fees : 0)} in contract fees charged; the budget stays in escrow.`, 'success');
     switchProject(selectedProjectId);
   }
 
@@ -254,7 +252,7 @@ export default function WorkerApplications() {
       try {
         Store.updateProposal(proposalId, { status: 'rejected' });
       } catch (e) {
-        Validate.toast(escapeHtml(e.message), 'error');
+        Validate.toast((e.message), 'error');
         return;
       }
       setAllProposals(list => list.map(p => (p.id === proposalId ? { ...p, status: 'rejected' } : p)));
@@ -352,7 +350,7 @@ export default function WorkerApplications() {
                     <div style={{ width: 36, height: 36, borderRadius: '50%', background: p.avatarColor, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{p.avatar}</div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontWeight: 600, fontSize: 14 }}>{p.workerName}</div>
-                      <div style={{ fontSize: 12, color: 'var(--muted-foreground)' }}>{`${'★'.repeat(Math.round(p.rating))} ${p.rating} (${p.reviewCount})`}</div>
+                      <div style={{ fontSize: 12, color: 'var(--muted-foreground)' }}>{p.rating ? `${'★'.repeat(Math.round(p.rating))} ${p.rating}` : 'New on Lannent'}</div>
                     </div>
                     <div style={{ textAlign: 'right', flexShrink: 0 }}>
                       <div style={{ fontWeight: 700, color: '#10b981', fontSize: 14 }}>{p.bidPrice}</div>
@@ -375,15 +373,15 @@ export default function WorkerApplications() {
           <div style={{ background: 'white', borderRadius: 24, padding: 32, width: '100%', maxWidth: 440, margin: '0 16px', boxShadow: '0 32px 80px rgba(0,0,0,0.15)' }}>
             <h2 style={{ fontSize: 20, fontWeight: 600, marginBottom: 8 }}>Confirm Hire</h2>
             <p style={{ fontSize: 14, color: 'var(--muted-foreground)', marginBottom: 20 }}>
-              You're about to hire <strong id="hireWorkerName">{hireProposal ? hireProposal.workerName : ''}</strong> for this project. This will lock the escrow funds.
+              You're about to hire <strong id="hireWorkerName">{hireProposal ? hireProposal.workerName : ''}</strong> for this project. The budget is already in escrow; hiring starts the contract.
             </p>
             <div style={{ padding: 16, borderRadius: 12, background: '#f0fdf4', border: '1px solid #bbf7d0', marginBottom: 20 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, fontSize: 13 }}>
-                <span style={{ color: '#374151' }}>Project budget (held in escrow)</span>
+                <span style={{ color: '#374151' }}>Project budget (already held in escrow)</span>
                 <span style={{ fontWeight: 700 }} id="hireBidAmount">{hireQuote ? money(hireQuote.budget) : ''}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, fontSize: 13 }}>
-                <span style={{ color: '#374151' }}>Marketplace fee (5%)</span>
+                <span style={{ color: '#374151' }}>{`Marketplace fee (${Store.Fees.rates().clientMarketplace.percent}%)`}</span>
                 <span style={{ fontWeight: 600, color: '#dc2626' }} id="hireFee">{hireQuote ? money(hireQuote.marketplace) : ''}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, fontSize: 13 }}>
@@ -391,16 +389,16 @@ export default function WorkerApplications() {
                 <span style={{ fontWeight: 600, color: '#dc2626' }} id="hireInitiation">{hireQuote ? money(hireQuote.initiation) : ''}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, borderTop: '1px solid #bbf7d0', paddingTop: 8, marginTop: 4 }}>
-                <span style={{ fontWeight: 600 }}>Total charged to you</span>
-                <span style={{ fontWeight: 700, color: '#10b981' }} id="hireTotal">{hireQuote ? money(hireQuote.total) : ''}</span>
+                <span style={{ fontWeight: 600 }}>Charged to your wallet now</span>
+                <span style={{ fontWeight: 700, color: '#10b981' }} id="hireTotal">{hireQuote ? money(hireQuote.fees) : ''}</span>
               </div>
               <div style={{ fontSize: 11, color: '#6b7280', marginTop: 8 }} id="hireBidNote">
-                {hireProposal ? `${escapeHtml(hireProposal.workerName)} bid ${hireProposal.bidPrice}. Escrow is funded from the project budget of ${money(hireQuote.budget)}.` : ''}
+                {hireProposal ? `${hireProposal.workerName} bid ${hireProposal.bidPrice}. The contract is for the project budget of ${money(hireQuote.budget)}, paid out milestone by milestone.` : ''}
               </div>
             </div>
             <div style={{ display: 'flex', gap: 12 }}>
               <button onClick={() => setHireOpen(false)} className="btn-outline" style={{ flex: 1, padding: 12, borderRadius: 12 }}>Cancel</button>
-              <button onClick={confirmHire} className="btn-primary" style={{ flex: 2, padding: 12, borderRadius: 12 }}>Confirm &amp; Lock Escrow</button>
+              <button onClick={confirmHire} className="btn-primary" style={{ flex: 2, padding: 12, borderRadius: 12 }}>Confirm Hire</button>
             </div>
           </div>
         </div>

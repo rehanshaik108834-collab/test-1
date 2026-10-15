@@ -4,7 +4,7 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { UsersRepository } from './users.repository';
 import { round2 } from '../ledger/fee-config';
 import { SELF_SERVICE_ROLES } from '../../common/constants/roles';
-import { hashPassword, verifyPassword } from '../../common/security/password.util';
+import { hashPassword, verifyPassword, isHashed } from '../../common/security/password.util';
 
 /**
  * EER Specialization — Users Service
@@ -86,7 +86,8 @@ export class UsersService {
     const existing = this.findByEmail(dto.email);
     if (existing) throw new BadRequestException('A user with this email already exists.');
 
-    const initials = dto.name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+    assertStrongPassword(dto.password);
+    const initials = initialsOf(dto.name);
     const colors = [
       'linear-gradient(135deg,#6366f1,#4f46e5)',
       'linear-gradient(135deg,#10b981,#059669)',
@@ -99,8 +100,8 @@ export class UsersService {
     // ── Insert into base USERS table ────────────────────────────────────
     const baseUser: any = {
       id,
-      name: dto.name,
-      email: dto.email,
+      name: dto.name.trim(),
+      email: dto.email.trim().toLowerCase(),
       password: hashPassword(dto.password),
       role: dto.role,
       avatar: dto.avatar || initials,
@@ -147,38 +148,86 @@ export class UsersService {
     const existing = this.usersRepository.findById(id);
     if (!existing) throw new NotFoundException(`User with id "${id}" not found`);
 
-    // ── Update base USERS fields ────────────────────────────────────────
+    // ── Base USERS fields ────────────────────────────────────────────────
     const baseUpdates: any = {};
-    if (dto.name !== undefined) baseUpdates.name = dto.name;
-    // email, password and role are not writable through a general profile
-    // update — each has its own path, so a profile edit cannot change identity.
-    if (dto.avatar !== undefined) baseUpdates.avatar = dto.avatar;
-    if (dto.avatarColor !== undefined) baseUpdates.avatarColor = dto.avatarColor;
-    if (dto.status !== undefined) baseUpdates.status = dto.status;
+    if (dto.name !== undefined) {
+      const name = String(dto.name).trim();
+      if (name.length < 2) throw new BadRequestException('Enter a name of at least 2 characters.');
+      baseUpdates.name = name;
+      // Initials follow the name unless a custom avatar text was set.
+      if (dto.avatar === undefined) baseUpdates.avatar = initialsOf(name);
+    }
+    if (dto.email !== undefined) {
+      const email = String(dto.email).trim().toLowerCase();
+      const owner = this.usersRepository.findByEmail(email);
+      if (owner && owner.id !== id) throw new BadRequestException('Another account already uses this email address.');
+      baseUpdates.email = email;
+    }
+    for (const key of ['avatar', 'avatarColor', 'status', 'phone', 'phoneCountryCode', 'bio'] as const) {
+      if ((dto as any)[key] !== undefined) baseUpdates[key] = (dto as any)[key];
+    }
     this.usersRepository.updateBase(id, baseUpdates);
 
-    // ── Update role-specific sub-table fields ───────────────────────────
+    // ── Role-specific fields ─────────────────────────────────────────────
     const base = this.usersRepository.getRawBase(id);
+    const set = (sub: any, keys: string[]) => {
+      for (const k of keys) if ((dto as any)[k] !== undefined) sub[k] = (dto as any)[k];
+    };
     if (base?.role === 'client') {
       let sub = this.usersRepository.findClientSub(id);
       if (!sub) { this.usersRepository.insertClient({ userId: id, company: '', location: '' }); sub = this.usersRepository.findClientSub(id); }
-      if (dto.company !== undefined) sub.company = dto.company;
-      if (dto.location !== undefined) sub.location = dto.location;
+      set(sub, ['company', 'location', 'companyDetails']);
+      if (dto.companyDetails?.name !== undefined) sub.company = dto.companyDetails.name;
     } else if (base?.role === 'worker') {
       let sub = this.usersRepository.findWorkerSub(id);
       if (!sub) { this.usersRepository.insertWorker({ userId: id, location: '', skills: [], rating: 0, completedProjects: 0 }); sub = this.usersRepository.findWorkerSub(id); }
-      if (dto.location !== undefined) sub.location = dto.location;
-      if (dto.skills !== undefined) sub.skills = dto.skills;
-      if (dto.rating !== undefined) sub.rating = dto.rating;
-      if (dto.completedProjects !== undefined) sub.completedProjects = dto.completedProjects;
+      if (dto.availability !== undefined) {
+        if (!['Full-time', 'Part-time', 'Contract', 'Not Available'].includes(dto.availability)) {
+          throw new BadRequestException('Availability must be Full-time, Part-time, Contract or Not Available.');
+        }
+      }
+      set(sub, ['location', 'skills', 'rating', 'completedProjects', 'jobTitle', 'experienceLevel', 'hourlyRate', 'languages', 'portfolioProjects', 'availability']);
     } else if (base?.role === 'expert') {
       let sub = this.usersRepository.findExpertSub(id);
-      if (!sub) { this.usersRepository.insertExpert({ userId: id, specialization: '', reviewsDone: 0 }); sub = this.usersRepository.findExpertSub(id); }
-      if (dto.specialization !== undefined) sub.specialization = dto.specialization;
-      if (dto.reviewsDone !== undefined) sub.reviewsDone = dto.reviewsDone;
+      if (!sub) { this.usersRepository.insertExpert({ userId: id, specialization: '', reviewsDone: 0, domains: [], hourlyRate: 0 }); sub = this.usersRepository.findExpertSub(id); }
+      if (dto.availability !== undefined) {
+        const a = dto.availability;
+        const ok = a && typeof a === 'object' && typeof a.status === 'string' && typeof a.type === 'string'
+          && Number.isFinite(Number(a.maxCases)) && Number(a.maxCases) >= 0 && Number(a.maxCases) <= 50;
+        if (!ok) throw new BadRequestException('Availability needs a status, a case limit and a case type.');
+        dto.availability = { status: a.status.slice(0, 80), type: a.type.slice(0, 80), maxCases: Number(a.maxCases) };
+      }
+      if (dto.domains !== undefined && !dto.domains.length) {
+        throw new BadRequestException('Choose at least one domain — clients can only pick reviewers who cover their category.');
+      }
+      set(sub, ['specialization', 'reviewsDone', 'domains', 'hourlyRate', 'availability']);
     }
 
     return this.usersRepository.findById(id);
+  }
+
+  /** A person changes their own password, proving they know the current one. */
+  changePassword(id: string, currentPassword: string, newPassword: string) {
+    const base = this.usersRepository.getRawBase(id);
+    if (!base) throw new NotFoundException(`User with id "${id}" not found`);
+    if (!verifyPassword(currentPassword, base.password)) {
+      throw new BadRequestException('Your current password is not correct.');
+    }
+    assertStrongPassword(newPassword);
+    if (verifyPassword(newPassword, base.password)) {
+      throw new BadRequestException('Choose a password different from your current one.');
+    }
+    base.password = hashPassword(newPassword);
+    return { changed: true };
+  }
+
+  /** Operations sets a new password for someone who lost theirs. */
+  resetPassword(id: string, newPassword: string) {
+    const base = this.usersRepository.getRawBase(id);
+    if (!base) throw new NotFoundException(`User with id "${id}" not found`);
+    assertStrongPassword(newPassword);
+    base.password = hashPassword(newPassword);
+    return { reset: true };
   }
 
   /** Is this user an active client? Used when staff act on a client's behalf. */
@@ -214,5 +263,25 @@ export class UsersService {
   // ── Reset all data to seed ────────────────────────────────────────────────
   resetToSeed() {
     this.usersRepository.resetToSeed();
+  }
+}
+
+function initialsOf(name: string): string {
+  return String(name || '').trim().split(/\s+/).map(w => w[0] || '').join('').toUpperCase().slice(0, 2) || '?';
+}
+
+/**
+ * The same rule every password form in the app shows: at least 8 characters
+ * with an uppercase and a lowercase letter, a number and one of !@#$%^&*.
+ * Enforced here as well, so the API cannot be used to set a weaker one.
+ */
+export function assertStrongPassword(pw: string) {
+  if (isHashed(pw)) return; // an applicant's password, already checked and hashed
+  const ok = typeof pw === 'string' && pw.length >= 8 && /[A-Z]/.test(pw) && /[a-z]/.test(pw)
+    && /\d/.test(pw) && /[!@#$%^&*]/.test(pw);
+  if (!ok) {
+    throw new BadRequestException(
+      'Passwords need at least 8 characters, with an uppercase and a lowercase letter, a number and a symbol (!@#$%^&*).',
+    );
   }
 }

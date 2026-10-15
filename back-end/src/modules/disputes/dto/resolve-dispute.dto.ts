@@ -7,8 +7,8 @@ export class ResolveDisputeDto {
   @IsOptional() @IsString()
   expertId?: string;
 
-  @ApiProperty({ example: 'worker-favour', enum: ['worker-favour', 'client-favour', 'split'] })
-  @IsIn(['worker-favour', 'client-favour', 'split'])
+  @ApiProperty({ example: 'worker-favour', enum: ['worker-favour', 'client-favour', 'split', 'revision'] })
+  @IsIn(['worker-favour', 'client-favour', 'split', 'revision'])
   verdict: string;
 
   @ApiProperty({ example: 'After review, milestone is complete. Releasing escrow.' })

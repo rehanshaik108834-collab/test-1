@@ -11,7 +11,8 @@ import { join, basename } from 'node:path';
 import { FilesRepository } from './files.repository';
 import { UPLOAD_DIR, ensureUploadDir } from './upload.config';
 import { TasksService } from '../tasks/tasks.service';
-import { AuditRequestsService } from '../audit-requests/audit-requests.service';
+import { ContactsService } from '../contacts/contacts.service';
+import { ROLES } from '../../common/constants/roles';
 import { canViewTask, canViewAnyRecord, canDeleteAnyFile } from '../../common/guards/viewer.util';
 import { AppLoggerService } from '../../common/logging/app-logger.service';
 
@@ -31,7 +32,7 @@ export class FilesService {
   constructor(
     private readonly filesRepository: FilesRepository,
     @Inject(forwardRef(() => TasksService)) private readonly tasks: TasksService,
-    @Inject(forwardRef(() => AuditRequestsService)) private readonly auditRequests: AuditRequestsService,
+    @Inject(forwardRef(() => ContactsService)) private readonly contacts: ContactsService,
     private readonly log: AppLoggerService,
   ) {
     ensureUploadDir();
@@ -40,6 +41,13 @@ export class FilesService {
   /** Records an uploaded file and returns the reference a deliverable stores. */
   create(file: any, viewer: Viewer, meta?: { taskId?: string; milestoneId?: string; purpose?: string }) {
     if (!file) throw new BadRequestException('No file was received. Send it in the "file" field.');
+    if (meta?.taskId && !canViewAnyRecord(viewer.role)) {
+      const onProject = viewer.id && this.safe(() => this.contacts.isParticipant(viewer.id!, meta.taskId!));
+      if (!onProject) {
+        this.safeUnlink(join(UPLOAD_DIR, basename(file.filename)));
+        throw new ForbiddenException('You can only attach files to a project you are part of.');
+      }
+    }
 
     const record = {
       id: this.filesRepository.generateId(),
@@ -113,20 +121,15 @@ export class FilesService {
   private canView(record: any, viewer: Viewer): boolean {
     if (canViewAnyRecord(viewer.role)) return true;
     if (record.uploadedBy && record.uploadedBy === viewer.id) return true;
+    // Reviewing an application means reading the résumé attached to it — the
+    // intake desk could approve applicants it was not allowed to vet.
+    if (record.purpose === 'expert-application' && viewer.role === ROLES.INTAKE_ADMIN) return true;
     if (!record.taskId) return false;
     const task = this.safe(() => this.tasks.findById(record.taskId));
-
-    // The reviewer engaged on this project is not one of its participants, but
-    // auditing the work means opening the files that are the work. Without
-    // this they were handed a deliverable they could not download.
-    const reviewers = this.safe(() =>
-      this.auditRequests
-        .findAll({ taskId: record.taskId })
-        .map((ar: any) => ar.expertId)
-        .filter(Boolean),
-    ) || [];
-
-    return canViewTask(viewer.id, viewer.role, task, record.uploadedBy, ...reviewers);
+    if (canViewTask(viewer.id, viewer.role, task, ...this.tasks.reviewersOf(record.taskId))) return true;
+    // Everyone else attached to the project — a worker invited to it, or one
+    // bidding who was sent a file in the project chat.
+    return !!viewer.id && !!this.safe(() => this.contacts.isParticipant(viewer.id!, record.taskId));
   }
 
   remove(id: string, viewer: Viewer) {

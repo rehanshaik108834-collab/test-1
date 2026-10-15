@@ -165,7 +165,7 @@ export default function Signup() {
           <div className="auth-card-brand">
             <Icon name="shield-check" style={{ width: 20, height: 20 }} />
             {' '}
-            <span className="auth-card-brand-name">GigBoard</span>
+            <span className="auth-card-brand-name">Lannent</span>
           </div>
           <h2 style={{ fontSize: 24, fontWeight: 500, letterSpacing: '-0.03em', marginTop: 24, marginBottom: 4 }}>Create your account</h2>
           <p style={{ fontSize: 14, color: 'var(--muted-foreground)', marginBottom: 24 }}>Get started with your first project</p>

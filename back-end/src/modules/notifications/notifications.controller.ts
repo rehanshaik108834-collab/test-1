@@ -37,6 +37,12 @@ export class NotificationsController {
     return this.notificationsService.create({ ...dto, fromUserId: actor.id } as any);
   }
 
+  @Patch(':id/read')
+  @ApiOperation({ summary: 'Mark one of your notifications as read' })
+  markRead(@Param('id') id: string, @CurrentActor() actor: Actor) {
+    return this.notificationsService.markRead(id, actor.id);
+  }
+
   @Patch(':userId/read-all')
   @ApiOperation({ summary: 'Mark all your notifications as read' })
   markAllRead(@Param('userId') userId: string, @CurrentActor() actor: Actor) {

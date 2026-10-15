@@ -64,6 +64,11 @@ export class AuthMiddleware implements NestMiddleware {
         );
       }
 
+      const problem = this.auth.accountProblem(claims.sub);
+      if (problem) {
+        throw new UnauthorizedException(problem);
+      }
+
       req.user = { id: claims.sub, role: claims.role, email: claims.email, via: 'token' };
       // The token is the authority, so the request is made to agree with it.
       // Twenty handlers across six controllers read identity from these two

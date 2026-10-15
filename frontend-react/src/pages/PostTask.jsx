@@ -19,11 +19,10 @@ import { useValidation } from '../context/ValidationContext';
 import useFieldErrors from '../hooks/useFieldErrors';
 import usePageTitle from '../hooks/usePageTitle';
 import pageCss from './PostTask.css?raw';
-import { escapeHtml } from '../utils/helpers';
 
 const skillSuggestions = ['React','TypeScript','Node.js','Web Design','JavaScript','Vue.js','Angular','Python','Django','FastAPI','Express.js','MongoDB','PostgreSQL','MySQL','AWS','Google Cloud','Azure','Docker','Kubernetes','Jenkins','CI/CD','Figma','Sketch','Adobe XD','UI Design','UX Design','Responsive Design','CSS','HTML','SASS','Tailwind','Bootstrap','Flutter','Dart','Swift','Kotlin','Java','C#','PHP','Laravel','Symfony','Ruby','Rails','GraphQL','REST API','OAuth','JWT','Authentication','Database Design','System Design','Machine Learning','TensorFlow','PyTorch','NLP','Computer Vision','Data Analysis','Pandas','NumPy','Matplotlib','Tableau','Power BI','Analytics','Git','GitHub','GitLab','Bitbucket','SVN','Linux','Unix','Windows','MacOS','Bash','Shell','PowerShell','Python Scripting','Automation','Testing','Jest','Mocha','Pytest','Selenium','QA','Manual Testing','Load Testing','Performance Testing','Security','Penetration Testing','Cybersecurity','SSL/TLS','Encryption','OWASP','API Security','Web Security','SEO','SEM','PPC','Content Marketing','Email Marketing','Social Media','Facebook Ads','Google Ads','Analytics','Google Analytics','Mixpanel','Amplitude','Product Management','Agile','Scrum','Kanban','Project Management','JIRA','Asana','Monday.com','Notion','Slack','Communication','Leadership','Team Management','Training','Documentation','Technical Writing','Copywriting','Content Strategy','Brand Strategy','User Research','Usability Testing','A/B Testing','Conversion Rate Optimization','Customer Support','Customer Success','Sales','Negotiation','Contract Negotiation','Legal','Compliance','GDPR','HIPAA','SOC 2','ISO','Quality Assurance','Code Review','Refactoring','Optimization','Performance Tuning','Caching','CDN','Load Balancing','Microservices','Serverless','Lambda','Cloud Functions','Firebase','Supabase','Sanity','Contentful','Headless CMS','Static Site Generation','Next.js','Gatsby','Hugo','Jekyll','WordPress','Shopify','WooCommerce','Magento','BigCommerce','E-commerce','Payment Processing','Stripe','PayPal','Square','Blockchain','Crypto','Web3','Smart Contracts','Solidity','Ethereum','Bitcoin','NFT','Virtual Reality','Augmented Reality','3D Modeling','Blender','Unity','Unreal Engine','Game Development','Level Design','Game Art','Sound Design','Music Production','Video Production','Video Editing','Adobe Creative Suite','Premiere','After Effects','Lighting','Photography','Motion Graphics','Animation','2D Animation','3D Animation','Rigging','Modeling','Texturing','Rendering','Visualization','Data Visualization','Infographics','Illustration','Vector Art','Iconography','Logo Design','Branding','Package Design','Print Design','Layout Design','Typography','Color Theory','Design Systems','Component Libraries','Accessibility','WCAG','Inclusive Design','Mobile First','Progressive Web Apps','Service Workers','Offline Support','Caching Strategies','State Management','Redux','MobX','Vuex','Context API','Hooks','Composition API','Async/Await','Promises','Callbacks','Error Handling','Logging','Monitoring','Sentry','Datadog','New Relic','APM','Observability','Telemetry','Event Tracking','User Tracking','Privacy','Analytics Privacy','GDPR Compliance','Data Privacy','Security Audit','Vulnerability Assessment','Bug Bounty','Incident Response','Disaster Recovery','Backup Strategy','Data Recovery','Version Control','Branching Strategies','Code Owners','Pull Requests','Code Reviews','Pair Programming','Mob Programming','Test-Driven Development','Behavior-Driven Development','Acceptance Testing','Integration Testing','Unit Testing','End-to-End Testing','Contract Testing','Snapshot Testing','Visual Regression Testing','Performance Testing','Load Testing','Stress Testing','Chaos Engineering','Infrastructure as Code','Terraform','Ansible','Puppet','Chef','Containers','Docker Compose','Orchestration','Kubernetes','OpenShift','AWS ECS','Cloud Deployment','CI/CD Pipeline','GitHub Actions','GitLab CI','CircleCI','Travis CI','Jenkins','Monitoring','Alerting','Logging','Log Aggregation','ELK Stack','Splunk','Cloudwatch','Metrics','Prometheus','Grafana','Cost Optimization','Resource Management','Scaling','Horizontal Scaling','Vertical Scaling','Caching Strategies','Database Optimization','Query Optimization','Index Optimization','Sharding','Partitioning','Replication','Backup','Disaster Recovery','Business Continuity','Incident Management','Change Management','Release Management','Deployment Strategy','Blue-Green Deployment','Canary Deployment','Rolling Deployment','Feature Flags','A/B Testing'];
 
-const CATEGORIES = ['Web Development', 'Mobile Development', 'Backend / API', 'UI/UX Design', 'AI / Machine Learning', 'DevOps / Cloud'];
+import { CATEGORIES } from '../utils/categories';
 const EMPTY_MILESTONE = { title: '', description: '', budget: '', deadline: '' };
 const NO_ERRORS = { msTitleErr: '', msDescErr: '', msBudgetErr: '', msDeadlineErr: '' };
 
@@ -215,7 +214,7 @@ export default function PostTask() {
 
   function handleRemoveMilestone(idx) {
     const title = milestones[idx]?.title || `Milestone ${idx + 1}`;
-    Validate.confirm(`Delete "${escapeHtml(title)}"? Its budget is returned to the unallocated total.`, () => {
+    Validate.confirm(`Delete "${(title)}"? Its budget is returned to the unallocated total.`, () => {
       const next = milestones.filter((_, i) => i !== idx);
       // Keep an open edit pointed at the same milestone. Deleting an earlier
       // one shifted the indexes, so "Update" overwrote the wrong card;
@@ -272,15 +271,18 @@ export default function PostTask() {
     auditSummary = rev ? `${rev.name.split(' ')[0]} · ${currency} ${(auditFee || 0).toLocaleString()}` : 'Select a reviewer';
   }
 
-  const walletUser = Store.getUserById(session?.userId || 'u1');
+  const walletUser = Store.getUserById(session.userId);
   const walletBalance = walletUser?.walletBalance || 0;
+  // Posting moves the budget into escrow; the contract fees come at hire.
   const insufficient = totalBudget > walletBalance;
+  const hireFees = totalBudget > 0 ? Store.Fees.projectFunding(totalBudget) : null;
 
   // Enable/disable Publish in real time. An audited project cannot be
   // published without a named reviewer.
   const auditReady = !auditEnabled || !!auditExpertId;
+  const auditFeeOk = !auditEnabled || auditFee >= 1;
   const ready = title.trim().length >= 5 && description.trim().length >= 5 && totalBudget > 0 &&
-                milestones.length > 0 && validateTotalMatch().valid && auditReady;
+                milestones.length > 0 && validateTotalMatch().valid && auditReady && auditFeeOk && !insufficient;
 
   // ── Publish ──
   function validateTaskForm() {
@@ -309,59 +311,45 @@ export default function PostTask() {
   function publishTask() {
     if (!validateTaskForm()) return;
 
-    const clientId = session?.userId || 'u1';
     const amount = parseFloat(budget);
-
-    // Check wallet balance
-    const user = Store.getUserById(clientId);
-    if (!user) { Validate.toast('User not found. Please log in again.', 'error'); return; }
-    if (user.walletBalance < amount) {
-      Validate.toast(`Insufficient balance! You have $${user.walletBalance.toLocaleString()} but need $${amount.toLocaleString()}.`, 'error');
+    if (walletBalance < amount) {
+      Validate.toast(`Your wallet holds $${walletBalance.toLocaleString()}, but this project's budget is $${amount.toLocaleString()}. Add funds first.`, 'error');
+      return;
+    }
+    if (auditEnabled && !(auditFee >= 1)) {
+      Validate.toast('Enter an opening offer of at least $1 for the audit.', 'error');
       return;
     }
 
-    // Create task
-    let task;
+    // The project and its milestones are created together: if a milestone is
+    // refused, the project is removed again and its budget returned.
     try {
-    task = Store.createTask({
-      title: title,
-      category,
-      description: description.trim(),
-      skills,
-      deadline,
-      budget: amount,
-      currency,
-      auditEnabled,
-      auditFee: auditEnabled ? (auditFee || undefined) : undefined,
-      auditDomain: auditEnabled ? category : undefined,
-      auditExpertId: auditEnabled ? auditExpertId : undefined,
-      clientId,
-    });
-
-    // Create milestones. The server sets who each one is payable to — the
-    // worker, once someone is hired.
-    milestones.forEach(m => {
-      Store.createMilestone({ taskId: task.id, title: m.title, description: m.description, budget: parseFloat(m.budget), dueDate: m.deadline || undefined });
-    });
+      Store.createTaskWithMilestones({
+        title: title.trim(),
+        category,
+        description: description.trim(),
+        skills,
+        deadline: deadline || undefined,
+        budget: amount,
+        currency,
+        auditEnabled,
+        auditFee: auditEnabled ? auditFee : undefined,
+        auditExpertId: auditEnabled ? auditExpertId : undefined,
+      }, milestones.map(m => ({ title: m.title, description: m.description, budget: parseFloat(m.budget), dueDate: m.deadline || undefined })));
     } catch (e) {
-      Validate.toast(escapeHtml(e.message), 'error');
+      Validate.toast(e.message, 'error');
       return;
     }
 
-    // No money moves here. Project escrow is funded when a worker is hired,
-    // and the audit fee is funded once you and the reviewer agree a price.
+    // The budget is now held in escrow. The audit fee is funded once you and
+    // the reviewer agree a price; the contract fees are charged at hire.
     if (auditEnabled) {
-      Validate.toast('Project saved as a draft. It goes live once a reviewer accepts your audit.', 'success');
-      setTimeout(() => { navigate('/client-audit-offers'); }, 1400);
+      Validate.toast(`Saved as a draft — $${amount.toLocaleString()} is held in escrow. It goes live once your reviewer accepts the audit.`, 'success');
+      setTimeout(() => { navigate('/audit-offers'); }, 1600);
     } else {
-      Validate.toast('Task published successfully.', 'success');
-      setTimeout(() => { navigate('/client-my-projects'); }, 1200);
+      Validate.toast(`Project published — $${amount.toLocaleString()} is held in escrow until milestones are approved.`, 'success');
+      setTimeout(() => { navigate('/client-my-projects'); }, 1400);
     }
-  }
-
-  function saveDraft() {
-    if (!title.trim()) { showError('taskTitleInput', 'Task title is required to save draft.'); return; }
-    Validate.toast('Draft saved successfully.', 'info');
   }
 
   // ── Budget check box ──
@@ -498,7 +486,7 @@ export default function PostTask() {
                     <Svg d={PATH_SHIELD_CHECK} size="16" />
                     Technical Audit
                   </div>
-                  <div className="audit-desc">Hire an Expert Reviewer to audit this project. Your project stays a draft until a reviewer accepts.</div>
+                  <div className="audit-desc">Hire an Expert Reviewer to audit every milestone. Your project stays a draft until a reviewer accepts; their fee is agreed and funded separately.</div>
                 </div>
                 <button className={'toggle-switch ' + (auditEnabled ? 'on' : 'off')} type="button" onClick={toggleAudit}>
                   <div className="toggle-switch-thumb"></div>
@@ -606,8 +594,6 @@ export default function PostTask() {
             </div>
 
             <div className="action-buttons">
-              <button type="button" className="save-draft" onClick={saveDraft}>Save Draft</button>
-              {' '}
               <button type="button" className="publish" id="publishBtn" disabled={!ready} onClick={publishTask}>Publish Task</button>
             </div>
           </div>
@@ -630,7 +616,11 @@ export default function PostTask() {
                     Wallet Balance
                   </div>
                   <div className={`summary-value ${walletKind}`} style={{ color: insufficient ? '#dc2626' : '#10b981', fontSize: 16 }}>{`${currency} ${walletBalance.toLocaleString()}`}</div>
-                  {insufficient ? <div style={{ fontSize: 11, marginTop: 6, color: '#991b1b' }}>Insufficient balance. Add funds to proceed.</div> : ''}
+                  {insufficient
+                    ? <div style={{ fontSize: 11, marginTop: 6, color: '#991b1b' }}>Not enough to hold this budget in escrow. Add funds in your wallet first.</div>
+                    : totalBudget > 0 ? <div style={{ fontSize: 11, marginTop: 6, color: 'var(--muted-foreground)', lineHeight: 1.5 }}>
+                        {`$${totalBudget.toLocaleString()} moves into escrow when you publish. When you hire, a $${hireFees.fees.toLocaleString()} marketplace and contract fee is charged.`}
+                      </div> : ''}
                 </div>
               </div>
             </div>

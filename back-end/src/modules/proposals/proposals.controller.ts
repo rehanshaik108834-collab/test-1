@@ -23,14 +23,15 @@ export class ProposalsController {
     @Query('taskId') taskId?: string,
     @Query('workerId') workerId?: string,
     @Query('type') type?: string,
+    @CurrentActor() actor?: Actor,
   ) {
-    return this.proposalsService.findAll({ taskId, workerId, type });
+    return this.proposalsService.findAll({ taskId, workerId, type }, actor);
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get proposal by ID' })
-  findOne(@Param('id') id: string) {
-    return this.proposalsService.findById(id);
+  findOne(@Param('id') id: string, @CurrentActor() actor: Actor) {
+    return this.proposalsService.findById(id, actor);
   }
 
   @Post()

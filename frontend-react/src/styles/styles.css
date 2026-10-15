@@ -1148,8 +1148,6 @@ label { font-size: 1rem; font-weight: 500; }
 .role-card-icon { margin-bottom: 8px; }
 .role-card-title { font-weight: 500; font-size: 14px; color: var(--foreground); }
 .role-card-desc { font-size: 12px; color: var(--muted-foreground); margin-top: 2px; line-height: 1.3; }
-.forgot-link { font-size: 12px; color: var(--muted-foreground); transition: color 0.2s; }
-.forgot-link:hover { color: var(--foreground); }
 
 /* ===================================================================
    DASHBOARD LAYOUT
@@ -1933,6 +1931,7 @@ tr:hover td { background: rgba(0,0,0,0.01); }
   --series-3:       #1baf7a;
   --series-4:       #eda100;
   --series-5:       #e87ba4;
+  --series-6:       #7c5cdb;
   --viz-grid:       rgba(15, 23, 42, 0.07);
   --viz-axis:       rgba(15, 23, 42, 0.18);
 }

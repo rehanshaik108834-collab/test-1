@@ -71,14 +71,14 @@ export default function ClientDashboard() {
 
   // Live stats from store
   const session = Auth.getCurrentUser();
-  const userId = session?.userId || 'u1';
+  const userId = session.userId;
   const myTasks = Store.getTasksByClient(userId);
   const activeTasks = myTasks.filter(t => t.status === 'in-progress').length;
   const pendingApps = Store.getProposals().filter(p => myTasks.find(t => t.id === p.taskId) && p.status === 'pending' && p.type !== 'invitation').length;
   const user = Store.getUserById(userId);
   const walletBal = user?.walletBalance || 0;
   const completedTasks = myTasks.filter(t => t.status === 'completed').length;
-  const openProjects = myTasks.filter(t => t.status !== 'completed').slice(0, 4);
+  const openProjects = myTasks.filter(t => !['completed', 'cancelled'].includes(t.status)).slice(0, 4);
 
   return (
     <DashboardLayout role="client" activePath="/client-dashboard" pageTitle="Client Dashboard" pageSubtitle="Manage your projects and track progress">

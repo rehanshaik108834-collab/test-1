@@ -14,11 +14,11 @@ import StatCard from '../components/StatCard';
 import { useAuth } from '../context/AuthContext';
 import { useStore } from '../context/StoreContext';
 import { useValidation } from '../context/ValidationContext';
-import { hoverBackground, escapeHtml } from '../utils/helpers';
+import { hoverBackground } from '../utils/helpers';
 import usePageTitle from '../hooks/usePageTitle';
 
 const FILTERS = [['all', 'All'], ['pending', 'Pending'], ['accepted', 'Accepted'], ['rejected', 'Rejected']];
-const STATUS_BADGES = { 'Pending': 'badge-orange', 'Accepted': 'badge-green', 'Rejected': 'badge-red' };
+const STATUS_BADGES = { 'Pending': 'badge-orange', 'Accepted': 'badge-green', 'Rejected': 'badge-red', 'Withdrawn': 'badge-gray', 'Closed': 'badge-gray' };
 
 /** The worker's proposals, shaped for display. */
 function loadProposals(Store, userId) {
@@ -30,7 +30,8 @@ function loadProposals(Store, userId) {
       projectName: task ? task.title : 'Unknown Task',
       client: client ? client.name : 'Unknown Client',
       bidAmount: parseFloat((p.bidPrice || '').toString().replace(/[^\d.-]/g, '')) || (task ? task.budget : 0),
-      status: p.status === 'hired' ? 'Accepted' : p.status === 'rejected' ? 'Rejected' : 'Pending',
+      status: p.status === 'hired' ? 'Accepted' : p.status === 'rejected' ? 'Rejected'
+        : p.status === 'withdrawn' ? 'Withdrawn' : p.status === 'closed' ? 'Closed' : 'Pending',
       rawStatus: p.status,
       submitted: p.createdAt ? new Date(p.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Recently',
       delivery: p.timeline || '14 days',
@@ -77,7 +78,7 @@ export default function MyProposals() {
       try {
         Store.updateProposal(id, { status: 'withdrawn' });
       } catch (e) {
-        Validate.toast(escapeHtml(e.message), 'error');
+        Validate.toast((e.message), 'error');
         return;
       }
       setFading(f => [...f, id]);

@@ -7,8 +7,9 @@ import { TransactionsService } from '../transactions/transactions.service';
 import { LedgerService } from '../ledger/ledger.service';
 import { MilestonesService } from '../milestones/milestones.service';
 import { UsersService } from '../users/users.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { Actor } from '../../common/decorators/actor.decorator';
-import { assertAllowed } from '../../common/guards/viewer.util';
+import { assertAllowed, canViewAnyRecord } from '../../common/guards/viewer.util';
 import { ROLES } from '../../common/constants/roles';
 
 /**
@@ -34,16 +35,60 @@ export class ProposalsService {
     @Inject(forwardRef(() => LedgerService)) private ledger: LedgerService,
     @Inject(forwardRef(() => MilestonesService)) private milestonesService: MilestonesService,
     @Inject(forwardRef(() => UsersService)) private users: UsersService,
+    @Inject(forwardRef(() => NotificationsService)) private notifications: NotificationsService,
   ) {}
 
-  findAll(query?: { taskId?: string; workerId?: string; type?: string }) {
-    return this.proposalsRepository.findAll(query);
+  /**
+   * Internal callers get every row. A worker sees their own bids and
+   * invitations in full; a client sees everything on their own projects; on
+   * anyone else's open project only a stub is shown — enough to count the
+   * competition, never another worker's price or cover letter.
+   */
+  findAll(query?: { taskId?: string; workerId?: string; type?: string }, viewer?: { id?: string; role?: string }) {
+    const all = this.proposalsRepository.findAll(query);
+    if (!viewer || canViewAnyRecord(viewer.role)) return all;
+    const taskOf: Record<string, any> = {};
+    const out: any[] = [];
+    for (const p of all) {
+      if (!(p.taskId in taskOf)) {
+        try { taskOf[p.taskId] = this.tasksService.findById(p.taskId); } catch { taskOf[p.taskId] = null; }
+      }
+      const task = taskOf[p.taskId];
+      if (p.workerId === viewer.id || (task && task.clientId === viewer.id)) out.push(p);
+      else if (task && task.status === 'open' && p.type !== 'invitation') {
+        out.push({ id: p.id, taskId: p.taskId, type: p.type, status: p.status, createdAt: p.createdAt });
+      }
+    }
+    return out;
   }
 
-  findById(id: string) {
+  findById(id: string, viewer?: { id?: string; role?: string }) {
     const prop = this.proposalsRepository.findById(id);
     if (!prop) throw new NotFoundException(`Proposal with id "${id}" not found`);
+    if (viewer && !canViewAnyRecord(viewer.role) && prop.workerId !== viewer.id) {
+      const task = this.tasksService.findById(prop.taskId);
+      if (task.clientId !== viewer.id) throw new NotFoundException(`Proposal with id "${id}" not found`);
+    }
     return prop;
+  }
+
+  /** A project closed before hiring: its pending bids and invitations close with it. */
+  closeAllForTask(taskId: string) {
+    for (const p of this.proposalsRepository.findAll({ taskId })) {
+      if (p.status === 'pending') {
+        this.proposalsRepository.update(p.id, { status: 'closed' });
+        this.notifications.notify(p.workerId, {
+          type: 'proposal',
+          text: p.type === 'invitation' ? 'An invitation was withdrawn' : 'A project you bid on was closed',
+          subtext: this.titleOf(taskId),
+          link: p.type === 'invitation' ? '/worker-invitations' : '/my-proposals',
+        });
+      }
+    }
+  }
+
+  private titleOf(taskId: string) {
+    try { return this.tasksService.findById(taskId).title; } catch { return 'Project'; }
   }
 
   /** The task, refusing anything that is not open for bids. */
@@ -69,6 +114,7 @@ export class ProposalsService {
       type = 'proposal';
     } else if (actor.role === ROLES.CLIENT) {
       assertAllowed(task.clientId === actor.id, 'You can only invite workers to your own projects.');
+      if (!dto.workerId) throw new BadRequestException('Choose the worker to invite.');
       workerId = dto.workerId;
       type = 'invitation';
     } else {
@@ -104,7 +150,23 @@ export class ProposalsService {
       rating: worker.rating,
       completedProjects: worker.completedProjects,
     };
-    return this.proposalsRepository.insert(prop);
+    const saved = this.proposalsRepository.insert(prop);
+    if (type === 'invitation') {
+      this.notifications.notify(workerId, {
+        type: 'invitation',
+        text: 'You have been invited to a project',
+        subtext: task.title,
+        link: '/worker-invitations',
+      });
+    } else {
+      this.notifications.notify(task.clientId, {
+        type: 'proposal',
+        text: `New proposal from ${worker.name}`,
+        subtext: `${task.title}${dto.bidPrice ? ' · bid ' + dto.bidPrice : ''}`,
+        link: '/worker-applications',
+      });
+    }
+    return saved;
   }
 
   /**
@@ -137,19 +199,36 @@ export class ProposalsService {
         );
       }
     }
-    return this.proposalsRepository.update(id, patch);
+    const updated = this.proposalsRepository.update(id, patch);
+    if (patch.status === 'rejected') {
+      this.notifications.notify(prop.workerId, {
+        type: 'proposal',
+        text: 'Your proposal was not selected',
+        subtext: task.title,
+        link: '/my-proposals',
+      });
+    } else if (patch.status === 'withdrawn' && prop.type !== 'invitation') {
+      this.notifications.notify(task.clientId, {
+        type: 'proposal',
+        text: `${prop.workerName || 'A worker'} withdrew their proposal`,
+        subtext: task.title,
+        link: '/worker-applications',
+      });
+    }
+    return updated;
   }
 
   /**
-   * Assigns the worker and funds project escrow through the ledger.
+   * Assigns the worker and starts the contract.
    *
-   * The escrow charge is deliberately NOT swallowed: if the client cannot cover
-   * the budget plus fees, hiring must fail loudly rather than assign a worker to
-   * a project no one has paid for.
+   * The budget has been in escrow since the project was posted; hiring is
+   * when the contract exists, so it is when the marketplace and initiation
+   * fees are charged. Deliberately NOT swallowed: if the client cannot cover
+   * the fees, hiring must fail loudly rather than start an unpaid contract.
    */
   private assignAndFund(prop: any) {
     const task = this.tasksService.findById(prop.taskId);
-    this.ledger.fundProjectEscrow(task.id, task.clientId, task.budget, task.title);
+    this.ledger.chargeContractFees(task.id, task.clientId, task.budget, task.title);
     this.tasksService.assignWorker(prop.taskId, prop.workerId);
 
     // Milestones created before anyone was hired carry no workerId. Without this
@@ -181,10 +260,31 @@ export class ProposalsService {
     // and no proposal is marked hired for a contract that was never funded.
     this.assignAndFund(prop);
 
-    // Mark all other proposals for the same task as rejected, this one as hired
-    this.proposalsRepository.updateAllByTaskId(prop.taskId, proposalId);
+    this.settleOthers(prop, task);
+    this.notifications.notify(prop.workerId, {
+      type: 'hire',
+      text: `You were hired for "${task.title}"`,
+      subtext: 'The budget is in escrow — open the milestone board to start',
+      link: `/worker-milestone-board?id=${task.id}`,
+    });
 
     return this.proposalsRepository.findById(proposalId);
+  }
+
+  /** Marks this proposal hired and every other on the task rejected, telling those workers. */
+  private settleOthers(prop: any, task: any) {
+    const others = this.proposalsRepository
+      .findAll({ taskId: prop.taskId })
+      .filter((p: any) => p.id !== prop.id && p.status === 'pending');
+    this.proposalsRepository.updateAllByTaskId(prop.taskId, prop.id);
+    for (const p of others) {
+      this.notifications.notify(p.workerId, {
+        type: 'proposal',
+        text: p.type === 'invitation' ? 'An invitation is no longer available' : 'Your proposal was not selected',
+        subtext: `${task.title} — another worker was hired`,
+        link: p.type === 'invitation' ? '/worker-invitations' : '/my-proposals',
+      });
+    }
   }
 
   acceptInvitation(proposalId: string, actor: Actor) {
@@ -194,11 +294,16 @@ export class ProposalsService {
     if (prop.status !== 'pending') {
       throw new BadRequestException(`This invitation is ${prop.status}.`);
     }
-    this.openTask(prop.taskId, 'accept invitation');
+    const task = this.openTask(prop.taskId, 'accept invitation');
 
     this.assignAndFund(prop);
-
-    this.proposalsRepository.updateAllByTaskId(prop.taskId, proposalId);
+    this.settleOthers(prop, task);
+    this.notifications.notify(task.clientId, {
+      type: 'hire',
+      text: `${prop.workerName || 'The worker'} accepted your invitation`,
+      subtext: `${task.title} is now in progress`,
+      link: `/project-milestone-board?id=${task.id}`,
+    });
 
     return this.proposalsRepository.findById(proposalId);
   }
@@ -211,6 +316,13 @@ export class ProposalsService {
       throw new BadRequestException(`This invitation is already ${prop.status}.`);
     }
     prop.status = 'rejected';
+    const task = this.tasksService.findById(prop.taskId);
+    this.notifications.notify(task.clientId, {
+      type: 'proposal',
+      text: `${prop.workerName || 'The worker'} declined your invitation`,
+      subtext: task.title,
+      link: '/hire-gig-workers',
+    });
     return prop;
   }
 

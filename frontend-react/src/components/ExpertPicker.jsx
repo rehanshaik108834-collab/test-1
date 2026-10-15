@@ -15,7 +15,9 @@ import { useStore } from '../context/StoreContext';
 
 /** Active experts who review the given category (all of them when no category). */
 export function matchingExperts(Store, category) {
-  const experts = (Store.getExperts && Store.getExperts()) || [];
+  // A reviewer who has marked themselves unavailable is not offered for new cases.
+  const experts = ((Store.getExperts && Store.getExperts()) || [])
+    .filter(e => !(e.availability && typeof e.availability === 'object' && e.availability.status === 'Unavailable'));
   if (!category) return experts;
   return experts.filter(e => Array.isArray(e.domains) && e.domains.includes(category));
 }
@@ -24,14 +26,14 @@ export function matchingExperts(Store, category) {
  * `lockedId` shows only that reviewer, pre-selected and not changeable — for
  * a dispute on a project whose client already chose its reviewer.
  */
-export default function ExpertPicker({ category, selectedId, onChange, lockedId }) {
+export default function ExpertPicker({ category, selectedId, onChange, lockedId, excludeIds = [] }) {
   const Store = useStore();
   const [profileId, setProfileId] = useState(null);       // last profile shown (the modal stays in the DOM once opened)
   const [profileOpen, setProfileOpen] = useState(false);
 
   const list = lockedId
     ? matchingExperts(Store, null).filter(e => e.id === lockedId)
-    : matchingExperts(Store, category);
+    : matchingExperts(Store, category).filter(e => !excludeIds.includes(e.id));
 
   // A reviewer selected for a different category is no longer valid.
   useEffect(() => {

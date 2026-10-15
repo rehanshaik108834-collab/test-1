@@ -1,15 +1,17 @@
-import { ForbiddenException, Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards, Inject, forwardRef } from '@nestjs/common';
+import { ForbiddenException, BadRequestException, Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards, Inject, forwardRef } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiHeader, ApiQuery } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { UsersService } from './users.service';
 import { LedgerService } from '../ledger/ledger.service';
+import { TasksService } from '../tasks/tasks.service';
+import { AuditRequestsService } from '../audit-requests/audit-requests.service';
 import { CreateUserDto } from './dto/create-user.dto';
-import { UpdateUserDto } from './dto/update-user.dto';
+import { UpdateUserDto, ChangePasswordDto, ResetPasswordDto } from './dto/update-user.dto';
 import { LoginDto } from './dto/login.dto';
 import { WalletDto } from './dto/wallet.dto';
 import { RoleGuard } from '../../common/guards/role.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
-import { canMoveAnyWallet } from '../../common/guards/viewer.util';
+import { canMoveAnyWallet, canViewAnyRecord } from '../../common/guards/viewer.util';
 import { CurrentActor } from '../../common/decorators/actor.decorator';
 import type { Actor } from '../../common/decorators/actor.decorator';
 import { ALL_ROLES, ROLES } from '../../common/constants/roles';
@@ -21,6 +23,8 @@ export class UsersController {
   constructor(
     private readonly usersService: UsersService,
     @Inject(forwardRef(() => LedgerService)) private readonly ledger: LedgerService,
+    @Inject(forwardRef(() => TasksService)) private readonly tasks: TasksService,
+    @Inject(forwardRef(() => AuditRequestsService)) private readonly auditRequests: AuditRequestsService,
   ) {}
 
   @Post('login')
@@ -34,15 +38,15 @@ export class UsersController {
   @Get()
   @ApiOperation({ summary: 'Get all users' })
   @ApiQuery({ name: 'role', required: false, description: 'Filter by role (client, worker, expert, superuser)' })
-  findAll(@Query('role') role?: string) {
+  findAll(@CurrentActor() actor: Actor, @Query('role') role?: string) {
     const all = this.usersService.findAll();
-    return redact(role ? all.filter(u => u.role === role) : all);
+    return (role ? all.filter(u => u.role === role) : all).map(u => viewFor(u, actor));
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get user by ID' })
-  findOne(@Param('id') id: string) {
-    return redact(this.usersService.findById(id));
+  findOne(@Param('id') id: string, @CurrentActor() actor: Actor) {
+    return viewFor(this.usersService.findById(id), actor);
   }
 
   @Post('staff')
@@ -85,6 +89,10 @@ export class UsersController {
     if (moderator && actor.id === id && dto.status === 'suspended') {
       throw new ForbiddenException('You cannot suspend your own account.');
     }
+    if (dto.status !== undefined && dto.status !== 'active') {
+      const target = this.usersService.findById(id);
+      if (target.role === 'superuser') throw new ForbiddenException('Operations accounts cannot be suspended here.');
+    }
     return redact(this.usersService.update(id, dto));
   }
 
@@ -94,7 +102,34 @@ export class UsersController {
   @ApiOperation({ summary: 'Delete a user (superuser only)' })
   remove(@Param('id') id: string, @CurrentActor() actor: Actor) {
     if (actor.id === id) throw new ForbiddenException('You cannot delete your own account.');
+    // Deleting someone with projects, engagements or money would strand it —
+    // escrow with no owner to refund, a contract with no worker to pay.
+    const user = this.usersService.findById(id);
+    if ((user.walletBalance || 0) > 0) {
+      throw new BadRequestException(`${user.name} still has $${user.walletBalance} in their wallet. Suspend the account instead.`);
+    }
+    const onWork = this.tasks.findAll({}, 'system').some((t: any) => t.clientId === id || t.workerId === id)
+      || this.auditRequests.findAll({}).some((a: any) => a.expertId === id || a.payerId === id);
+    if (onWork) {
+      throw new BadRequestException(`${user.name} is part of existing projects or reviews. Suspend the account instead so the records stay intact.`);
+    }
     return this.usersService.delete(id);
+  }
+
+  @Post(':id/password')
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
+  @Roles(...ALL_ROLES)
+  @ApiOperation({ summary: 'Change your own password' })
+  changePassword(@Param('id') id: string, @Body() dto: ChangePasswordDto, @CurrentActor() actor: Actor) {
+    if (actor.id !== id) throw new ForbiddenException('You can only change your own password.');
+    return this.usersService.changePassword(id, dto.currentPassword, dto.newPassword);
+  }
+
+  @Post(':id/password-reset')
+  @Roles('superuser')
+  @ApiOperation({ summary: 'Set a new password for a user who lost theirs (superuser only)' })
+  resetPassword(@Param('id') id: string, @Body() dto: ResetPasswordDto) {
+    return this.usersService.resetPassword(id, dto.newPassword);
   }
 
   @Post(':id/wallet/add')
@@ -135,6 +170,26 @@ export class UsersController {
  * the service is deliberate: internal callers hold the raw record and mutate
  * it, so handing them a copy would silently drop their writes.
  */
+/** Fields anyone signed in may see about another user — enough to judge who they are working with. */
+const PUBLIC_FIELDS = [
+  'id', 'name', 'role', 'avatar', 'avatarColor', 'status', 'joinDate', 'bio', 'location', 'company',
+  'skills', 'rating', 'completedProjects', 'jobTitle', 'experienceLevel', 'hourlyRate', 'languages',
+  'portfolioProjects', 'availability', 'specialization', 'reviewsDone', 'domains',
+];
+
+/**
+ * The full record (minus the password) for yourself and for staff who read
+ * every record; a public profile for everyone else. Every user's email,
+ * phone and wallet balance used to be readable by any signed-in account.
+ */
+function viewFor(user: any, actor: Actor) {
+  if (!user) return user;
+  if (actor.id === user.id || canViewAnyRecord(actor.role)) return redact(user);
+  const out: any = {};
+  for (const k of PUBLIC_FIELDS) if (user[k] !== undefined) out[k] = user[k];
+  return out;
+}
+
 function redact<T>(value: T): T {
   if (Array.isArray(value)) return value.map(v => redact(v)) as unknown as T;
   if (value && typeof value === 'object') {

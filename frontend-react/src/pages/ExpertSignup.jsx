@@ -405,19 +405,27 @@ export default function ExpertSignup() {
 
     // The applicant has no account yet, so these go through the public
     // application upload; the stored files are readable by staff only.
+    // A failed upload stops the submission: an application filed without the
+    // résumé the applicant attached would be judged on less than they sent.
     const uploads = [];
     if (v.expResume) {
       uploads.push(Store.uploadFile(v.expResume, { purpose: 'expert-application' })
         .then(ref => { appData.resumeFile = ref; })
-        .catch(err => { console.warn('Resume upload failed:', err.message); }));
+        .catch(err => { throw new Error('Your résumé could not be uploaded: ' + err.message); }));
     }
     if (v.expCert) {
       uploads.push(Store.uploadFile(v.expCert, { purpose: 'expert-application' })
         .then(ref => { appData.certificateFile = ref; })
-        .catch(err => { console.warn('Certificate upload failed:', err.message); }));
+        .catch(err => { throw new Error('Your certificate could not be uploaded: ' + err.message); }));
     }
 
-    Promise.all(uploads).then(() => {
+    Promise.all(uploads).catch(err => {
+      setSubmitting(false);
+      setSubmitEnabled(true);
+      Validate.toast(err.message, 'error');
+      return 'failed';
+    }).then(outcome => {
+      if (outcome === 'failed') return;
       const result = Store.saveExpertApplication(appData);
       setSubmitting(false);
       if (!result.success) {

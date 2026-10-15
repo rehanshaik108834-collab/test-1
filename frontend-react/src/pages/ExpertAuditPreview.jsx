@@ -31,9 +31,26 @@ const MS_BUTTON_STYLE = { textDecoration: 'none', padding: '6px 12px', borderRad
  *   submitted  — the worker has handed the work over; this is auditable.
  *   waiting    — nothing submitted yet, so there is nothing to audit.
  */
-function MilestoneRow({ m, a, session }) {
+function MilestoneRow({ m, a, session, disputedId }) {
+  // A dispute engagement is settled by its verdict, never by milestone audits,
+  // so its milestone list is context only — no audit actions.
+  if (a.kind === 'dispute-audit') {
+    const isDisputed = m.id === disputedId;
+    return (
+      <div className="pv-ms" style={isDisputed ? { borderColor: '#fecaca', background: '#fef2f2' } : { opacity: 0.72 }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontWeight: 600 }}>{m.title}</div>
+          <div style={{ color: 'var(--muted-foreground)' }}>{m.description || ''}</div>
+          <div style={{ marginTop: 4 }}>
+            <span className="st" style={isDisputed ? { color: '#b91c1c' } : undefined}>{isDisputed ? 'Under dispute' : m.status.replace(/-/g, ' ')}</span>
+          </div>
+        </div>
+        <div style={{ textAlign: 'right', flex: 'none', fontWeight: 700 }}>{money(m.budget)}</div>
+      </div>
+    );
+  }
   const audited = !!(a.auditProgress && a.auditProgress.auditedMilestoneIds.includes(m.id));
-  const submitted = ['submitted', 'review', 'disputed'].includes(m.status) || !!m.deliverable;
+  const submitted = ['submitted', 'review', 'disputed'].includes(m.status) || (!!m.deliverable && m.status !== 'refunded');
   const engaged = a.status === 'in-progress' || a.status === 'paid';
   const mine = session && a.expertId === session.userId;
   const reportUrl = `/expert-report-audit?id=${a.id}&milestoneId=${m.id}`;
@@ -77,16 +94,11 @@ function PersonAvatar({ background, children }) {
  * Runs a Store write, returning its result or null. A refusal is shown with
  * the server's own reason (e.g. "Insufficient wallet balance…").
  */
-function attempt(fn) {
+function attempt(Validate, fn) {
   try {
     return fn();
   } catch (e) {
-    const el = document.createElement('div');
-    el.setAttribute('role', 'alert');
-    el.style.cssText = 'position:fixed;bottom:28px;right:28px;z-index:99999;background:#ef4444;color:#fff;padding:14px 20px;border-radius:14px;font-size:14px;max-width:380px;';
-    el.textContent = e.message;
-    document.body.appendChild(el);
-    setTimeout(() => el.remove(), 5000);
+    Validate.toast(e.message, 'error');
     return null;
   }
 }
@@ -115,13 +127,14 @@ export default function ExpertAuditPreview() {
   // where "back" goes) follows the engagement — it always said Audit Requests.
   const home = pv.kind === 'dispute-audit' ? '/expert-dispute-cases' : '/expert-audit-requests';
   const live = (pv.offers || []).find(o => o.status === 'pending');
-  const canAccept = live && live.offeredBy === 'client';
+  const canAccept = live && live.offeredBy !== 'expert';
+  const payerLabel = pv.payer && pv.payer.role === 'worker' ? 'Worker' : 'Client';
   const negotiating = ['preview-sent', 'negotiating'].includes(a.status);
 
   function quote() {
     const amount = parseFloat(quoteValue);
     if (!amount || amount < 1) { Validate.toast('Enter a price greater than zero.', 'error'); return; }
-    const r = attempt(() => Store.makeAuditOffer(arId, { amount, note: 'Quote from reviewer' }));
+    const r = attempt(Validate, () => Store.makeAuditOffer(arId, { amount, note: 'Quote from reviewer' }));
     if (!r) return;
     Validate.toast(`Quote of $${amount.toLocaleString()} sent to the client.`, 'success');
     setQuoteValue('');
@@ -129,14 +142,14 @@ export default function ExpertAuditPreview() {
   }
 
   function acceptOffer(offerId) {
-    const r = attempt(() => Store.acceptAuditOffer(arId, offerId));
+    const r = attempt(Validate, () => Store.acceptAuditOffer(arId, offerId));
     if (!r) return;
     Validate.toast('Fee agreed. The client now funds escrow.', 'success');
     reload();
   }
 
   function takeJob() {
-    const r = attempt(() => Store.acceptAuditEngagement(arId));
+    const r = attempt(Validate, () => Store.acceptAuditEngagement(arId));
     if (!r) return;
     Validate.toast('Engagement accepted. You can now file your report.', 'success');
     reload();
@@ -144,7 +157,7 @@ export default function ExpertAuditPreview() {
 
   function decline() {
     Validate.confirm('Decline this audit? The client will need to find another reviewer.', () => {
-      const r = attempt(() => Store.declineAuditEngagement(arId, 'Declined by reviewer'));
+      const r = attempt(Validate, () => Store.declineAuditEngagement(arId, 'Declined by reviewer'));
       if (!r) return;
       Validate.toast('Audit declined.', 'info');
       navigate(home);
@@ -183,21 +196,24 @@ export default function ExpertAuditPreview() {
               <div className="pv-card">
                 <h2>The dispute you would be arbitrating</h2>
                 <div className="pv-claim">{pv.dispute.reason}</div>
+                {pv.dispute.details ? <div style={{ fontSize: 13.5, lineHeight: 1.65, marginTop: 10 }}>{pv.dispute.details}</div> : null}
+                {pv.dispute.outcome ? <div style={{ fontSize: 13, marginTop: 8 }}><strong>Outcome they want:</strong> {pv.dispute.outcome}</div> : null}
                 <div style={{ fontSize: 12, color: 'var(--muted-foreground)', marginTop: 10 }}>
                   {`Raised by ${pv.dispute.raisedByName} against ${pv.dispute.againstName} · amount in question ${pv.dispute.amount || 'n/a'}`}
+                  {pv.payer ? ` · your fee is paid by ${pv.payer.name}` : ''}
                 </div>
               </div>
             ) : ''}
 
             <div className="pv-card">
-              <h2>{`Milestones (${pv.milestones.length})`}</h2>
+              <h2>{pv.kind === 'dispute-audit' ? 'Project milestones' : `Milestones (${pv.milestones.length})`}</h2>
               {a.auditProgress ? (
                 <div className="pv-fee" style={{ margin: '-4px 0 12px' }}>
                   {`${a.auditProgress.audited} of ${a.auditProgress.total} audited. You are paid once every milestone has a report.`}
                 </div>
               ) : ''}
               {pv.milestones.length
-                ? pv.milestones.map(m => <MilestoneRow key={m.id} m={m} a={a} session={session} />)
+                ? pv.milestones.map(m => <MilestoneRow key={m.id} m={m} a={a} session={session} disputedId={pv.dispute?.milestoneId} />)
                 : <div style={{ fontSize: 13, color: 'var(--muted-foreground)' }}>No milestones defined yet.</div>}
             </div>
           </div>
@@ -230,7 +246,7 @@ export default function ExpertAuditPreview() {
               <h2>Your fee</h2>
               {(pv.offers || []).length ? pv.offers.map(o => (
                 <div key={o.id} className="offer-row">
-                  <span className="offer-who">{o.offeredBy === 'expert' ? 'You' : 'Client'}</span>
+                  <span className="offer-who">{o.offeredBy === 'expert' ? 'You' : payerLabel}</span>
                   <span className="offer-amt">{money(o.amount)}</span>
                   <span className={`offer-tag ${o.status}`}>{o.status}</span>
                   <span style={{ color: 'var(--muted-foreground)', flex: 1, minWidth: 0 }}>{o.note || ''}</span>
@@ -248,7 +264,7 @@ export default function ExpertAuditPreview() {
                     <button className="btn-outline" onClick={quote}>Send</button>
                   </div>
                   <div className="pv-fee">
-                    The platform keeps 10% of the agreed fee. Nothing is committed until the client funds escrow.
+                    {`The platform keeps ${Store.Fees.rates().expertService.percent}% of the agreed fee. Nothing is committed until the ${payerLabel.toLowerCase()} funds escrow.`}
                   </div>
                 </>
               ) : ''}
@@ -258,10 +274,11 @@ export default function ExpertAuditPreview() {
                 {a.status === 'escrow-funded' && (
                   <>
                     <button className="btn-primary" onClick={takeJob}>Accept engagement &amp; start</button>
-                    <div className="pv-fee">{`${money(a.agreedAmount)} is already in escrow. You receive ${money(payout.net)} after the ${money(payout.fee)} platform commission.`}</div>
+                    <div className="pv-fee">{`${money(a.agreedAmount)} is already in escrow. You receive ${money(payout.net)} after the ${money(payout.fee)} platform commission${pv.kind === 'dispute-audit' ? ', paid when you give your verdict' : ', paid once every milestone has a report'}.`}</div>
                   </>
                 )}
-                {a.status === 'agreed' && <div className="pv-fee">{`Fee agreed at ${money(a.agreedAmount)}. Waiting for the client to fund escrow.`}</div>}
+                {a.status === 'agreed' && <div className="pv-fee">{`Fee agreed at ${money(a.agreedAmount)}. Waiting for the ${payerLabel.toLowerCase()} to fund escrow.`}</div>}
+                {a.status === 'paid' && <div className="pv-fee">{`Completed — ${money(payout.net)} was paid to your wallet.`}</div>}
                 {/* A dispute is one claim, so there is a single place to go. A project
                     audit has one report per milestone, reached from the list on the left. */}
                 {a.status === 'in-progress' && a.kind === 'dispute-audit' && (

@@ -256,7 +256,7 @@ export default function PerformanceAnalytics() {
   const Auth = useAuth();
   usePageTitle('Performance Analytics — Lannent');
   const session = Auth.getCurrentUser();
-  const [data] = useState(() => buildPerformance(Store, session ? session.userId : 'u2'));
+  const [data] = useState(() => buildPerformance(Store, session.userId));
   const { overviewStats, velocityStats, proposalStats } = data;
   const avgMonthly = Math.round(data.earningsData.reduce((s, d) => s + d.earnings, 0) / data.earningsData.length);
 

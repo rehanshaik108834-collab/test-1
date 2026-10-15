@@ -11,7 +11,6 @@ import DashboardLayout from '../components/DashboardLayout';
 import PageStyle from '../components/PageStyle';
 import { useStore } from '../context/StoreContext';
 import { useValidation } from '../context/ValidationContext';
-import { escapeHtml } from '../utils/helpers';
 import useRerender from '../hooks/useRerender';
 import usePageTitle from '../hooks/usePageTitle';
 import pageCss from './SuperuserTasks.css?raw';
@@ -67,7 +66,7 @@ export default function SuperuserTasks() {
       return;
     }
     Validate.confirm(
-      `Permanently delete "${escapeHtml(task.title)}"? This cannot be undone.`,
+      `Permanently delete "${task.title}"? This cannot be undone.`,
       () => {
         // Nothing is held for an open, unhired task, so there is nothing to
         // refund. The old "refund" deposited the budget into the client's
@@ -75,7 +74,7 @@ export default function SuperuserTasks() {
         try {
           Store.deleteTask(id);
         } catch (e) {
-          Validate.toast(escapeHtml(e.message), 'error');
+          Validate.toast((e.message), 'error');
           return;
         }
         rerender();

@@ -13,7 +13,6 @@ import AuthBranding from '../components/AuthBranding';
 import PasswordInput from '../components/PasswordInput';
 import FieldError from '../components/FieldError';
 import PageStyle from '../components/PageStyle';
-import { GoogleIcon } from '../components/SocialIcons';
 import { useAuth } from '../context/AuthContext';
 import { useStore } from '../context/StoreContext';
 import { useValidation } from '../context/ValidationContext';
@@ -31,7 +30,7 @@ export default function ExpertLogin() {
   const Store = useStore();
   const Auth = useAuth();
   const Validate = useValidation();
-  usePageTitle('Expert Reviewer Login — GigBoard');
+  usePageTitle('Expert Reviewer Login — Lannent');
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [pw, setPw] = useState('');
@@ -87,9 +86,6 @@ export default function ExpertLogin() {
     }, 400);
   }
 
-  function handleGoogleLogin() {
-    Validate.toast('Social login is not available in demo mode.', 'info');
-  }
 
   return (
     <>
@@ -107,7 +103,7 @@ export default function ExpertLogin() {
             <div className="auth-card-brand">
               <Icon name="shield-check" style={{ width: 20, height: 20 }} />
               {' '}
-              <span className="auth-card-brand-name">GigBoard</span>
+              <span className="auth-card-brand-name">Lannent</span>
             </div>
             <h2 style={{ fontSize: 24, fontWeight: 500, letterSpacing: '-0.03em', marginTop: 24, marginBottom: 4 }}>Expert Reviewer Login</h2>
             <p style={{ fontSize: 14, color: 'var(--muted-foreground)', marginBottom: 32 }}>Access the audit dashboard to review deliverables and resolve disputes.</p>
@@ -125,8 +121,6 @@ export default function ExpertLogin() {
               <div className="form-group">
                 <div className="form-label-row">
                   <label className="form-label" style={{ marginBottom: 0 }}>Password</label>
-                  {' '}
-                  <Link to="/forgot-password" className="forgot-link">Forgot password?</Link>
                 </div>
                 <PasswordInput
                   id="expertPw"
@@ -147,15 +141,6 @@ export default function ExpertLogin() {
               <button type="submit" className="btn-submit" disabled={submitting}>{submitting ? 'Signing in...' : 'Login'}</button>
             </form>
 
-            <div className="divider">
-              <div className="divider-line"></div>
-              <span className="divider-text">or continue with</span>
-              <div className="divider-line"></div>
-            </div>
-
-            <button className="btn-google" onClick={handleGoogleLogin}>
-              <GoogleIcon /> Login with Google
-            </button>
 
             <p className="auth-footer-text" style={{ marginTop: 32 }}>
               Want to join our network? <Link to="/expert-signup">Apply as Expert Reviewer</Link>

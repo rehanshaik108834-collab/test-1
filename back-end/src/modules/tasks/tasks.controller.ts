@@ -30,8 +30,8 @@ export class TasksController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Get task by ID' })
-  findOne(@Param('id') id: string) {
-    return this.tasksService.findById(id);
+  findOne(@Param('id') id: string, @CurrentActor() actor: Actor) {
+    return this.tasksService.findById(id, actor);
   }
 
   @Post()

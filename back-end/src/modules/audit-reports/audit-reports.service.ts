@@ -4,6 +4,7 @@ import { AuditReportsRepository } from './audit-reports.repository';
 import { AuditRequestsService } from '../audit-requests/audit-requests.service';
 import { MilestonesService } from '../milestones/milestones.service';
 import { TasksService } from '../tasks/tasks.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { canViewTask, canViewAnyRecord, assertAllowed } from '../../common/guards/viewer.util';
 import { Actor } from '../../common/decorators/actor.decorator';
 import { ROLES } from '../../common/constants/roles';
@@ -21,6 +22,7 @@ export class AuditReportsService {
     @Inject(forwardRef(() => AuditRequestsService)) private auditRequestsService: AuditRequestsService,
     @Inject(forwardRef(() => MilestonesService)) private milestonesService: MilestonesService,
     @Inject(forwardRef(() => TasksService)) private tasks: TasksService,
+    @Inject(forwardRef(() => NotificationsService)) private notifications: NotificationsService,
   ) {}
 
   findAll(query?: { taskId?: string; auditRequestId?: string },
@@ -54,7 +56,7 @@ export class AuditReportsService {
       : null;
     return canViewTask(
       viewer.id, viewer.role, task,
-      report.expertId, engagement?.expertId, engagement?.clientId, engagement?.workerId,
+      report.expertId, engagement?.expertId, engagement?.clientId, engagement?.workerId, engagement?.payerId,
     );
   }
 
@@ -71,11 +73,16 @@ export class AuditReportsService {
       (ar.expertId && ar.expertId === actor.id) || actor.role === ROLES.SUPERUSER,
       'Only the reviewer assigned to this audit can file its report.',
     );
-    if (dto.milestoneId) {
-      const ms = this.milestonesService.findById(dto.milestoneId);
-      if (ms.taskId !== ar.taskId) {
-        throw new BadRequestException('That milestone does not belong to the audited project.');
-      }
+    if (ar.kind === 'dispute-audit') {
+      throw new BadRequestException('A dispute is settled by its verdict on the Resolve Dispute page, not by an audit report.');
+    }
+    if (!dto.milestoneId) throw new BadRequestException('Choose the milestone this report covers.');
+    const ms = this.milestonesService.findById(dto.milestoneId);
+    if (ms.taskId !== ar.taskId) {
+      throw new BadRequestException('That milestone does not belong to the audited project.');
+    }
+    if (!ms.deliverable && !['submitted', 'review', 'disputed'].includes(ms.status)) {
+      throw new BadRequestException('The worker has not submitted this milestone yet, so there is nothing to audit.');
     }
     const fields = { ...dto, taskId: ar.taskId, expertId: ar.expertId };
 
@@ -111,6 +118,16 @@ export class AuditReportsService {
     const { payout } = this.auditRequestsService.settle(dto.auditRequestId, dto.milestoneId);
 
     // Expert reports do not change milestone status — that stays with the client.
+    const task = this.safe(() => this.tasks.findById(ar.taskId));
+    const verdict = dto.verdict === 'pass' ? 'passed' : dto.verdict === 'fail' ? 'failed' : 'passed with conditions';
+    for (const userId of [ar.clientId, ar.workerId]) {
+      this.notifications.notify(userId, {
+        type: 'audit-complete',
+        text: `"${ms.title}" ${verdict} its technical audit`,
+        subtext: task ? task.title : 'Project',
+        link: `/expert-report-audit?id=${ar.id}&milestoneId=${ms.id}`,
+      });
+    }
     return { ...report, payout };
   }
 

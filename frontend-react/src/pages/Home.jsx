@@ -4,7 +4,7 @@
  *
  * Static marketing page: hero video, problem cards, how-it-works steps,
  * feature bento grid, product preview, expert review, testimonials, metrics,
- * call to action, footer and the quick demo-access bar.
+ * call to action and footer.
  */
 import { Link } from 'react-router-dom';
 import Icon from '../components/Icon';
@@ -737,73 +737,28 @@ export default function Home() {
       {/* ═══════════ FOOTER ═══════════ */}
       <footer className="site-footer">
         <div className="container">
-          <div className="footer-grid">
+          <div className="footer-grid footer-grid-3">
             <div>
               <h4 className="footer-col-title">Product</h4>
               <ul className="footer-col">
-                <li>
-                  <a href="#">Features</a>
-                </li>
-                <li>
-                  <a href="#">Pricing</a>
-                </li>
-                <li>
-                  <a href="#">Integrations</a>
-                </li>
-                <li>
-                  <a href="#">Changelog</a>
-                </li>
+                <li><a href="#how-it-works">How it works</a></li>
+                <li><a href="#features">Features</a></li>
+                <li><a href="#product">Product tour</a></li>
               </ul>
             </div>
             <div>
-              <h4 className="footer-col-title">Resources</h4>
+              <h4 className="footer-col-title">Get started</h4>
               <ul className="footer-col">
-                <li>
-                  <a href="#">Documentation</a>
-                </li>
-                <li>
-                  <a href="#">Blog</a>
-                </li>
-                <li>
-                  <a href="#">Support</a>
-                </li>
-                <li>
-                  <a href="#">Status</a>
-                </li>
+                <li><Link to="/signup">Create an account</Link></li>
+                <li><Link to="/login">Log in</Link></li>
               </ul>
             </div>
             <div>
-              <h4 className="footer-col-title">Company</h4>
+              <h4 className="footer-col-title">Expert Reviewers</h4>
               <ul className="footer-col">
-                <li>
-                  <a href="#">About</a>
-                </li>
-                <li>
-                  <a href="#">Careers</a>
-                </li>
-                <li>
-                  <a href="#">Contact</a>
-                </li>
-                <li>
-                  <a href="#">Press</a>
-                </li>
-              </ul>
-            </div>
-            <div>
-              <h4 className="footer-col-title">Legal</h4>
-              <ul className="footer-col">
-                <li>
-                  <a href="#">Terms</a>
-                </li>
-                <li>
-                  <a href="#">Privacy</a>
-                </li>
-                <li>
-                  <a href="#">Security</a>
-                </li>
-                <li>
-                  <a href="#">Cookies</a>
-                </li>
+                <li><Link to="/expert-landing">Become a reviewer</Link></li>
+                <li><Link to="/expert-signup">Apply</Link></li>
+                <li><Link to="/expert-login">Reviewer login</Link></li>
               </ul>
             </div>
           </div>
@@ -817,11 +772,6 @@ export default function Home() {
               <span style={{ fontSize: 13, color: '#94a3b8', marginLeft: 4 }}>© 2026 All rights reserved.</span>
             </div>
             <div className="footer-badges">
-              <div className="footer-badge" style={{ background: '#ecfdf5', border: '1px solid #a7f3d0' }}>
-                <Icon name="shield-check" style={{ color: '#059669', width: 13, height: 13 }} />
-                {' '}
-                <span style={{ color: '#166534' }}>SOC 2 Type II</span>
-              </div>
               <div className="footer-badge" style={{ background: '#eef2ff', border: '1px solid #c7d2fe' }}>
                 <Icon name="lock" style={{ color: '#4f46e5', width: 13, height: 13 }} />
                 {' '}
@@ -831,46 +781,6 @@ export default function Home() {
           </div>
         </div>
       </footer>
-      {/* ── Demo Access Bar ── */}
-      <div style={{ background: '#f8fafc', borderTop: '1px solid #e2e8f0', padding: '24px 0' }}>
-        <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 24px', textAlign: 'center' }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 16 }}>Quick Demo Access</div>
-          <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
-            <Link to="/login?demo=client" style={{ padding: '10px 22px', borderRadius: 12, background: 'linear-gradient(135deg,#6366f1,#4f46e5)', color: 'white', textDecoration: 'none', fontSize: 14, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect width="20" height="14" x="2" y="7" rx="2" />
-                <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
-              </svg>
-              Client Demo
-            </Link>
-            <Link to="/login?demo=worker" style={{ padding: '10px 22px', borderRadius: 12, background: 'linear-gradient(135deg,#10b981,#059669)', color: 'white', textDecoration: 'none', fontSize: 14, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
-              </svg>
-              Worker Demo
-            </Link>
-            <Link to="/expert-login" style={{ padding: '10px 22px', borderRadius: 12, background: 'linear-gradient(135deg,#a855f7,#7c3aed)', color: 'white', textDecoration: 'none', fontSize: 14, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-                <polyline points="22 4 12 14.01 9 11.01" />
-              </svg>
-              Expert Demo
-            </Link>
-            <Link to="/login?demo=superuser" style={{ padding: '10px 22px', borderRadius: 12, background: 'linear-gradient(135deg,#ef4444,#dc2626)', color: 'white', textDecoration: 'none', fontSize: 14, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10" />
-              </svg>
-              Super User Demo
-            </Link>
-          </div>
-          <div style={{ marginTop: 12, fontSize: 12, color: '#94a3b8' }}>
-            Or sign in at <strong>login.html</strong> with <code style={{ background: '#e2e8f0', padding: '1px 5px', borderRadius: 4 }}>client@gmail.com</code>
-            , <code style={{ background: '#e2e8f0', padding: '1px 5px', borderRadius: 4 }}>worker@gmail.com</code> or <code style={{ background: '#e2e8f0', padding: '1px 5px', borderRadius: 4 }}>expert@gmail.com</code> — all use <code style={{ background: '#e2e8f0', padding: '1px 5px', borderRadius: 4 }}>Password@123</code>
-            . Super user is <code style={{ background: '#e2e8f0', padding: '1px 5px', borderRadius: 4 }}>super@gmail.com</code> / <code style={{ background: '#e2e8f0', padding: '1px 5px', borderRadius: 4 }}>Superadmin@123</code>
-            .
-          </div>
-        </div>
-      </div>
     </>
   );
 }

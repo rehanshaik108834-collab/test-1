@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsNumber, Min } from 'class-validator';
+import { IsString, IsOptional, IsNumber, Min, MinLength, MaxLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateDisputeDto {
@@ -28,9 +28,17 @@ export class CreateDisputeDto {
   @IsOptional() @IsString()
   againstName?: string;
 
-  @ApiProperty({ example: 'Backend integration incomplete' })
-  @IsString()
+  @ApiProperty({ example: 'Incomplete work' })
+  @IsString() @MinLength(1) @MaxLength(200)
   reason: string;
+
+  @ApiPropertyOptional({ example: 'The payment endpoints return the wrong format.' })
+  @IsOptional() @IsString() @MaxLength(5000)
+  details?: string;
+
+  @ApiPropertyOptional({ example: 'Revision of the API responses' })
+  @IsOptional() @IsString() @MaxLength(500)
+  outcome?: string;
 
   @ApiPropertyOptional({ example: '$500' })
   @IsOptional() @IsString()
@@ -48,7 +56,7 @@ export class CreateDisputeDto {
   @IsOptional() @IsString()
   expertId?: string;
 
-  @ApiPropertyOptional({ example: 150, description: "The client's opening offer for the reviewer's fee" })
-  @IsOptional() @IsNumber() @Min(1)
-  reviewerFee?: number;
+  @ApiProperty({ example: 150, description: "What the person raising the dispute offers to pay the reviewer" })
+  @IsNumber() @Min(1)
+  reviewerFee: number;
 }

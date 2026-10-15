@@ -335,7 +335,32 @@ const Store = (() => {
       else if (!Array.isArray(_cache[key])) { _cache[key] = []; }
     }
     _online = _reachedEndpoints > 0;
+
+    // The rates every preview is computed with. Read from the server so a
+    // change the revenue desk makes shows up in every form's preview.
+    const rates = _syncFetch(API + '/ledger/fee-rates');
+    if (rates) _applyRates(rates);
     return _online;
+  }
+
+  /** Asynchronously re-reads the signed-in user's notifications. */
+  async function refreshNotifications() {
+    const h = _headers();
+    delete h['Content-Type'];
+    try {
+      const res = await fetch(`${API}/notifications`, { headers: h });
+      if (res.status === 401) { _handleUnauthorized(401); return _cache.notifications; }
+      if (!res.ok) return _cache.notifications;
+      const json = await res.json();
+      _cache.notifications = Array.isArray(json.data) ? json.data : [];
+    } catch (e) { /* offline: keep what we have */ }
+    return _cache.notifications;
+  }
+
+  function markNotificationRead(id) {
+    try { _write('PATCH', `${API}/notifications/${id}/read`, {}); } catch (e) { console.warn('[Store]', e.message); }
+    const n = (_cache.notifications || []).find(x => x.id === id);
+    if (n) n.read = true;
   }
 
   function isOnline() { return _online; }
@@ -419,6 +444,36 @@ const Store = (() => {
     return result;
   }
 
+  /** Escrow held on the signed-in user's projects, bucket by bucket. */
+  function getMyEscrow() {
+    return _syncFetch(`${API}/ledger/my-escrow`) || { projects: [], totals: { project: 0, audit: 0, dispute: 0, total: 0 } };
+  }
+
+  function changePassword(userId, currentPassword, newPassword) {
+    return _write('POST', `${API}/users/${userId}/password`, { currentPassword, newPassword });
+  }
+
+  function resetUserPassword(userId, newPassword) {
+    return _write('POST', `${API}/users/${userId}/password-reset`, { newPassword });
+  }
+
+  /** Re-reads one user (e.g. the signed-in one after a balance change). */
+  function refreshUser(userId) { return _refreshUser(userId); }
+
+  /** Re-reads everything a page may depend on after a write. */
+  function refresh(...keys) {
+    const paths = {
+      users: '/users', tasks: '/tasks', milestones: '/milestones', proposals: '/proposals',
+      auditRequests: '/audit-requests', auditReports: '/audit-reports', disputes: '/disputes',
+      transactions: '/transactions', notifications: '/notifications', messages: '/messages',
+    };
+    for (const k of keys) {
+      if (!paths[k]) continue;
+      const data = _syncFetch(API + paths[k]);
+      if (data) _cache[k] = data;
+    }
+  }
+
   // ─── AUDIT ENGAGEMENTS ────────────────────────────────────────────────────
   // An audit is a hired, negotiated, escrow-paid engagement:
   //   preview-sent → negotiating → agreed → escrow-funded
@@ -447,7 +502,14 @@ const Store = (() => {
   }
   function fundAuditEscrow(id) {
     const r = _write('POST', `${API}/audit-requests/${id}/fund`, {});
-    _refreshAuditRequests(); _refreshUser(_sessionUserId());
+    _refreshAuditRequests(); _refreshUser(_sessionUserId()); _refreshTransactions();
+    return r;
+  }
+  /** After a decline: ask a different reviewer, with a fresh opening offer. */
+  function reassignAudit(id, expertId, openingOffer) {
+    const r = _write('POST', `${API}/audit-requests/${id}/reassign`, { expertId, openingOffer });
+    _refreshAuditRequests();
+    refresh('disputes');
     return r;
   }
   function acceptAuditEngagement(id) {
@@ -464,8 +526,7 @@ const Store = (() => {
   }
   function cancelDraftTask(taskId) {
     const r = _write('POST', `${API}/tasks/${taskId}/cancel-draft`, {});
-    const tasks = _syncFetch(`${API}/tasks`);
-    if (tasks) _cache.tasks = tasks;
+    refresh('tasks', 'auditRequests', 'transactions');
     _refreshUser(_sessionUserId());
     return r;
   }
@@ -506,7 +567,8 @@ const Store = (() => {
   // ─── FEE PREVIEW ──────────────────────────────────────────────────────────
   // Mirrors back-end/src/modules/ledger/fee-config.ts so forms can show the
   // charge before it is committed. The server always recomputes authoritatively.
-  const FEES = {
+  // Defaults until init() reads the server's current rates.
+  let FEES = {
     deposit:            { percent: 2.9,  fixed: 0.30 },
     clientMarketplace:  { percent: 5.0 },
     contractInitiation: [
@@ -520,6 +582,19 @@ const Store = (() => {
     expertService: { percent: 10 },
     withdrawal:    { percent: 0.25, fixed: 0.25, min: 0.25 },
   };
+
+  /** Replaces the preview rates with the server's current ones. */
+  function _applyRates(r) {
+    try {
+      const inf = t => t.map(x => ({ ...x, upTo: x.upTo == null ? Infinity : x.upTo }));
+      if (r.deposit) FEES.deposit = r.deposit;
+      if (r.clientMarketplace) FEES.clientMarketplace = r.clientMarketplace;
+      if (Array.isArray(r.contractInitiation)) FEES.contractInitiation = inf(r.contractInitiation);
+      if (Array.isArray(r.workerService)) FEES.workerService = inf(r.workerService);
+      if (r.expertService) FEES.expertService = r.expertService;
+      if (r.withdrawal) FEES.withdrawal = r.withdrawal;
+    } catch (e) { /* keep the defaults */ }
+  }
 
   function _round2(n) { return Math.round((n + Number.EPSILON) * 100) / 100; }
   function _tier(tiers, amount) { return tiers.find(t => amount <= t.upTo) || tiers[tiers.length - 1]; }
@@ -535,11 +610,13 @@ const Store = (() => {
       const fee = _round2(Math.max(raw, FEES.withdrawal.min));
       return { gross, fee, net: _round2(gross - fee) };
     },
+    /** Hiring: the budget is already held, so only the contract fees are charged. */
     projectFunding(budget) {
       const marketplace = _round2(budget * (FEES.clientMarketplace.percent / 100));
       const initiation = _tier(FEES.contractInitiation, budget).fee;
-      return { budget, marketplace, initiation, total: _round2(budget + marketplace + initiation) };
+      return { budget, marketplace, initiation, fees: _round2(marketplace + initiation), total: _round2(budget + marketplace + initiation) };
     },
+    rates() { return FEES; },
     workerRelease(amount, lifetimeBillings) {
       const rate = _tier(FEES.workerService, lifetimeBillings || 0).percent;
       const fee = _round2(amount * (rate / 100));
@@ -558,9 +635,14 @@ const Store = (() => {
   function getTasksByWorker(workerId) { return _cache.tasks.filter(t => t.workerId === workerId); }
   function getOpenTasks() { return _cache.tasks.filter(t => t.status === 'open'); }
 
+  // Posting a project moves its budget into escrow, and cancelling or
+  // deleting one returns it — so each of these refreshes the wallet.
   function createTask(data) {
     const result = _write('POST', `${API}/tasks`, data);
     _cache.tasks.push(result);
+    _refreshUser(result.clientId);
+    _refreshTransactions();
+    refresh('auditRequests');
     return result;
   }
 
@@ -568,12 +650,18 @@ const Store = (() => {
     const result = _write('PATCH', `${API}/tasks/${id}`, updates);
     const idx = _cache.tasks.findIndex(t => t.id === id);
     if (idx >= 0) _cache.tasks[idx] = result;
+    _refreshUser(result.clientId);
+    _refreshTransactions();
     return result;
   }
 
   function deleteTask(id) {
+    const task = _cache.tasks.find(t => t.id === id);
     _write('DELETE', `${API}/tasks/${id}`);
     _cache.tasks = _cache.tasks.filter(t => t.id !== id);
+    _cache.milestones = _cache.milestones.filter(m => m.taskId !== id);
+    if (task) _refreshUser(task.clientId);
+    _refreshTransactions();
   }
 
   // ─── MILESTONES ───────────────────────────────────────────────────────────
@@ -585,6 +673,22 @@ const Store = (() => {
     const result = _write('POST', `${API}/milestones`, data);
     _cache.milestones.push(result);
     return result;
+  }
+
+  /**
+   * Posts a project with its milestones as one action. If a milestone is
+   * refused, the project is deleted again (which returns its budget), so a
+   * half-created project is never left behind.
+   */
+  function createTaskWithMilestones(taskData, milestones) {
+    const task = createTask(taskData);
+    try {
+      for (const m of milestones) createMilestone({ ...m, taskId: task.id });
+    } catch (e) {
+      try { deleteTask(task.id); } catch (e2) { /* report the original error */ }
+      throw e;
+    }
+    return task;
   }
 
   function updateMilestone(id, updates) {
@@ -619,7 +723,7 @@ const Store = (() => {
     const ms = result;
     if (ms.taskId) _checkTaskCompletion(ms.taskId);
     _refreshTransactions();
-    // Refresh client user (task owner) for wallet balance
+    // Completing the last milestone returns any unused budget to the client.
     const task = _cache.tasks.find(t => t.id === ms.taskId);
     if (task && task.clientId) _refreshUser(task.clientId);
     return result;
@@ -659,10 +763,7 @@ const Store = (() => {
 
   function acceptInvitation(proposalId) {
     const result = _write('POST', `${API}/proposals/${proposalId}/accept`, {});
-    const proposals = _syncFetch(`${API}/proposals`);
-    const tasks = _syncFetch(`${API}/tasks`);
-    if (proposals) _cache.proposals = proposals;
-    if (tasks) _cache.tasks = tasks;
+    refresh('proposals', 'tasks', 'milestones');
     return result;
   }
 
@@ -736,23 +837,15 @@ const Store = (() => {
   function createDispute(data) {
     const result = _write('POST', `${API}/disputes`, data);
     _cache.disputes.push(result);
-    if (data.milestoneId) {
-      const ms = _syncFetch(`${API}/milestones`);
-      if (ms) _cache.milestones = ms;
-    }
+    refresh('milestones', 'auditRequests');
     return result;
   }
 
   function resolveDispute(id, { verdict, resolution }) {
     // The server records the caller as the reviewer, so no expertId is sent.
     const result = _write('POST', `${API}/disputes/${id}/resolve`, { verdict, resolution });
-    const idx = _cache.disputes.findIndex(d => d.id === id);
-    if (idx >= 0) _cache.disputes[idx] = result;
-    // Refresh milestones & tasks
-    const ms = _syncFetch(`${API}/milestones`);
-    const tasks = _syncFetch(`${API}/tasks`);
-    if (ms) _cache.milestones = ms;
-    if (tasks) _cache.tasks = tasks;
+    refresh('disputes', 'milestones', 'tasks', 'auditRequests', 'transactions');
+    _refreshUser(_sessionUserId());
     return result;
   }
 
@@ -805,19 +898,6 @@ const Store = (() => {
   // ─── NOTIFICATIONS ────────────────────────────────────────────────────────
   function getNotifications(userId) { return (_cache.notifications || []).filter(n => n.userId === userId); }
 
-  /**
-   * Best-effort: a notification that cannot be delivered must not undo or
-   * hide the action it describes, so a refusal is logged rather than thrown.
-   */
-  function addNotification(data) {
-    try {
-      const result = _write('POST', `${API}/notifications`, data);
-      if (result && result.userId === _sessionUserId()) _cache.notifications.push(result);
-    } catch (e) {
-      console.warn('[Store] notification not sent:', e.message);
-    }
-  }
-
   function markNotificationsRead(userId) {
     try { _write('PATCH', `${API}/notifications/${userId}/read-all`, {}); } catch (e) { console.warn('[Store]', e.message); }
     // Update local cache
@@ -830,17 +910,18 @@ const Store = (() => {
   function getMessagesByTask(taskId) { return (_cache.messages || []).filter(m => m.taskId === taskId); }
   function getMessagesByUser(userId) { return (_cache.messages || []).filter(m => m.senderId === userId || m.receiverId === userId); }
 
-  function sendMessage(data) {
-    const result = _write('POST', `${API}/messages`, data);
+  /** Sends a chat message (the server notifies the receiver). `attachment` is a stored file reference. */
+  function sendMessage({ taskId, receiverId, content, attachment }) {
+    const result = _write('POST', `${API}/messages`, { taskId, receiverId, content, ...(attachment ? { attachment } : {}) });
     _cache.messages.push(result);
-    // Auto-generate notification for the receiver
-    addNotification({
-      userId: data.receiverId,
-      type: 'message',
-      text: `New message from ${result.senderName || 'Someone'}`,
-      subtext: data.content.length > 50 ? data.content.substring(0, 50) + '...' : data.content,
-    });
     return result;
+  }
+
+  /** Re-reads the signed-in user's conversations. */
+  function refreshMessages() {
+    const data = _syncFetch(`${API}/messages`);
+    if (data) _cache.messages = data;
+    return _cache.messages;
   }
 
   // ─── PUBLIC API ───────────────────────────────────────────────────────────
@@ -859,8 +940,10 @@ const Store = (() => {
     getAuditReports, getAuditReportByRequest, getReportsByRequest, getReportsByTask, saveAuditReport,
     getDisputes, getDisputeById, createDispute, resolveDispute,
     getTransactions, getTransactionsByUser,
-    getNotifications, addNotification, markNotificationsRead,
-    getMessagesByTask, getMessagesByUser, sendMessage,
+    getNotifications, markNotificationsRead, markNotificationRead, refreshNotifications,
+    getMessagesByTask, getMessagesByUser, sendMessage, refreshMessages,
+    getMyEscrow, changePassword, resetUserPassword,
+    refreshUser, refresh, reassignAudit, createTaskWithMilestones,
     getExpertApplications, getExpertApplicationById, getExpertApplicationByEmail, getExpertApplicationStatus, saveExpertApplication, updateExpertApplicationStatus,
   };
 })();

@@ -83,6 +83,9 @@ export default function Dispute() {
 
   const [searchParams] = useSearchParams();
   const [target] = useState(() => loadTarget(Store, searchParams.get('milestoneId')));
+  const openDispute = target ? Store.getDisputes().find(d => d.milestoneId === target.id && d.status === 'open') : null;
+  const settled = target && ['completed', 'approved', 'refunded'].includes(target.status);
+  const backURL = target ? `${workroomURL}?id=${target.taskId}` : workroomURL;
   const targetTask = target ? target.task : null;
   // A project audited at creation already has its reviewer: that is who
   // arbitrates, rather than anyone the category happens to match.
@@ -94,7 +97,6 @@ export default function Dispute() {
   const [reviewerFee, setReviewerFee] = useState('');
   const [showExpertError, setShowExpertError] = useState(false);
   // The client pays the reviewer, so only the client proposes a fee.
-  const proposesFee = userRole === 'client';
 
   function submitDispute() {
     if (!target) {
@@ -107,9 +109,10 @@ export default function Dispute() {
       return;
     }
 
+    // Whoever raises the dispute pays the reviewer to arbitrate it.
     const fee = parseFloat(reviewerFee);
-    if (proposesFee && reviewerFee !== '' && !(fee >= 1)) {
-      showToast('Enter a reviewer fee of at least $1, or leave it empty.', 'warn');
+    if (!(fee >= 1)) {
+      showToast('Enter the fee you will pay the reviewer (at least $1).', 'warn');
       return;
     }
 
@@ -124,7 +127,7 @@ export default function Dispute() {
       details: details.trim(),
       outcome: outcome.trim(),
       expertId,
-      ...(proposesFee && fee >= 1 ? { reviewerFee: fee } : {}),
+      reviewerFee: fee,
     };
 
     if (!expertId) {
@@ -133,9 +136,8 @@ export default function Dispute() {
       return;
     }
 
-    let created;
     try {
-      created = Store.createDispute(disputeData);
+      Store.createDispute(disputeData);
     } catch (e) {
       // The server's reason (already disputed, already paid, …), not a
       // generic "try again".
@@ -145,26 +147,11 @@ export default function Dispute() {
 
     // Notifications render as text, so they are not HTML-escaped here —
     // escaping them showed "&amp;" in the dropdown.
-    Store.addNotification({
-      userId: expertId,
-      type: 'dispute',
-      text: `New dispute raised: ${disputeData.project}`,
-      subtext: `${session?.name || 'A user'} raised a dispute — ${disputeData.reason}`,
-    });
-    if (created.againstId) {
-      Store.addNotification({
-        userId: created.againstId,
-        type: 'dispute',
-        text: `A dispute has been raised against you`,
-        subtext: `${disputeData.project} — ${disputeData.milestone}: ${disputeData.reason}`,
-      });
-    }
-
-    showToast('Dispute submitted successfully.', 'success');
+    showToast('Dispute raised. Agree the reviewer\'s fee and fund it under Dispute Fees.', 'success');
     // The client pays the reviewer, so they go where the fee is agreed. A
     // worker was sent to the client's board, which bounced them to their
     // dashboard.
-    const next = userRole === 'client' ? '/client-audit-offers' : `/worker-milestone-board?id=${disputeData.taskId}`;
+    const next = '/audit-offers';
     setTimeout(() => { navigate(next); }, 1300);
   }
 
@@ -176,6 +163,14 @@ export default function Dispute() {
           {!target ? (
             <div style={{ padding: 20, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, textAlign: 'center' }}>
               No dispute target found. Return to your <Link to={workroomURL}>workroom</Link>.
+            </div>
+          ) : openDispute ? (
+            <div style={{ padding: 20, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, textAlign: 'center' }}>
+              There is already an open dispute on <strong>{target.title}</strong>. Follow it under <Link to="/audit-offers">Dispute Fees</Link>.
+            </div>
+          ) : settled ? (
+            <div style={{ padding: 20, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, textAlign: 'center' }}>
+              <strong>{target.title}</strong> has already been settled, so it can no longer be disputed.
             </div>
           ) : (
             <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 16, padding: 24 }}>
@@ -232,20 +227,23 @@ export default function Dispute() {
                 </div>
               </div>
 
-              {proposesFee && (
-                <div className="field-group">
-                  <label htmlFor="disputeReviewerFee">Proposed reviewer fee (optional)</label>
-                  <div style={{ fontSize: 12, color: 'var(--muted-foreground)', marginBottom: 6 }}>
-                    Your opening offer for the reviewer&apos;s time. They can accept or counter it, and you agree the final fee under Audit Offers.
-                  </div>
-                  <input id="disputeReviewerFee" className="field-input" type="number" min="1" step="1" placeholder="e.g. 150"
+              <div className="field-group">
+                <label htmlFor="disputeReviewerFee">Reviewer fee you will pay</label>
+                <div style={{ fontSize: 12, color: 'var(--muted-foreground)', marginBottom: 6 }}>
+                  As the person raising the dispute, you pay the reviewer to arbitrate it. This is your offer — the reviewer can accept it or
+                  counter, and nothing is charged until you both agree and you fund it under Dispute Fees. The platform keeps
+                  {` ${Store.Fees.rates().expertService.percent}%`} of the reviewer&apos;s fee.
+                </div>
+                <div style={{ position: 'relative', maxWidth: 220 }}>
+                  <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', fontWeight: 700, color: 'var(--muted-foreground)' }}>$</span>
+                  <input id="disputeReviewerFee" className="field-input" type="number" min="1" step="1" placeholder="150" style={{ paddingLeft: 26 }}
                          value={reviewerFee} onChange={e => setReviewerFee(e.target.value)} />
                 </div>
-              )}
+              </div>
 
               <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
                 <button className="btn-primary btn-action" onClick={submitDispute}>Submit Dispute</button>
-                <Link to={workroomURL} className="btn-outline btn-action">Back to Workroom</Link>
+                <Link to={backURL} className="btn-outline btn-action">Back to Workroom</Link>
               </div>
             </div>
           )}

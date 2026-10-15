@@ -17,14 +17,14 @@ export class MilestonesController {
   @Get()
   @ApiOperation({ summary: 'Get all milestones (supports ?taskId= filter)' })
   @ApiQuery({ name: 'taskId', required: false })
-  findAll(@Query('taskId') taskId?: string) {
-    return this.milestonesService.findAll({ taskId });
+  findAll(@CurrentActor() actor: Actor, @Query('taskId') taskId?: string) {
+    return this.milestonesService.findAll({ taskId }, actor);
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get milestone by ID' })
-  findOne(@Param('id') id: string) {
-    return this.milestonesService.findById(id);
+  findOne(@Param('id') id: string, @CurrentActor() actor: Actor) {
+    return this.milestonesService.findById(id, actor);
   }
 
   @Post()
