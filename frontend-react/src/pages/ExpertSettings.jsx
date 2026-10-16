@@ -64,6 +64,9 @@ export default function ExpertSettings() {
   const [availType, setAvailType] = useState(availability.type);
   // The categories this reviewer is offered on — what client matching reads.
   const [selectedDomains, setSelectedDomains] = useState(() => [...(user?.domains || [])]);
+  // The intake team vetted these. A reviewer can narrow them, not add to them.
+  const approved = user?.approvedDomains?.length ? user.approvedDomains : (user?.domains || []);
+  const offered = DOMAINS.filter(d => approved.includes(d.id));
   const { errors, clearError, validateForm, errorStyle } = useFieldErrors();
 
   if (!user) {
@@ -261,10 +264,10 @@ export default function ExpertSettings() {
               <div className="settings-card">
                 <h3>Audit Domains</h3>
                 <p className="domains-summary">
-                  <span id="domain-count">{domainCount}</span>{` of ${DOMAINS.length} categories selected — clients are only offered you on projects in these categories.`}
+                  <span id="domain-count">{domainCount}</span>{` of the ${offered.length} categories you were approved for — clients are only offered you on projects in these. To review a new category, ask the intake team.`}
                 </p>
                 <div className="domain-grid">
-                  {DOMAINS.map(d => (
+                  {offered.map(d => (
                     <div key={d.id} className={`domain-card ${selectedDomains.includes(d.id) ? 'on' : 'off'}`} onClick={() => toggleDomain(d.id)} data-id={d.id}>
                       <div className="domain-card-icon"><Icon name={d.icon} /></div>
                       <div>

@@ -34,6 +34,13 @@ export class DisputesController {
     return this.disputesService.create(dto, actor);
   }
 
+  @Post(':id/withdraw')
+  @Roles('client')
+  @ApiOperation({ summary: 'Withdraw your dispute before the reviewer accepts it (any funded fee is returned)' })
+  withdraw(@Param('id') id: string, @CurrentActor() actor: Actor) {
+    return this.disputesService.withdraw(id, actor);
+  }
+
   @Post(':id/resolve')
   @ApiHeader({ name: 'role', required: true, description: 'User role required' })
   @Roles('expert', 'superuser')

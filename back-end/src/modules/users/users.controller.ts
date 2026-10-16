@@ -5,8 +5,11 @@ import { UsersService } from './users.service';
 import { LedgerService } from '../ledger/ledger.service';
 import { TasksService } from '../tasks/tasks.service';
 import { AuditRequestsService } from '../audit-requests/audit-requests.service';
+import { ProposalsService } from '../proposals/proposals.service';
+import { AuthService } from '../auth/auth.service';
+import { AuditService } from '../audit/audit.service';
 import { CreateUserDto } from './dto/create-user.dto';
-import { UpdateUserDto, ChangePasswordDto, ResetPasswordDto } from './dto/update-user.dto';
+import { UpdateUserDto, ChangePasswordDto } from './dto/update-user.dto';
 import { LoginDto } from './dto/login.dto';
 import { WalletDto } from './dto/wallet.dto';
 import { RoleGuard } from '../../common/guards/role.guard';
@@ -25,6 +28,9 @@ export class UsersController {
     @Inject(forwardRef(() => LedgerService)) private readonly ledger: LedgerService,
     @Inject(forwardRef(() => TasksService)) private readonly tasks: TasksService,
     @Inject(forwardRef(() => AuditRequestsService)) private readonly auditRequests: AuditRequestsService,
+    @Inject(forwardRef(() => ProposalsService)) private readonly proposals: ProposalsService,
+    @Inject(forwardRef(() => AuthService)) private readonly auth: AuthService,
+    private readonly audit: AuditService,
   ) {}
 
   @Post('login')
@@ -53,14 +59,31 @@ export class UsersController {
   @Throttle({ default: { ttl: 60_000, limit: 10 } })
   @ApiHeader({ name: 'role', required: true, description: 'User role required' })
   @Roles('superuser')
-  @ApiOperation({ summary: 'Create any user type including staff/admin (superuser only)' })
-  createStaff(@Body() dto: CreateUserDto) {
+  @ApiOperation({ summary: 'Create a client, worker or admin-desk account (superuser only)' })
+  createStaff(@Body() dto: CreateUserDto, @CurrentActor() actor: Actor) {
     // Expert Reviewers join through the intake desk's application review,
     // which records the domains they cover and checks their résumé.
     if (dto.role === 'expert') {
       throw new BadRequestException('Expert Reviewers are added by approving their application on the intake desk.');
     }
-    return redact(this.usersService.createPrivileged(dto));
+    // A superuser cannot be suspended or deleted by another superuser, so a
+    // second one created here could never be removed again.
+    if (dto.role === ROLES.SUPERUSER) {
+      throw new ForbiddenException('Operations accounts are created by seeding, not from the app.');
+    }
+    // The creator chose this password, so they know it. The new owner must
+    // replace it before the account can do anything, and the creation is on
+    // the compliance trail with the creator's name against it.
+    const created = this.usersService.createPrivileged(dto, undefined, {
+      createdBy: actor.id,
+      mustChangePassword: true,
+    });
+    this.audit.record({
+      kind: 'account.create',
+      outcome: 'ok',
+      detail: { userId: created.id, email: created.email, role: created.role, createdBy: actor.id },
+    });
+    return redact(created);
   }
 
   @Post()
@@ -98,7 +121,14 @@ export class UsersController {
       const target = this.usersService.findById(id);
       if (target.role === 'superuser') throw new ForbiddenException('Operations accounts cannot be suspended here.');
     }
-    return redact(this.usersService.update(id, dto));
+    const updated = this.usersService.update(id, dto);
+    if (dto.status === 'suspended') {
+      // A suspended worker cannot sign in to do the work, so their open bids
+      // close rather than wait to be hired onto a contract nobody can deliver.
+      this.proposals.closeAllForWorker(id, 'The worker\'s account was suspended');
+      this.audit.record({ kind: 'account.suspend', outcome: 'ok', detail: { userId: id } });
+    }
+    return redact(updated);
   }
 
   @Delete(':id')
@@ -121,6 +151,9 @@ export class UsersController {
     if (onWork) {
       throw new BadRequestException(`${user.name} is part of existing projects or reviews. Suspend the account instead so the records stay intact.`);
     }
+    // Pending bids would otherwise let a client hire an account that no longer exists.
+    this.proposals.closeAllForWorker(id, 'The worker\'s account was removed');
+    this.audit.record({ kind: 'account.delete', outcome: 'ok', detail: { userId: id, email: user.email, role: user.role } });
     return this.usersService.delete(id);
   }
 
@@ -130,15 +163,14 @@ export class UsersController {
   @ApiOperation({ summary: 'Change your own password' })
   changePassword(@Param('id') id: string, @Body() dto: ChangePasswordDto, @CurrentActor() actor: Actor) {
     if (actor.id !== id) throw new ForbiddenException('You can only change your own password.');
-    return this.usersService.changePassword(id, dto.currentPassword, dto.newPassword);
+    const result = this.usersService.changePassword(id, dto.currentPassword, dto.newPassword);
+    // Changing the password signs out every other session. This one gets a
+    // fresh token so the person who just changed it stays signed in.
+    return { ...result, ...this.auth.issueFor(id) };
   }
 
-  @Post(':id/password-reset')
-  @Roles('superuser')
-  @ApiOperation({ summary: 'Set a new password for a user who lost theirs (superuser only)' })
-  resetPassword(@Param('id') id: string, @Body() dto: ResetPasswordDto) {
-    return this.usersService.resetPassword(id, dto.newPassword);
-  }
+  // POST /users/:id/password-reset was removed: an operator who can set
+  // someone's password can sign in as them and withdraw their balance.
 
   @Post(':id/wallet/add')
   @ApiHeader({ name: 'role', required: true, description: 'User role required' })

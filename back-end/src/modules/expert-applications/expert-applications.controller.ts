@@ -20,12 +20,10 @@ export class ExpertApplicationsController {
    * the login page can explain a pending one. Returns only whether an
    * application exists and its status — never the applicant's details.
    */
-  @Get('status')
-  @ApiQuery({ name: 'email', required: true })
-  @ApiOperation({ summary: 'Check whether an application exists for an email' })
-  statusFor(@Query('email') email: string) {
-    return this.expertApplicationsService.statusFor(email);
-  }
+  // GET /expert-applications/status?email= was removed. It told anyone
+  // whether an address had applied and how the application went. An
+  // applicant now learns their status by signing in with the password they
+  // applied with (see AuthService.login).
 
   @Get()
   @ApiHeader({ name: 'role', required: true, description: 'Admin role required' })

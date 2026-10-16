@@ -9,7 +9,7 @@ Each entry says what was wrong, what changed, and where (paths are relative to t
 |---|---|
 | Backend typecheck — `cd back-end && npx tsc --noEmit -p tsconfig.json` | clean |
 | Backend unit tests — `npm test` | 17 / 17 pass |
-| Backend end-to-end tests — `npm run test:e2e` | 62 / 62 pass (33 new) |
+| Backend end-to-end tests — `npm run test:e2e` | 86 / 86 pass (24 new in round 4) |
 | Frontend production build — `cd frontend-react && npx vite build` | builds |
 | ESLint on `frontend-react/src` | no undefined variables or parse errors (2 reports are only a missing `react-hooks` plugin definition in the lint config) |
 
@@ -39,7 +39,7 @@ One e2e test replays the reported case end to end: budget $500, audit fee $300, 
 | R10 | **Experts had no wallet.** | New Expert Wallet page showing earnings, fees held in escrow, transactions and withdrawals, using a shared `EarningsWallet` component. The worker wallet uses the same component. | `pages/ExpertWallet.jsx`, `components/EarningsWallet.jsx`, `pages/WorkerWallet.jsx` |
 | R11 | **The profile page did not work.** | New `/profile` page that shows your own profile, or anyone's public profile with `?id=`. Other people's email, phone and wallet are hidden. | `pages/Profile.jsx`, `users.service.ts` (public view) |
 | R12 | **"Quick Demo Access" was on the home page.** | Removed, along with the `?demo=` login prefill. The login page keeps its demo-credentials box, as agreed. | `pages/Home.jsx`, `pages/Login.jsx` |
-| R13 | **Forgot password** | Removed completely, as requested: backend endpoints, request queue and test, the page, its route and links, the Superuser Users panel, and the CSS. Superusers can still set a user's password from Edit User (`POST /users/:id/password-reset`). | `auth/*`, `App.jsx`, `pages/SuperuserUsers.jsx` |
+| R13 | **Forgot password** | Removed completely, as requested: backend endpoints, request queue and test, the page, its route and links, the Superuser Users panel, and the CSS. *(Round 4: the superuser password reset was removed too — see section 7.)* | `auth/*`, `App.jsx`, `pages/SuperuserUsers.jsx` |
 
 ---
 
@@ -307,4 +307,60 @@ Files: `tasks.service.ts` (`statsFor`), `users.repository.ts` (stats provider), 
 - serves live, anonymous platform figures to the landing pages
 
 Several older tests were updated for the new rules: disputes on submitted work, a client-paid dispute fee, derived project counts, and no rating anywhere.
+
+---
+
+## 7. Round 4 — workflow and loophole review
+
+Rules chosen by the project owner for this round:
+
+- A submitted milestone is **approved and paid automatically after 7 days** if the client neither approves it, asks for changes, nor disputes it.
+- A client can ask for changes **at most 3 times** per milestone; after that they approve or dispute.
+- A client can **end a contract for non-delivery**: nothing waiting for review, nothing handed in for 14 days, and 14 days past the deadline (or 30 days after hire / last submission with no deadline). Paid milestones stay paid; undelivered ones are cancelled and refunded. No fee.
+- **The worker's bid is the contract price.** Bids are numbers. Hiring brings escrow to the bid (top-up or refund), charges fees on it, and requires the milestones to add up to exactly the bid.
+- **No password reset by operations.** The route and the Edit User field are gone.
+- The superuser may create every account type **except another superuser** (and experts still join through intake). Every created account must **choose its own password at first sign-in** (the server refuses everything else until then), stores `createdBy`, and is written to the audit trail as `account.create`.
+- **Reviewers are paid per milestone.** Each milestone carries a share of the fee in proportion to its budget. The share is paid when the report is filed, or when the client approves within 5 days of submission (report or not). If the client approves after 5 days with no report, the share goes back to the client.
+- Disputes: the client chooses any available reviewer for the category, the project's auditor included.
+
+### Money and workflow
+
+| Problem | Fix | Files |
+|---|---|---|
+| A worker who disappeared after hire locked the client's escrow forever. | End-for-non-delivery (`GET /tasks/:id/non-delivery`, `POST /tasks/:id/end-for-non-delivery`) and a panel on the milestone board. | `tasks.service.ts`, `ProjectMilestoneBoard.jsx` |
+| A client could stall a worker forever with endless change requests. | 7-day auto-approval (`reviewDueAt`, swept every minute) and a 3-request cap. Seed milestones submitted before these rules carry no clock. | `milestones.service.ts`, `ReviewDeliverable.jsx` |
+| An unfunded $1 dispute froze a milestone forever, and could not be withdrawn. | The client can withdraw a dispute before the reviewer accepts (`POST /disputes/:id/withdraw`). A dispute expires after 7 days without acceptance, or 7 days after acceptance without a verdict; the fee is refunded and the milestone returns to review with 2 days before auto-approval. | `disputes.service.ts`, `ClientAuditOffers.jsx` |
+| A funded reviewer engagement the reviewer never accepted held the client's money. | `POST /audit-requests/:id/cancel` (payer, before acceptance). | `audit-requests.service.ts` |
+| The bid price was decorative: a $50 bid got the full $1,000 contract; milestones could also sum to less than the budget. | Hire at the bid; milestones must equal it. Task Details asks for a numeric price; Worker Applications quotes the top-up/refund; the board gets a plan editor (amounts, add, remove). | `proposals.service.ts`, `TaskDetails.jsx`, `WorkerApplications.jsx`, `ProjectMilestoneBoard.jsx` |
+| A suspended or deleted worker could still be hired. | Status checked at hire/accept; suspending or deleting closes their open bids and invitations. | `proposals.service.ts`, `users.controller.ts` |
+| Reviewers were paid only when every milestone had a report, so approving fast cut their pay. | Per-milestone payouts as above. | `audit-requests.service.ts`, `ExpertAuditPreview.jsx` |
+| An audit could be bought on a cancelled or finished project and the fee stranded. | Only on open or in-progress projects. | `audit-requests.service.ts` |
+| Fee changes reached into contracts already signed. | The worker fee schedule is stored on the task at hire, the reviewer commission on the engagement at funding. | `ledger.service.ts`, `tasks.service.ts` |
+| A refused audit report still overwrote the stored one. Empty reports paid the reviewer. | Checks run before the write; a verdict and 50+ characters of findings are required. | `audit-reports.service.ts`, DTO |
+| No way to remove a milestone. Hiring relabelled withdrawn bids "rejected". | `DELETE /milestones/:id` (pending, before hire). Only pending bids are turned down. | `milestones.*`, `proposals.repository.ts` |
+| Posting a project then its milestones could fail half-way and the rollback delete could charge a cancellation fee. | `POST /tasks` accepts `milestones`, all checked before money moves. | `tasks.service.ts`, `StoreContext.jsx` |
+| Projects could be posted in EUR/GBP while every wallet is in dollars. | USD only. | `create-task.dto.ts`, `PostTask.jsx` |
+
+### Accounts and access
+
+| Problem | Fix |
+|---|---|
+| A superuser could reset a client's password, sign in as them and withdraw their money; old tokens survived a password change. | Reset removed. Tokens carry a version that every password change bumps; the session that changed it gets a fresh token. |
+| A superuser could mint revenue/compliance/superuser accounts with a known password. | See the staff rules above. |
+| An expert could give themselves every review domain; an expert with no domains matched every category. | Domains limited to those intake approved (`approvedDomains`); no domains matches nothing; applications need a known expertise. |
+| A bcrypt-shaped password skipped the password rules. | Refused. |
+| A public endpoint told anyone whether an email had applied. | Removed; an applicant learns their status by signing in with their own password. |
+| Rejected bidders stayed project participants forever (files, messages); file ids were sequential. | Participants are the client, the hired worker, pending bidders while open, and engaged reviewers. File ids are random. Deliverable files are visible only once submitted, and cannot be deleted after. Signed-in uploads need a project; 200 MB per user; unclaimed application uploads are cleared after an hour. |
+| Anyone who bid could put fake "payment" notifications in the client's bell. | `POST /notifications` removed; only the platform writes notifications. |
+| Workers saw the client's escrow, fees and refunds. | Workers see only rows to or from them. |
+| The compliance CSV export could carry spreadsheet formulas. | Cells starting with `= + - @` are prefixed with `'`. |
+| Amounts had no ceiling ($1e20 deposit) or cent check; titles, categories and dates were not validated. | `@IsMoney()` (cents, ≤ $1,000,000) on every amount; title/description lengths, category list, ISO dates not in the past. |
+
+### Frontend
+
+- Page data loads in parallel without freezing the browser (previously ~12 synchronous requests on every navigation); pages are code-split (first load ~0.3 MB plus the icon set, was 2.1 MB).
+- New `/change-password` page for accounts that must choose their own password.
+- The workroom chat shows only the client and the hired worker.
+- Submit Deliverable: the fake "Save Draft" is gone, removing a file deletes it from the server, and a link alone is accepted.
+- `npm run lint` works (its packages were missing). It still reports older React-Compiler warnings in pages not touched in this round.
 

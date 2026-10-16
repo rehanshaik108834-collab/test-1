@@ -129,6 +129,26 @@ export default function AuditOffers() {
     );
   }
 
+  /**
+   * Withdraws a request the reviewer has not accepted yet. For a dispute that
+   * withdraws the dispute itself, and the milestone goes back to your review
+   * queue. Anything funded comes back to your wallet.
+   */
+  function withdraw(a) {
+    const isDispute = a.kind === 'dispute-audit';
+    Validate.confirm(
+      isDispute
+        ? 'Withdraw this dispute? Any fee you funded comes back, and the milestone returns to your review — approve it, ask for changes or dispute it again. It will be approved automatically in 2 days if you do nothing.'
+        : 'Withdraw this audit request? Any fee you funded comes back to your wallet.',
+      () => {
+        const r = attempt(Validate, () => (isDispute ? Store.withdrawDispute(a.disputeId) : Store.cancelAuditRequest(a.id)));
+        if (!r) return;
+        Validate.toast(isDispute ? 'Dispute withdrawn.' : 'Audit request withdrawn.', 'success');
+        reload();
+      },
+    );
+  }
+
   function cancelDraft(taskId) {
     Validate.confirm('Cancel this draft project? Its budget and any audit escrow are returned to your wallet.', () => {
       const r = attempt(Validate, () => Store.cancelDraftTask(taskId));
@@ -218,6 +238,11 @@ export default function AuditOffers() {
                     </button>
                   )}
                   {isDraft && !isDispute && <button className="btn-outline" style={{ color: '#b91c1c', borderColor: '#fca5a5' }} onClick={() => cancelDraft(a.taskId)}>Cancel draft project</button>}
+                  {(['preview-sent', 'negotiating', 'agreed', 'escrow-funded'].includes(a.status) || (isDispute && a.status === 'declined')) && (isDispute || !isDraft) && (
+                    <button className="btn-outline" style={{ color: '#b91c1c', borderColor: '#fca5a5' }} onClick={() => withdraw(a)}>
+                      {isDispute ? 'Withdraw dispute' : 'Withdraw request'}
+                    </button>
+                  )}
                   {isDispute && a.disputeId && (
                     <Link to={`/expert-report-dispute?id=${a.disputeId}`} className="btn-outline" style={{ textDecoration: 'none' }}>View dispute</Link>
                   )}

@@ -42,6 +42,12 @@ export class MilestonesRepository {
     return this.milestones.filter(m => m.taskId === taskId);
   }
 
+  deleteById(id: string): boolean {
+    const before = this.milestones.length;
+    this.milestones = this.milestones.filter(m => m.id !== id);
+    return this.milestones.length < before;
+  }
+
   deleteByTaskId(taskId: string): number {
     const before = this.milestones.length;
     this.milestones = this.milestones.filter(m => m.taskId !== taskId);

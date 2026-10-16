@@ -10,7 +10,7 @@ import { useAuth } from '../context/AuthContext';
 import { useStore } from '../context/StoreContext';
 import { useValidation } from '../context/ValidationContext';
 
-export default function ChangePasswordCard() {
+export default function ChangePasswordCard({ onChanged } = {}) {
   const Store = useStore();
   const Auth = useAuth();
   const Validate = useValidation();
@@ -41,7 +41,8 @@ export default function ChangePasswordCard() {
     }
     setSaving(false);
     setCurrent(''); setNext(''); setConfirm('');
-    Validate.toast('Password changed. Use the new one next time you sign in.', 'success');
+    Validate.toast('Password changed. Any other device signed in to this account has been signed out.', 'success');
+    if (onChanged) onChanged();
   }
 
   return (

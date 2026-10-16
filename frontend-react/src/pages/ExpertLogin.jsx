@@ -53,22 +53,8 @@ export default function ExpertLogin() {
 
     setSubmitting(true);
     setTimeout(() => {
-      // ── Check expert application status FIRST ──
-      const app = Store.getExpertApplicationStatus(emailVal);
-      if (app.exists) {
-        if (app.status === 'pending') {
-          showError('expertEmail', 'Your application is under review. You will be notified once approved.');
-          setSubmitting(false);
-          return;
-        }
-        if (app.status === 'rejected') {
-          showError('expertEmail', 'Your application was rejected. Please contact support for more information.');
-          setSubmitting(false);
-          return;
-        }
-        // status === 'approved' → proceed to auth
-      }
-
+      // A pending or rejected applicant is told so by the sign-in itself —
+      // only after their password matches the one they applied with.
       const result = Auth.login(emailVal, pw);
       if (!result.success) {
         showError('expertEmail', result.error);

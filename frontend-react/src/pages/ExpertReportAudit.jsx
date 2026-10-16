@@ -403,8 +403,9 @@ export default function ExpertReportAudit() {
     let valid = true;
 
     // Validate findings
-    if (!findings || findings.length < 30) {
-      setFindingsErr({ text: 'Findings must be at least 30 characters.', show: true });
+    // The report is what pays the reviewer, so the server asks for 50+ characters.
+    if (!findings || findings.length < 50) {
+      setFindingsErr({ text: 'Findings must be at least 50 characters.', show: true });
       setFindingsBorder('#ef4444');
       valid = false;
     } else {

@@ -61,6 +61,23 @@ export class TasksController {
     return this.tasksService.cancellationQuote(id, actor);
   }
 
+  @Get(':id/non-delivery')
+  @Roles('client')
+  @ApiOperation({ summary: 'Whether the contract can be ended because the worker stopped delivering' })
+  nonDelivery(@Param('id') id: string, @CurrentActor() actor: Actor) {
+    return this.tasksService.nonDeliveryStatus(id, actor);
+  }
+
+  @Post(':id/end-for-non-delivery')
+  @Roles('client')
+  @ApiOperation({
+    summary: 'End a contract the worker stopped delivering on',
+    description: 'Paid milestones stay paid; undelivered milestones are cancelled and refunded. No fee.',
+  })
+  endForNonDelivery(@Param('id') id: string, @CurrentActor() actor: Actor) {
+    return this.tasksService.endForNonDelivery(id, actor);
+  }
+
   @Post(':id/cancel-draft')
   @ApiHeader({ name: 'role', required: true, description: 'User role required' })
   @Roles('client')

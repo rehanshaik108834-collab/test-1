@@ -7,6 +7,7 @@
  * milestones in five columns, with a "Review Deliverable" action on
  * submitted work.
  */
+import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import Icon from '../components/Icon';
@@ -16,6 +17,8 @@ import StatCard from '../components/StatCard';
 import { useAuth } from '../context/AuthContext';
 import { useStore } from '../context/StoreContext';
 import usePageTitle from '../hooks/usePageTitle';
+import useRerender from '../hooks/useRerender';
+import { useValidation } from '../context/ValidationContext';
 import pageCss from './ProjectMilestoneBoard.css?raw';
 
 const PRIORITY_COLORS = { High: '#ef4444', Medium: '#f59e0b', Low: '#10b981', Normal: '#6366f1' };
@@ -46,8 +49,9 @@ function loadMilestonesFromStore(Store, Auth, taskId) {
       rawId: m.id,
       taskId: m.taskId,
       revision: m.status === 'revision-needed',
+      cancelled: m.status === 'cancelled',
     };
-    if (['completed', 'approved', 'audit-passed'].includes(m.status)) colMap.done.push(card);
+    if (['completed', 'approved', 'audit-passed', 'cancelled'].includes(m.status)) colMap.done.push(card);
     else if (m.status === 'review' || m.status === 'submitted') colMap.review.push(card);
     else if (m.status === 'disputed') colMap.disputed.push(card);
     else if (m.status === 'in-progress') colMap.inProgress.push(card);
@@ -57,7 +61,111 @@ function loadMilestonesFromStore(Store, Auth, taskId) {
 }
 
 /** Sum of "$1,234"-style amounts. */
-const sumAmounts = cards => cards.reduce((s, m) => s + parseFloat((m.amount || '$0').replace(/[^0-9.]/g, '') || 0), 0);
+const sumAmounts = cards => cards.filter(m => !m.cancelled).reduce((s, m) => s + parseFloat((m.amount || '$0').replace(/[^0-9.]/g, '') || 0), 0);
+
+const money = n => '$' + (Number(n) || 0).toLocaleString('en-US', { maximumFractionDigits: 2 });
+
+/**
+ * The milestone plan, editable until someone is hired. Hiring needs the
+ * milestones to add up to exactly the agreed price (the worker's bid), so the
+ * client has to be able to change amounts and remove milestones here.
+ */
+function PlanEditor({ task }) {
+  const Store = useStore();
+  const Validate = useValidation();
+  const rerender = useRerender();
+  const [draft, setDraft] = useState({});
+  const [adding, setAdding] = useState({ title: '', budget: '' });
+  const list = Store.getMilestonesByTask(task.id);
+  const total = list.reduce((a, m) => a + (Number(m.budget) || 0), 0);
+  const pendingBids = Store.getProposalsByTask(task.id).filter(p => p.status === 'pending' && p.type !== 'invitation');
+
+  const attempt = (fn, ok) => {
+    try { fn(); } catch (e) { Validate.toast(e.message, 'error'); return; }
+    if (ok) Validate.toast(ok, 'success');
+    Store.refresh('milestones', 'tasks');
+    rerender();
+  };
+  const save = m => {
+    const v = draft[m.id];
+    if (v === undefined || Number(v) === m.budget) return;
+    attempt(() => Store.updateMilestone(m.id, { budget: Number(v) }), `"${m.title}" is now ${money(v)}.`);
+    setDraft(d => { const { [m.id]: _drop, ...rest } = d; return rest; });
+  };
+  const remove = m => Validate.confirm(`Remove "${m.title}" from the plan?`, () => attempt(() => Store.deleteMilestone(m.id), 'Milestone removed.'));
+  const add = () => {
+    const budget = Number(adding.budget);
+    if (adding.title.trim().length < 3 || !(budget >= 1)) { Validate.toast('Give the milestone a title (3+ characters) and an amount.', 'error'); return; }
+    attempt(() => Store.createMilestone({ taskId: task.id, title: adding.title.trim(), budget }), 'Milestone added.');
+    setAdding({ title: '', budget: '' });
+  };
+
+  return (
+    <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 16, padding: '20px 24px', marginBottom: 24 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6, flexWrap: 'wrap', gap: 8 }}>
+        <span style={{ fontWeight: 600, fontSize: 15 }}>Milestone plan</span>
+        <span style={{ fontSize: 13, color: Math.abs(total - task.budget) < 0.005 ? '#059669' : '#b45309' }}>
+          {`Milestones ${money(total)} · budget ${money(task.budget)}`}
+        </span>
+      </div>
+      <p style={{ fontSize: 12.5, color: 'var(--muted-foreground)', marginBottom: 14, lineHeight: 1.5 }}>
+        You can change this plan until you hire. When you hire, the worker&apos;s bid becomes the contract price and the milestones must add up to exactly that amount.
+        {pendingBids.length ? ` Bids so far: ${pendingBids.map(p => money(typeof p.bidPrice === 'number' ? p.bidPrice : parseFloat(String(p.bidPrice || '').replace(/[$,]/g, '')))).join(', ')}.` : ''}
+      </p>
+      {list.map(m => (
+        <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderTop: '1px solid var(--border)', flexWrap: 'wrap' }}>
+          <span style={{ flex: 1, minWidth: 160, fontSize: 14 }}>{m.title}</span>
+          <input type="number" min="1" step="0.01" className="form-input" style={{ width: 130, padding: '6px 10px' }} aria-label={`Amount for ${m.title}`}
+                 value={draft[m.id] ?? m.budget} onChange={e => setDraft(d => ({ ...d, [m.id]: e.target.value }))} onBlur={() => save(m)} />
+          {m.status === 'pending'
+            ? <button type="button" className="btn-outline" style={{ padding: '6px 12px', borderRadius: 8, fontSize: 12 }} onClick={() => remove(m)}>Remove</button>
+            : null}
+        </div>
+      ))}
+      <div style={{ display: 'flex', gap: 10, paddingTop: 10, borderTop: '1px solid var(--border)', flexWrap: 'wrap' }}>
+        <input className="form-input" style={{ flex: 1, minWidth: 160, padding: '6px 10px' }} placeholder="New milestone title"
+               value={adding.title} onChange={e => setAdding(a => ({ ...a, title: e.target.value }))} />
+        <input type="number" min="1" step="0.01" className="form-input" style={{ width: 130, padding: '6px 10px' }} placeholder="Amount"
+               value={adding.budget} onChange={e => setAdding(a => ({ ...a, budget: e.target.value }))} />
+        <button type="button" className="btn-primary" style={{ padding: '6px 14px', borderRadius: 8, fontSize: 13 }} onClick={add}>Add</button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Ending a contract the worker stopped delivering on. Offered once the worker
+ * has nothing waiting for review and the deadline (or 30 days) has long passed.
+ */
+function NonDeliveryPanel({ task }) {
+  const Store = useStore();
+  const Validate = useValidation();
+  const navigate = useNavigate();
+  const status = Store.getNonDeliveryStatus(task.id);
+  const from = status.eligibleFrom ? new Date(status.eligibleFrom).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : null;
+  const end = () => Validate.confirm(
+    'End this contract? Milestones already paid stay paid. Every milestone not delivered is cancelled and its money returned to your wallet. This cannot be undone.',
+    () => {
+      try { Store.endForNonDelivery(task.id); } catch (e) { Validate.toast(e.message, 'error'); return; }
+      Validate.toast('Contract ended. The undelivered milestones were refunded to your wallet.', 'success');
+      navigate('/client-my-projects');
+    },
+  );
+  return (
+    <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 16, padding: '16px 24px', marginBottom: 24, display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+      <div style={{ flex: 1, minWidth: 220, fontSize: 13, color: 'var(--muted-foreground)', lineHeight: 1.5 }}>
+        <strong style={{ color: 'var(--foreground)' }}>Worker stopped delivering?</strong>{' '}
+        {status.eligible
+          ? 'Nothing has been handed in for a long time and the deadline has passed. You can end the contract and get back the money for every undelivered milestone.'
+          : `${status.reason}${from ? ` (from ${from})` : ''}`}
+      </div>
+      <button type="button" className="btn-outline" disabled={!status.eligible} onClick={end}
+              style={{ padding: '8px 16px', borderRadius: 10, borderColor: '#ef4444', color: '#b91c1c', opacity: status.eligible ? 1 : 0.5 }}>
+        End contract
+      </button>
+    </div>
+  );
+}
 
 /** One milestone card; `col` decides the footer note / action. */
 function MilestoneCard({ m, col }) {
@@ -94,7 +202,9 @@ function MilestoneCard({ m, col }) {
       </div>
       {col === 'done' ? (
         <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid rgba(0,0,0,0.05)', textAlign: 'center' }}>
-          <span style={{ fontSize: 12, color: '#10b981', fontWeight: 600 }}>✓ Approved &amp; Paid</span>
+          {m.cancelled
+            ? <span style={{ fontSize: 12, color: '#64748b', fontWeight: 600 }}>Cancelled — not delivered, refunded</span>
+            : <span style={{ fontSize: 12, color: '#10b981', fontWeight: 600 }}>✓ Approved &amp; Paid</span>}
         </div>
       ) : ''}
       {col === 'review' ? (
@@ -185,12 +295,15 @@ export default function ProjectMilestoneBoard() {
           </div>
         </div>
 
+        {boardTask && ['open', 'draft'].includes(boardTask.status) && !boardTask.workerId ? <PlanEditor task={boardTask} /> : null}
+        {boardTask && boardTask.status === 'in-progress' && boardTask.workerId ? <NonDeliveryPanel task={boardTask} /> : null}
+
         {/* Kanban Board */}
         {allMs.length === 0 ? (
           <div style={{ padding: 64, textAlign: 'center', color: 'var(--muted-foreground)', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 16, marginBottom: 24 }}>
             <Icon name="flag" style={{ width: 48, height: 48, opacity: 0.3, margin: '0 auto 16px', display: 'block' }} />
             <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 6 }}>No milestones yet</div>
-            <div style={{ fontSize: 14 }}>Add milestones when posting or editing this task.</div>
+            <div style={{ fontSize: 14 }}>Add milestones in the plan above — the worker is paid milestone by milestone.</div>
           </div>
         ) : ''}
         <div className="kanban-board">

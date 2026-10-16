@@ -48,7 +48,9 @@ export class ProposalsRepository {
   /** Bulk-update all proposals for a given task (used during hiring). */
   updateAllByTaskId(taskId: string, hiredProposalId: string): void {
     this.proposals = this.proposals.map(p =>
-      p.taskId === taskId
+      // Only bids still on the table are turned down. A withdrawn or closed
+      // proposal keeps its own status rather than being relabelled "rejected".
+      p.taskId === taskId && (p.id === hiredProposalId || p.status === 'pending')
         ? { ...p, status: p.id === hiredProposalId ? 'hired' : 'rejected' }
         : p,
     );

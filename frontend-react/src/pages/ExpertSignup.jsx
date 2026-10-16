@@ -121,15 +121,17 @@ function createFieldValidators(Validate) {
     expLinkedin(v) {
       const s = v.expLinkedin.trim();
       if (!s) return null; // optional
-      try { new URL(s); } catch { return 'Please enter a valid URL.'; }
-      if (!s.toLowerCase().includes('linkedin.com')) return 'URL must contain "linkedin.com".';
+      let u; try { u = new URL(s); } catch { return 'Please enter a valid URL.'; }
+      if (!/^https?:$/.test(u.protocol)) return 'Enter a full web address starting with https://';
+      if (!u.hostname.toLowerCase().endsWith('linkedin.com')) return 'URL must be a linkedin.com address.';
       return null;
     },
     /** 8. GitHub / Portfolio (optional, must be valid URL) */
     expGithub(v) {
       const s = v.expGithub.trim();
       if (!s) return null; // optional
-      try { new URL(s); } catch { return 'Please enter a valid URL.'; }
+      let u; try { u = new URL(s); } catch { return 'Please enter a valid URL.'; }
+      if (!/^https?:$/.test(u.protocol)) return 'Enter a full web address starting with https://';
       return null;
     },
     /** 9. Resume: required, PDF only, max 2MB */
@@ -356,25 +358,9 @@ export default function ExpertSignup() {
       return;
     }
 
-    // Check duplicate email in users AND applications
+    // A duplicate email (an account, or an application already under review)
+    // is refused by the server when the application is sent.
     const email = v.expEmail.trim();
-    const existingUser = Store.getUserByEmail(email);
-    const existingApp = Store.getExpertApplicationStatus(email).exists;
-    if (existingUser) {
-      showFieldError('expEmail', 'An account with this email already exists.');
-      document.getElementById('grp-expEmail')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      return;
-    }
-    if (existingApp) {
-      const statusMsg = existingApp.status === 'pending'
-        ? 'An application with this email is already under review.'
-        : existingApp.status === 'rejected'
-        ? 'A previous application with this email was rejected. Please contact support.'
-        : 'This email is already approved. Please log in instead.';
-      showFieldError('expEmail', statusMsg);
-      document.getElementById('grp-expEmail')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      return;
-    }
 
     // ── Loading state ──
     setSubmitting(true);
@@ -429,7 +415,9 @@ export default function ExpertSignup() {
       const result = Store.saveExpertApplication(appData);
       setSubmitting(false);
       if (!result.success) {
-        showFieldError('expEmail', result.error);
+        // Only an email problem belongs under the email field.
+        if (/email/i.test(result.error || '')) showFieldError('expEmail', result.error);
+        else Validate.toast(result.error, 'error');
         setSubmitEnabled(true);
         return;
       }

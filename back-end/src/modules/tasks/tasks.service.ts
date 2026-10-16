@@ -13,6 +13,18 @@ import { canViewAnyRecord, assertAllowed } from '../../common/guards/viewer.util
 import { ROLES } from '../../common/constants/roles';
 import { FEE_CONFIG, cancellationRate, round2 } from '../ledger/fee-config';
 
+/** Milestones whose money has been paid out (mirrors milestones.service SETTLED). */
+const SETTLED_MILESTONE = ['completed', 'approved', 'audit-passed', 'done'];
+
+/** Refuses a date before today. Dates are compared as YYYY-MM-DD. */
+function assertNotPast(date: string | undefined | null, what: string) {
+  if (!date) return;
+  const today = new Date().toISOString().slice(0, 10);
+  if (String(date).slice(0, 10) < today) {
+    throw new BadRequestException(`${what} is in the past. Choose today or a later date.`);
+  }
+}
+
 /**
  * TasksService — Business Logic Layer
  *
@@ -131,6 +143,23 @@ export class TasksService implements OnModuleInit {
     // so nobody (operations staff included) can post one for someone else.
     assertAllowed(actor.role === ROLES.CLIENT, 'Only clients can post projects.');
     const clientId = actor.id;
+    assertNotPast(dto.deadline, 'The deadline');
+
+    // Milestones posted with the project are checked before any money moves,
+    // so a refused milestone never leaves a funded project to clean up.
+    const plan = dto.milestones || [];
+    for (const m of plan) {
+      assertNotPast(m.dueDate, `"${m.title}" is due on a date that`);
+      if (dto.deadline && m.dueDate && m.dueDate > dto.deadline) {
+        throw new BadRequestException(`"${m.title}" is due after the project deadline.`);
+      }
+    }
+    const planned = round2(plan.reduce((a, m) => a + m.budget, 0));
+    if (plan.length && planned !== round2(dto.budget)) {
+      throw new BadRequestException(
+        `The milestones add up to $${planned}, but the budget is $${dto.budget}. They must match.`,
+      );
+    }
 
     // Validate the reviewer before anything is stored or charged.
     if (dto.auditEnabled) {
@@ -147,8 +176,9 @@ export class TasksService implements OnModuleInit {
     // expert has accepted and their fee is in escrow. Until then it is a draft:
     // invisible in browse listings and un-hireable.
     const id = this.tasksRepository.generateId();
+    const { milestones: _plan, ...fields } = dto;
     const task = {
-      ...dto,
+      ...fields,
       id,
       clientId,
       status: dto.auditEnabled ? 'draft' : 'open',
@@ -171,6 +201,7 @@ export class TasksService implements OnModuleInit {
     // cannot cover it, nothing is stored.
     this.ledger.fundProjectBudget(id, clientId, task.budget, task.title);
     this.tasksRepository.insert(task);
+    for (const m of plan) this.milestones.createForNewTask(task, m);
 
     // An audited project opens its expert engagement immediately, carrying the
     // client's opening offer. The project stays a draft until an expert accepts.
@@ -193,6 +224,7 @@ export class TasksService implements OnModuleInit {
         // The reviewer was checked above, so this is unexpected — but a draft
         // with no engagement could never go live, so undo it completely.
         this.ledger.refundRemaining(id, clientId, 'Project could not be created — budget returned');
+        this.milestones.removeAllForTask(task.id);
         this.tasksRepository.deleteById(task.id);
         throw e;
       }
@@ -281,6 +313,7 @@ export class TasksService implements OnModuleInit {
     for (const key of ['title', 'description', 'category', 'deadline', 'skills', 'currency'] as const) {
       if (dto[key] !== undefined) patch[key] = dto[key];
     }
+    if (patch.deadline !== undefined && patch.deadline !== existing.deadline) assertNotPast(patch.deadline, 'The deadline');
     if (patch.category && patch.category !== existing.category && existing.status !== 'open') {
       throw new BadRequestException('The category cannot change once the project has a reviewer or a worker.');
     }
@@ -330,9 +363,99 @@ export class TasksService implements OnModuleInit {
     return cancellation ? { ...updated, cancellation } : updated;
   }
 
-  /** Lifecycle: a hire was funded. */
-  assignWorker(id: string, workerId: string) {
-    return this.tasksRepository.update(id, { workerId, status: 'in-progress' });
+  /**
+   * Lifecycle: a hire was funded. The contract records its price, when it
+   * started (the non-delivery clock) and the worker fee schedule in force, so
+   * a later rate change does not reach back into work already agreed.
+   */
+  assignWorker(id: string, workerId: string, price?: number) {
+    const existing = this.tasksRepository.findById(id);
+    const budget = price ?? existing?.budget;
+    return this.tasksRepository.update(id, {
+      workerId,
+      status: 'in-progress',
+      budget,
+      contractPrice: budget,
+      hiredAt: new Date().toISOString(),
+      rates: { workerService: this.ledger.workerServiceSnapshot() },
+    });
+  }
+
+  /**
+   * Whether the client may end a contract because the worker stopped
+   * delivering, and from when.
+   *
+   * The worker must have nothing waiting for review (no submitted or disputed
+   * milestone) and nothing handed in for 14 days. Then: 14 days past the
+   * project deadline, or — with no deadline — 30 days after the contract
+   * started or the last submission, whichever is later.
+   */
+  nonDeliveryStatus(id: string, actor?: Actor) {
+    const task = actor ? this.findOwned(id, actor) : this.findById(id);
+    const DAY = 86_400_000;
+    const now = Date.now();
+    const base = { eligible: false, eligibleFrom: null as string | null, reason: '' };
+    if (task.status !== 'in-progress' || !task.workerId) {
+      return { ...base, reason: 'Only a contract in progress can be ended this way.' };
+    }
+    const milestones = this.milestones.findAll({ taskId: id });
+    if (milestones.some((m: any) => ['submitted', 'review', 'disputed'].includes(m.status))) {
+      return { ...base, reason: 'The worker has work waiting for your review. Approve it, request changes or raise a dispute instead.' };
+    }
+    const stamp = (v: any) => (v ? new Date(v).getTime() : NaN);
+    const lastSubmission = Math.max(0, ...milestones.map((m: any) => stamp(m.submittedAt)).filter(Number.isFinite));
+    const started = stamp(task.hiredAt) || stamp(task.createdAt) || now;
+    const fromDeadline = task.deadline ? stamp(task.deadline) + 14 * DAY : NaN;
+    const from = Math.max(
+      Number.isFinite(fromDeadline) ? fromDeadline : Math.max(started, lastSubmission) + 30 * DAY,
+      lastSubmission + 14 * DAY,
+    );
+    const eligibleFrom = new Date(from).toISOString();
+    if (now < from) {
+      return {
+        ...base,
+        eligibleFrom,
+        reason: task.deadline
+          ? 'You can end the contract 14 days after the deadline if the worker has still not delivered.'
+          : 'You can end the contract 30 days after it started if the worker has not delivered.',
+      };
+    }
+    return { eligible: true, eligibleFrom, reason: '' };
+  }
+
+  /**
+   * The client ends a contract the worker stopped delivering on. Milestones
+   * already paid stay paid; every milestone not yet delivered is cancelled and
+   * its money returned. Nobody is charged a fee — the worker did not deliver.
+   * The reviewer keeps what they earned; the rest of the audit fee comes back.
+   */
+  endForNonDelivery(id: string, actor: Actor) {
+    const task = this.findOwned(id, actor);
+    assertAllowed(task.clientId === actor.id, 'Only the client who owns this project can end its contract.');
+    const status = this.nonDeliveryStatus(id);
+    if (!status.eligible) throw new BadRequestException(status.reason);
+
+    const cancelled: string[] = [];
+    for (const m of this.milestones.findAll({ taskId: id })) {
+      if (!SETTLED_MILESTONE.includes(m.status)) {
+        this.milestones.systemUpdate(m.id, { status: 'cancelled', cancelledAt: new Date().toISOString() });
+        cancelled.push(m.id);
+      }
+    }
+    const audit = this.auditRequests.closeProjectAudit(id, 'Contract ended for non-delivery');
+    const refunds = this.ledger.refundRemaining(id, task.clientId, `Contract ended — worker did not deliver (${task.title})`, ['project', 'audit', 'dispute']);
+    const updated = this.tasksRepository.update(id, {
+      status: 'cancelled',
+      endedReason: 'non-delivery',
+      cancelledAt: new Date().toISOString(),
+    });
+    this.notify(task.workerId, {
+      type: 'contract-ended',
+      text: `The client ended the contract for "${task.title}"`,
+      subtext: 'Nothing was delivered after the deadline. Milestones already paid stay paid.',
+      link: '/worker-my-projects',
+    });
+    return { task: updated, cancelledMilestones: cancelled, refunds, audit };
   }
 
   /**
@@ -346,7 +469,7 @@ export class TasksService implements OnModuleInit {
     const updated = this.tasksRepository.update(id, { progress, status });
     if (status === 'completed' && before && before.status !== 'completed') {
       this.ledger.refundRemaining(id, before.clientId, `Project completed — unused budget returned (${before.title})`);
-      this.auditRequests.closeProjectAudit(id);
+      this.auditRequests.closeProjectAudit(id, 'Project completed');
     }
     return updated;
   }

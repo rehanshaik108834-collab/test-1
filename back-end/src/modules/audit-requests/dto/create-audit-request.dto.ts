@@ -1,4 +1,5 @@
-import { IsString, IsOptional, IsNumber, Min } from 'class-validator';
+import { IsString, IsOptional } from 'class-validator';
+import { IsMoney } from '../../../common/validation/money';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateAuditRequestDto {
@@ -56,7 +57,7 @@ export class CreateAuditRequestDto {
   disputeId?: string;
 
   @ApiPropertyOptional({ example: 250, description: 'Opening offer from the client' })
-  @IsOptional() @IsNumber() @Min(1)
+  @IsOptional() @IsMoney()
   openingOffer?: number;
 
   @ApiPropertyOptional({ example: 'Web Development', description: 'Task category, used to check the reviewer covers this domain' })

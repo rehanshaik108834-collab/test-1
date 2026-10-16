@@ -153,8 +153,10 @@ export default function SubmitDeliverable() {
   // ── Files ──
   const inFlight = uploadedFiles.filter(f => f.uploading);
   const invalid = uploadedFiles.filter(f => f.error);
+  // Work can be handed in as files or as a link to it (a repository, say) —
+  // the server needs at least one of the two.
   const fileErr = remember('file',
-    uploadedFiles.length === 0 ? 'Please upload at least one file'
+    uploadedFiles.length === 0 && !repoUrl.trim() ? 'Upload at least one file, or add a link to the work'
       // A file that is still going up has no reference yet, so submitting now
       // would record a name with nothing behind it.
       : inFlight.length > 0 ? `Uploading ${inFlight.length} file(s) — one moment`
@@ -185,7 +187,7 @@ export default function SubmitDeliverable() {
 
   // ── Sidebar validation status ──
   const statusItems = [
-    { label: 'Files uploaded', ok: uploadedFiles.length > 0 && !uploadedFiles.some(f => f.error || f.uploading) },
+    { label: 'Files or a link added', ok: (uploadedFiles.length > 0 || !!repoUrl.trim()) && !uploadedFiles.some(f => f.error || f.uploading) },
     { label: 'Title filled (5+ chars)', ok: titleLen >= 5 },
     { label: 'Description filled (20+ chars)', ok: notesLen >= 20 },
     { label: 'Checklist completed', ok: unchecked === 0 },
@@ -247,7 +249,13 @@ export default function SubmitDeliverable() {
   }
 
   function removeFile(id) {
+    const row = uploadedFiles.find(f => f.id === id);
     setUploadedFiles(list => list.filter(f => f.id !== id));
+    // Removing it from the form deletes the stored copy too. Until submitted,
+    // nobody else can open it, but it should not be left on the server.
+    if (row && row.ref && row.ref.id) {
+      try { Store.deleteFile(row.ref.id); } catch (e) { console.warn('[SubmitDeliverable] could not delete', e.message); }
+    }
   }
 
   // ═════════════════════════════════════════════════════════
@@ -263,20 +271,6 @@ export default function SubmitDeliverable() {
       return;
     }
     setConfirmOpen(true);
-  }
-
-  function saveDraft() {
-    const data = {
-      files: uploadedFiles.filter(f => !f.error).map(f => f.name),
-      title, notes, repoUrl, branch,
-      savedAt: new Date().toISOString(),
-    };
-    try {
-      localStorage.setItem('deliverableDraft', JSON.stringify(data));
-      Validate.toast('Draft saved successfully!', 'success');
-    } catch (e) {
-      Validate.toast('Could not save draft', 'error');
-    }
   }
 
   /** Replaces the confirm dialog with the reason the submission did not go through. */
@@ -320,11 +314,11 @@ export default function SubmitDeliverable() {
       // client assigned — and only that reviewer.
     } catch (e) {
       console.warn('Store save failed', e);
-      showSubmitError(e && e.message ? e.message : 'The submission could not be saved. Your draft has been kept.');
+      showSubmitError(e && e.message ? e.message : 'The submission could not be saved. Your entries are still on this page — try again.');
       return;
     }
 
-    // Clear draft — only now that the server has the submission.
+    // Drafts saved by an earlier version of this page were never read back.
     try { localStorage.removeItem('deliverableDraft'); } catch (e) { /* ignore */ }
 
     // Resolve taskId for workroom link
@@ -495,9 +489,6 @@ export default function SubmitDeliverable() {
 
             {/* ════ Action Buttons ════ */}
             <div style={{ display: 'flex', gap: 12 }}>
-              <button className="btn-outline" style={{ flex: 1, padding: 12, borderRadius: 12 }} onClick={saveDraft}>
-                <Icon name="save" style={{ width: 14, height: 14, display: 'inline', verticalAlign: 'middle', marginRight: 6 }} />Save Draft
-              </button>
               <button id="submitBtn" className="btn-primary btn-submit-main" style={{ flex: 2, padding: 12, borderRadius: 12, fontSize: 15 }} onClick={showConfirmModal} disabled={!allValid}>
                 <Icon name="send" style={{ width: 16, height: 16, display: 'inline', verticalAlign: 'middle', marginRight: 8 }} />Submit Deliverable
               </button>

@@ -40,7 +40,7 @@ function loadDisputes(Store, Auth) {
         milestone: d.milestone || 'Milestone',
         issue: [d.reason, d.details].filter(Boolean).join(' — ').slice(0, 120) + ([d.reason, d.details].filter(Boolean).join(' — ').length > 120 ? '…' : '') || 'Dispute raised',
         raisedBy: (raiser ? raiser.name : d.raisedByName || 'Unknown') + ' (' + (raiser ? raiser.role : 'user') + ')',
-        status: d.status === 'resolved' ? 'Resolved' : statusOf(Store, d),
+        status: d.status === 'resolved' ? 'Resolved' : d.status === 'withdrawn' ? 'Withdrawn by client' : d.status === 'expired' ? 'Expired — no verdict' : statusOf(Store, d),
         rawStatus: d.status,
         severity: d.severity || 'medium',
         date: d.createdAt ? new Date(d.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Recently',
@@ -55,6 +55,10 @@ function loadDisputes(Store, Auth) {
  */
 function CardAction({ d }) {
   const Store = useStore();
+  // Withdrawn by the client, or expired without a verdict: nothing left to do.
+  if (d.rawStatus === 'withdrawn' || d.rawStatus === 'expired') {
+    return <span className="btn-resolve" style={{ opacity: 0.6, cursor: 'default' }}>{d.rawStatus === 'withdrawn' ? 'Withdrawn — fee returned to the client' : 'Expired — fee returned to the client'}</span>;
+  }
   if (d.rawStatus === 'resolved') {
     return (
       <Link to={`/expert-report-dispute?id=${d.id}`} className="btn-resolve">

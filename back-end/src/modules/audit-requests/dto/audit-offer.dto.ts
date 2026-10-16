@@ -1,9 +1,10 @@
-import { IsString, IsNumber, IsOptional, Min } from 'class-validator';
+import { IsString, IsOptional, MaxLength } from 'class-validator';
+import { IsMoney } from '../../../common/validation/money';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateOfferDto {
   @ApiProperty({ example: 300, description: 'Proposed fee for the audit, in USD' })
-  @IsNumber() @Min(1)
+  @IsMoney()
   amount: number;
 
   /** Ignored — the side is worked out from who is calling. Kept so older clients still validate. */
@@ -12,7 +13,7 @@ export class CreateOfferDto {
   offeredBy?: string;
 
   @ApiPropertyOptional({ example: 'Covers the payment flow and the auth model.' })
-  @IsOptional() @IsString()
+  @IsOptional() @IsString() @MaxLength(1000)
   note?: string;
 }
 
@@ -35,6 +36,6 @@ export class ReassignAuditDto {
   expertId: string;
 
   @ApiProperty({ example: 200, description: 'Your opening offer for their fee' })
-  @IsNumber() @Min(1)
+  @IsMoney()
   openingOffer: number;
 }

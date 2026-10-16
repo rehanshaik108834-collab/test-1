@@ -103,9 +103,3 @@ export class ChangePasswordDto {
   @IsString()
   newPassword: string;
 }
-
-export class ResetPasswordDto {
-  @ApiPropertyOptional({ example: 'TempPassw0rd!' })
-  @IsString()
-  newPassword: string;
-}

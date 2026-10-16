@@ -31,9 +31,22 @@ export class ContactsService {
     if (!task) return people;
     add(task.clientId);
     add(task.workerId);
-    for (const p of this.proposals.findAll({ taskId })) add(p.workerId);
-    for (const a of this.auditRequests.findAll({ taskId })) add(a.expertId);
-    for (const d of this.disputes.findAll()) if (d.taskId === taskId) add(d.expertId);
+    // Bidders and invitees only while the project is open and their proposal
+    // is still on the table. Every worker who had ever bid used to stay a
+    // participant for good — a turned-down bidder could keep messaging the
+    // client and download the hired worker's deliverables.
+    if (task.status === 'open') {
+      // findAll({ taskId }) returns bids and invitations alike.
+      for (const p of this.proposals.findAll({ taskId })) if (p.status === 'pending') add(p.workerId);
+    }
+    // Reviewers who are (or were) actually engaged — not one who declined or
+    // whose request was withdrawn before they took it on.
+    for (const a of this.auditRequests.findAll({ taskId })) {
+      if (a.expertId && !['declined', 'cancelled'].includes(a.status)) add(a.expertId);
+    }
+    for (const d of this.disputes.findAll()) {
+      if (d.taskId === taskId && ['open', 'resolved'].includes(d.status)) add(d.expertId);
+    }
     return people;
   }
 

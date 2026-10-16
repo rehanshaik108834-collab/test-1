@@ -124,7 +124,7 @@ export default function SuperuserDisputes() {
                   <div className="dispute-project">{d.project}</div>
                   <div style={{ fontSize: 12, color: 'var(--muted-foreground)', marginTop: 2 }}>{`Raised ${d.createdAt}`}</div>
                 </div>
-                <span className={`badge ${d.status === 'open' ? 'badge-orange' : 'badge-green'}`}>{d.status}</span>
+                <span className={`badge ${d.status === 'open' ? 'badge-orange' : d.status === 'resolved' ? 'badge-green' : 'badge-blue'}`}>{d.status}</span>
               </div>
               <div className="dispute-meta">
                 <span><strong>Raised by:</strong>{' ' + d.raisedByName}</span>
@@ -138,6 +138,12 @@ export default function SuperuserDisputes() {
                 <div className="resolution-box">
                   <strong>{`Resolution (${d.verdict?.replace(/-/g, ' ')}${d.overriddenBy ? ', operations override' : ''}):`}</strong>{' ' + d.resolution}
                   {d.resolvedAt ? <><br /><span style={{ opacity: 0.7 }}>{`Resolved on ${d.resolvedAt}`}</span></> : ''}
+                </div>
+              ) : d.status !== 'open' ? (
+                <div className="resolution-box">
+                  <strong>{d.status === 'withdrawn' ? 'Withdrawn by the client' : 'Expired without a verdict'}</strong>
+                  {d.endedReason ? <> — {d.endedReason}</> : ''}
+                  {d.resolvedAt ? <><br /><span style={{ opacity: 0.7 }}>{`Closed on ${d.resolvedAt}`}</span></> : ''}
                 </div>
               ) : (
                 <div className="dispute-actions">

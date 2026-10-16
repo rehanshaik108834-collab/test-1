@@ -52,8 +52,8 @@ const VARIANTS = {
   },
 };
 
-const STATUS_COLORS = { completed: '#10b981', inprogress: '#6366f1', pending: '#94a3b8', review: '#f59e0b', disputed: '#ef4444', 'revision-needed': '#b45309', refunded: '#64748b' };
-const STATUS_BGS = { completed: '#ecfdf5', inprogress: '#eef2ff', pending: '#f1f5f9', review: '#fffbeb', disputed: '#fef2f2', 'revision-needed': '#fffbeb', refunded: '#f1f5f9' };
+const STATUS_COLORS = { completed: '#10b981', inprogress: '#6366f1', pending: '#94a3b8', review: '#f59e0b', disputed: '#ef4444', 'revision-needed': '#b45309', cancelled: '#64748b' };
+const STATUS_BGS = { completed: '#ecfdf5', inprogress: '#eef2ff', pending: '#f1f5f9', review: '#fffbeb', disputed: '#fef2f2', 'revision-needed': '#fffbeb', cancelled: '#f1f5f9' };
 const ACTION_BUTTON_STYLE = { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 10, borderRadius: 12, fontSize: 13 };
 const CLIENT_COLOR = 'linear-gradient(135deg,#6366f1,#4f46e5)';
 const WORKER_COLOR = 'linear-gradient(135deg,#10b981,#059669)';
@@ -80,6 +80,7 @@ function statusLabel(status) {
     : status === 'disputed' ? 'Disputed'
     : status === 'pending' ? 'Not started'
     : status === 'revision-needed' ? 'Changes requested'
+    : status === 'cancelled' ? 'Cancelled — not delivered'
     : status;
 }
 
@@ -181,7 +182,12 @@ function buildView(Store, task, noWorker) {
   };
 
   // Chat history (or a welcome line for a brand-new project)
+  // The workroom is the client and the hired worker talking. Messages on the
+  // same project with bidders or reviewers live in Messages; they used to
+  // appear here drawn as if the hired worker had sent them.
+  const pair = new Set([task.clientId, task.workerId]);
   const initialMessages = Store.getMessagesByTask(task.id)
+    .filter(m => pair.has(m.senderId) && pair.has(m.receiverId))
     .slice()
     .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))
     .map(m => ({

@@ -186,6 +186,8 @@ export default function ReviewDeliverable() {
   const [checked, setChecked] = useState([]);           // ids of ticked checklist items
   const [comments, setComments] = useState('');
   const [commentsError, setCommentsError] = useState('');
+  // When the page was opened — the reference for "is the reviewer's report overdue".
+  const [openedAt] = useState(() => Date.now());
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   const milestone = findMilestone(Store, milestoneId, session.userId);
@@ -230,6 +232,19 @@ export default function ReviewDeliverable() {
     deliverable: milestone.deliverable || null,
   };
   const allChecked = checked.length === CHECKLIST.length;
+
+  // The client's clock: an untouched submission is paid automatically.
+  const autoApproveOn = milestone.reviewDueAt ? new Date(milestone.reviewDueAt) : null;
+  const fmtDate = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  // "Request changes" can be used three times per milestone.
+  const revisionsLeft = Math.max(0, 3 - (Number(milestone.revisionCount) || 0));
+  // The reviewer's share for this milestone: approving inside their 5-day
+  // window pays them even without a report; after it, with no report, their
+  // share comes back to you.
+  const auditOn = engagement && engagement.status === 'in-progress' && !auditReport
+    && !((engagement.milestonePayouts || {})[milestone.id]);
+  const reportDue = auditOn && milestone.submittedAt ? new Date(new Date(milestone.submittedAt).getTime() + 5 * 86_400_000) : null;
+  const reportOverdue = reportDue && reportDue.getTime() <= openedAt;
   const backTo = role === 'expert' ? '/expert-audit-requests' : '/client-my-projects';
 
   function toggleCheck(id) {
@@ -259,7 +274,8 @@ export default function ReviewDeliverable() {
   }
 
   function handleRequestChanges() {
-    if (!comments.trim()) { setCommentsError('Please add revision comments before requesting changes.'); return; }
+    if (comments.trim().length < 10) { setCommentsError('Tell the worker what to change (at least 10 characters).'); return; }
+    if (revisionsLeft <= 0) { Validate.toast('You have asked for changes 3 times on this milestone. Approve it, or raise a dispute and let a reviewer decide.', 'error'); return; }
     setCommentsError('');
     // 'revision-needed' is the status the board and the server understand;
     // 'todo' was not one of them.
@@ -419,9 +435,17 @@ export default function ReviewDeliverable() {
               <h3 style={{ fontSize: 14, fontWeight: 600, color: '#c2410c', marginBottom: 12 }}>⚠ Before Approving</h3>
               <p style={{ fontSize: 13, color: '#7c2d12', lineHeight: 1.6 }}>
                 {role === 'expert'
-                  ? 'Submitting the report will finalize this audit and append the results back to the associated project escrow automatically.'
+                  ? 'Filing the report pays your share of the audit fee for this milestone. A report filed more than 5 days after submission can be overtaken by the client approving the work without it.'
                   : <>Approving will release <strong>{`$${deliverable.budget.toLocaleString()}`}</strong>{` from escrow to ${deliverable.worker}. This action cannot be undone.`}</>}
               </p>
+              {role !== 'expert' && reviewable && (
+                <ul style={{ fontSize: 12.5, color: '#7c2d12', lineHeight: 1.6, margin: '10px 0 0', paddingLeft: 18 }}>
+                  {autoApproveOn && <li>{`If you do nothing, this is approved and paid automatically on ${fmtDate(autoApproveOn)}.`}</li>}
+                  <li>{revisionsLeft > 0 ? `You can ask for changes ${revisionsLeft} more time${revisionsLeft === 1 ? '' : 's'}.` : 'You have used all 3 change requests — approve it or raise a dispute.'}</li>
+                  {auditOn && reportDue && !reportOverdue && <li>{`The reviewer's report is due by ${fmtDate(reportDue)}. Approving before then still pays them for this milestone.`}</li>}
+                  {auditOn && reportOverdue && <li>The reviewer has not reported within 5 days. Approving now returns their share of the audit fee for this milestone to you.</li>}
+                </ul>
+              )}
             </div>
           </div>
         </div>

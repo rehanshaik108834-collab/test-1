@@ -38,10 +38,14 @@ export class TransactionsController {
     // client's wallet shows the releases paid out of their escrow, and the
     // worker's shows the escrow funded for their contract, neither of which
     // names the viewer as sender or recipient.
+    // A client sees every movement on the projects they pay for (the
+    // releases to their worker included). Anyone else sees only money that
+    // moved to or from them — a worker used to see the client's escrow,
+    // fees and refunds on every shared project.
     const mine = new Set(
       this.tasks
         .findAll({}, 'system')
-        .filter((t: any) => t.clientId === actor.id || t.workerId === actor.id)
+        .filter((t: any) => t.clientId === actor.id)
         .map((t: any) => t.id),
     );
     return this.transactionsService

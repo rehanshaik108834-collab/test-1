@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { CreateMilestoneDto } from './dto/create-milestone.dto';
 import { UpdateMilestoneDto } from './dto/update-milestone.dto';
 import { MilestonesRepository } from './milestones.repository';
@@ -22,6 +22,12 @@ export const SETTLED = ['completed', 'approved', 'audit-passed', 'done'];
 /** Statuses a worker can submit (or resubmit) work from. */
 const SUBMITTABLE = ['pending', 'in-progress', 'revision-needed', 'submitted'];
 
+const DAY_MS = 86_400_000;
+/** A submission the client neither approves, sends back nor disputes is paid after this long. */
+export const AUTO_APPROVE_DAYS = 7;
+/** How many times a client may send one milestone back before they must approve or dispute. */
+export const MAX_REVISION_REQUESTS = 3;
+
 /**
  * MilestonesService — Business Logic Layer
  *
@@ -29,7 +35,9 @@ const SUBMITTABLE = ['pending', 'in-progress', 'revision-needed', 'submitted'];
  * Delegates all data-access operations to MilestonesRepository.
  */
 @Injectable()
-export class MilestonesService {
+export class MilestonesService implements OnModuleInit, OnModuleDestroy {
+  private timer: ReturnType<typeof setInterval> | null = null;
+
   constructor(
     private readonly milestonesRepository: MilestonesRepository,
     @Inject(forwardRef(() => TasksService)) private tasksService: TasksService,
@@ -40,6 +48,17 @@ export class MilestonesService {
     @Inject(forwardRef(() => NotificationsService)) private notificationsService: NotificationsService,
     private readonly log: AppLoggerService,
   ) {}
+
+  /** Checks for expired review windows once a minute (not under test — tests move the clock themselves). */
+  onModuleInit() {
+    if (process.env.NODE_ENV === 'test') return;
+    this.timer = setInterval(() => this.autoApproveDue(), 60_000);
+    this.timer.unref?.();
+  }
+
+  onModuleDestroy() {
+    if (this.timer) clearInterval(this.timer);
+  }
 
   /**
    * Internal callers get every milestone. A viewer sees the full record on
@@ -121,9 +140,20 @@ export class MilestonesService {
     if (['completed', 'cancelled'].includes(task.status)) {
       throw new BadRequestException(`Milestones cannot be added to a ${task.status} project.`);
     }
+    assertDueDate(dto.dueDate, task);
     this.assertWithinBudget(task, dto.budget);
+    return this.insertFor(task, dto);
+  }
+
+  /** A milestone posted together with its project (already validated by TasksService). */
+  createForNewTask(task: any, m: { title: string; description?: string; budget: number; dueDate?: string; priority?: string }) {
+    return this.insertFor(task, { ...m, taskId: task.id });
+  }
+
+  private insertFor(task: any, dto: any) {
+    const { workerId: _ignored, ...fields } = dto;
     const ms = {
-      ...dto,
+      ...fields,
       id: this.milestonesRepository.generateId(),
       status: 'pending',
       submittedAt: null,
@@ -138,6 +168,24 @@ export class MilestonesService {
       workerId: task.workerId || null,
     };
     return this.milestonesRepository.insert(ms);
+  }
+
+  /**
+   * The client removes a milestone from their plan. Only before anyone is
+   * hired: after that the milestones are the contract the worker agreed to.
+   */
+  remove(id: string, actor: Actor) {
+    const ms = this.findById(id);
+    const task = this.tasksService.findById(ms.taskId);
+    assertAllowed(task.clientId === actor.id, 'Only the client who owns this project can remove its milestones.');
+    if (task.workerId || !['open', 'draft'].includes(task.status)) {
+      throw new BadRequestException('A worker has been hired, so the milestones are part of the contract and cannot be removed.');
+    }
+    if (ms.status !== 'pending') {
+      throw new BadRequestException('Only a milestone that has not started can be removed.');
+    }
+    this.milestonesRepository.deleteById(id);
+    return { deleted: true, id };
   }
 
   /**
@@ -157,6 +205,7 @@ export class MilestonesService {
       for (const key of ['title', 'description', 'dueDate', 'priority'] as const) {
         if (dto[key] !== undefined) patch[key] = dto[key];
       }
+      if (patch.dueDate !== undefined && patch.dueDate !== ms.dueDate) assertDueDate(patch.dueDate, task);
       if (dto.budget !== undefined && dto.budget !== ms.budget) {
         if (!['pending', 'in-progress'].includes(ms.status)) {
           throw new BadRequestException('The budget cannot change once work has been submitted.');
@@ -183,9 +232,24 @@ export class MilestonesService {
       } else if (isClient && dto.status === 'revision-needed' && ['submitted', 'review'].includes(ms.status)) {
         // "Request changes" on a submission. The client's note is what the
         // worker revises against, so it is kept with the milestone.
+        //
+        // Capped: with no limit a client could send the same work back
+        // forever and never pay for it.
+        const used = Number(ms.revisionCount) || 0;
+        if (used >= MAX_REVISION_REQUESTS) {
+          throw new BadRequestException(
+            `You have already asked for changes ${MAX_REVISION_REQUESTS} times on this milestone. ` +
+              'Approve it, or raise a dispute and let a reviewer decide.',
+          );
+        }
+        const note = dto.revisionNote ? String(dto.revisionNote).trim() : '';
+        if (note.length < 10) throw new BadRequestException('Tell the worker what to change (at least 10 characters).');
         patch.status = dto.status;
-        patch.revisionNote = dto.revisionNote ? String(dto.revisionNote).trim() : null;
+        patch.revisionNote = note;
         patch.revisionRequestedAt = new Date().toISOString();
+        patch.revisionCount = used + 1;
+        // The auto-approval clock stops while the work is back with the worker.
+        patch.reviewDueAt = null;
         this.notificationsService.notify(task.workerId, {
           type: 'revision',
           text: `Changes requested on "${ms.title}"`,
@@ -223,10 +287,20 @@ export class MilestonesService {
     if (!SUBMITTABLE.includes(ms.status)) {
       throw new BadRequestException(`A milestone cannot be submitted from "${ms.status}".`);
     }
+    if (task.status !== 'in-progress') {
+      throw new BadRequestException(`This project is ${task.status}, so work can no longer be submitted.`);
+    }
+    // Something has to be handed in: a file or a link to the work.
+    if (!deliverable || (!(deliverable.files || []).length && !deliverable.link)) {
+      throw new BadRequestException('Attach at least one file or a link to the work.');
+    }
+    const now = new Date();
     ms.status = 'submitted';
-    ms.submittedAt = new Date().toISOString().slice(0, 10);
+    ms.submittedAt = now.toISOString();
+    // The client has this long to approve, ask for changes or dispute.
+    ms.reviewDueAt = new Date(now.getTime() + AUTO_APPROVE_DAYS * DAY_MS).toISOString();
     ms.progress = 100;
-    if (deliverable) ms.deliverable = deliverable;
+    ms.deliverable = deliverable;
 
     this.handOverToAuditor(ms);
     this.notificationsService.notify(task.clientId, {
@@ -310,33 +384,81 @@ export class MilestonesService {
     if (!['submitted', 'review'].includes(ms.status)) {
       throw new BadRequestException('There is nothing to approve yet — the worker has not submitted this milestone.');
     }
+    return this.payOut(ms, task, `Payment for ${ms.title}`, 'approved');
+  }
 
+  /**
+   * Accepts a milestone and pays it: the client's approval, a worker-favour
+   * verdict and auto-approval all end here, so they settle the worker and the
+   * reviewer the same way.
+   */
+  payOut(ms: any, task: any, description: string, how: 'approved' | 'verdict' | 'auto-approved') {
     // Release before marking complete: if escrow cannot cover the milestone the
     // approval must fail rather than mark it paid. LedgerService is idempotent
     // per milestone, so approving twice cannot pay twice.
     const release = this.ledger.releaseMilestone({
-      milestoneId: id,
+      milestoneId: ms.id,
       taskId: ms.taskId,
       clientId: task.clientId,
       workerId: ms.workerId,
       amount: ms.budget,
-      description: `Payment for ${ms.title}`,
+      description,
+      workerServiceTiers: task.rates?.workerService,
     });
 
-    ms.status = 'completed';
-    ms.approvedAt = new Date().toISOString().slice(0, 10);
-    ms.progress = 100;
+    this.milestonesRepository.update(ms.id, {
+      status: 'completed',
+      approvedAt: new Date().toISOString().slice(0, 10),
+      approvedHow: how,
+      progress: 100,
+      reviewDueAt: null,
+    });
+    const settled = this.milestonesRepository.findById(ms.id);
+
+    // The reviewer's share for this milestone: paid, or — when the client
+    // approved without a report after the reviewer's window — returned.
+    const audit = this.auditRequestsService.settleMilestoneOnApproval(settled);
 
     this.checkTaskCompletion(ms.taskId);
 
     this.notificationsService.notify(ms.workerId, {
       type: 'payment',
-      text: `"${ms.title}" approved — $${release.net ?? 0} paid to your wallet`,
+      text: `"${ms.title}" ${how === 'auto-approved' ? 'was approved automatically' : 'approved'} — $${release.net ?? 0} paid to your wallet`,
       subtext: `${task.title} · $${ms.budget} less the service fee`,
       link: '/worker-wallet',
     });
+    if (how === 'auto-approved') {
+      this.notificationsService.notify(task.clientId, {
+        type: 'payment',
+        text: `"${ms.title}" was approved automatically`,
+        subtext: `${task.title} — it waited ${AUTO_APPROVE_DAYS} days with no approval, change request or dispute.`,
+        link: `/project-milestone-board?id=${task.id}`,
+      });
+    }
 
-    return { ...ms, release };
+    return { ...settled, release, audit };
+  }
+
+  /**
+   * Pays every submission whose review window has run out. Runs on a timer;
+   * `now` is a parameter so tests can move the clock. Only milestones
+   * submitted under the current rules carry `reviewDueAt`, so older records
+   * are never approved behind anyone's back.
+   */
+  autoApproveDue(now = Date.now()) {
+    const done: string[] = [];
+    for (const ms of this.milestonesRepository.findAll({})) {
+      if (!['submitted', 'review'].includes(ms.status) || !ms.reviewDueAt) continue;
+      if (new Date(ms.reviewDueAt).getTime() > now) continue;
+      try {
+        const task = this.tasksService.findById(ms.taskId);
+        this.payOut(ms, task, `Payment for ${ms.title} (approved automatically after ${AUTO_APPROVE_DAYS} days)`, 'auto-approved');
+        done.push(ms.id);
+      } catch (e) {
+        this.log.warn('milestones.autoApprove', `could not auto-approve ${ms.id}`, e);
+      }
+    }
+    return done;
   }
 
   checkTaskCompletion(taskId: string) {
@@ -362,5 +484,17 @@ export class MilestonesService {
 
   resetToSeed() {
     this.milestonesRepository.resetToSeed();
+  }
+}
+
+/** A due date cannot be in the past, or after the project's deadline. */
+function assertDueDate(dueDate: string | undefined | null, task: any) {
+  if (!dueDate) return;
+  const today = new Date().toISOString().slice(0, 10);
+  if (String(dueDate).slice(0, 10) < today) {
+    throw new BadRequestException('The due date is in the past. Choose today or a later date.');
+  }
+  if (task?.deadline && String(dueDate).slice(0, 10) > String(task.deadline).slice(0, 10)) {
+    throw new BadRequestException(`The due date is after the project deadline (${task.deadline}).`);
   }
 }

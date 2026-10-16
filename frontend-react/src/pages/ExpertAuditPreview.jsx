@@ -55,14 +55,25 @@ function MilestoneRow({ m, a, session, disputedId }) {
   const mine = session && a.expertId === session.userId;
   const reportUrl = `/expert-report-audit?id=${a.id}&milestoneId=${m.id}`;
 
+  // This milestone's share of the fee: paid on a report (or on the client's
+  // approval inside the 5-day window), or returned to the client when they
+  // approved it later with no report.
+  const share = (a.milestonePayouts || {})[m.id];
+  const reportDue = m.submittedAt ? new Date(new Date(m.submittedAt).getTime() + 5 * 86_400_000) : null;
+
   let tag, action = '';
-  if (audited) {
-    tag = <span className="st" style={{ color: '#047857' }}>✓ Report submitted</span>;
+  if (share && share.status === 'forfeited') {
+    tag = <span className="st" style={{ color: '#b91c1c' }}>{`Approved with no report after 5 days — ${money(share.amount)} went back to the client`}</span>;
+  } else if (audited) {
+    tag = <span className="st" style={{ color: '#047857' }}>{`✓ Report submitted${share && share.amount ? ` · ${money(share.net)} paid` : ''}`}</span>;
     if (mine) action = <Link to={reportUrl} className="btn-outline" style={MS_BUTTON_STYLE}>View report</Link>;
+  } else if (share && share.status === 'paid') {
+    tag = <span className="st" style={{ color: '#047857' }}>{`Approved by the client before your report was due · ${money(share.net)} paid`}</span>;
+    if (engaged && mine) action = <Link to={reportUrl} className="btn-outline" style={MS_BUTTON_STYLE}>File report anyway</Link>;
   } else if (!submitted) {
     tag = <span className="st">Awaiting the worker's submission</span>;
   } else if (engaged && mine) {
-    tag = <span className="st" style={{ color: '#b45309' }}>Ready to audit</span>;
+    tag = <span className="st" style={{ color: '#b45309' }}>{reportDue ? `Ready to audit — report due by ${reportDue.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : 'Ready to audit'}</span>;
     action = <Link to={reportUrl} className="btn-primary" style={MS_BUTTON_STYLE}>Audit this milestone</Link>;
   } else {
     tag = <span className="st">Submitted</span>;
@@ -209,7 +220,7 @@ export default function ExpertAuditPreview() {
               <h2>{pv.kind === 'dispute-audit' ? 'Project milestones' : `Milestones (${pv.milestones.length})`}</h2>
               {a.auditProgress ? (
                 <div className="pv-fee" style={{ margin: '-4px 0 12px' }}>
-                  {`${a.auditProgress.audited} of ${a.auditProgress.total} audited. You are paid once every milestone has a report.`}
+                  {`${a.auditProgress.audited} of ${a.auditProgress.total} audited. Each report pays that milestone's share of the fee.`}
                 </div>
               ) : ''}
               {pv.milestones.length
@@ -274,11 +285,16 @@ export default function ExpertAuditPreview() {
                 {a.status === 'escrow-funded' && (
                   <>
                     <button className="btn-primary" onClick={takeJob}>Accept engagement &amp; start</button>
-                    <div className="pv-fee">{`${money(a.agreedAmount)} is already in escrow. You receive ${money(payout.net)} after the ${money(payout.fee)} platform commission${pv.kind === 'dispute-audit' ? ', paid when you give your verdict' : ', paid once every milestone has a report'}.`}</div>
+                    <div className="pv-fee">{`${money(a.agreedAmount)} is already in escrow. You receive ${money(payout.net)} after the ${money(payout.fee)} platform commission${pv.kind === 'dispute-audit' ? ', paid when you give your verdict' : ', paid milestone by milestone as you file each report. File within 5 days of a submission: if the client approves it after that with no report, that milestone\'s share goes back to them'}.`}</div>
                   </>
                 )}
                 {a.status === 'agreed' && <div className="pv-fee">{`Fee agreed at ${money(a.agreedAmount)}. Waiting for the ${payerLabel.toLowerCase()} to fund escrow.`}</div>}
-                {a.status === 'paid' && <div className="pv-fee">{`Completed — ${money(payout.net)} was paid to your wallet.`}</div>}
+                {a.status === 'paid' && <div className="pv-fee">{pv.kind === 'dispute-audit' || a.paidAmount === undefined
+                  ? `Completed — ${money(payout.net)} was paid to your wallet.`
+                  : `Completed — ${money(a.paidAmount)} of the ${money(a.agreedAmount)} fee was earned (before commission)${a.paidAmount < a.agreedAmount ? '; the rest went back to the client for milestones approved without a report' : ''}.`}</div>}
+                {a.status === 'in-progress' && a.kind !== 'dispute-audit' && a.paidAmount > 0 && (
+                  <div className="pv-fee">{`${money(a.paidAmount)} of ${money(a.agreedAmount)} earned so far (before commission).`}</div>
+                )}
                 {/* A dispute is one claim, so there is a single place to go. A project
                     audit has one report per milestone, reached from the list on the left. */}
                 {a.status === 'in-progress' && a.kind === 'dispute-audit' && (

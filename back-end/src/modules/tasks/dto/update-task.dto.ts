@@ -12,7 +12,7 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
  * approval). Ownership and the audit settings are fixed at creation.
  */
 export class UpdateTaskDto extends PartialType(
-  OmitType(CreateTaskDto, ['clientId', 'auditEnabled', 'auditFee', 'auditDomain', 'auditExpertId'] as const),
+  OmitType(CreateTaskDto, ['clientId', 'auditEnabled', 'auditFee', 'auditDomain', 'auditExpertId', 'milestones'] as const),
 ) {
   @ApiPropertyOptional({ example: 'cancelled', description: 'The only change a client may make is to cancel an open project' })
   @IsOptional() @IsIn(['draft', 'open', 'in-progress', 'completed', 'cancelled'])

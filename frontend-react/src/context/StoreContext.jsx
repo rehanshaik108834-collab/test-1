@@ -84,6 +84,11 @@ const Store = (() => {
     return payload.data !== undefined ? payload.data : payload;
   }
 
+  /** Deletes a file you uploaded (refused once it is part of a submitted deliverable). */
+  function deleteFile(id) {
+    return _write('DELETE', `${API}/files/${id}`);
+  }
+
   /** Absolute URL for a stored file, for links and download buttons. */
   function fileUrl(ref) {
     if (!ref) return '';
@@ -289,8 +294,8 @@ const Store = (() => {
   let _online = false;
   let _reachedEndpoints = 0;
 
-  function init() {
-    // Load all data synchronously from the API so the cache is ready before pages render.
+  /** What a page load reads, for the signed-in role. Null when nothing should be read. */
+  function _initPlan() {
     const endpoints = [
       ['users', '/users'], ['tasks', '/tasks'], ['milestones', '/milestones'],
       ['proposals', '/proposals'], ['auditRequests', '/audit-requests'],
@@ -302,29 +307,32 @@ const Store = (() => {
     // Expert applications hold applicants' contact details and are admin-only.
     // Fetching them for every role logged a 403 on every page load, which buries
     // real errors in the console.
-    let role = null, token = null;
+    let role = null, token = null, mustChange = false;
     try {
-      role = JSON.parse(localStorage.getItem('lannent_session') || '{}').role;
+      const session = JSON.parse(localStorage.getItem('lannent_session') || '{}');
+      role = session.role;
+      mustChange = !!session.mustChangePassword;
       token = localStorage.getItem('lannent_token');
     } catch {}
+    // Nobody is signed in (login, landing, signup): every endpoint below needs
+    // credentials. And an account that must first choose its own password can
+    // read nothing until it has.
+    if ((!role && !token) || mustChange) return null;
+    return endpoints.filter(([key]) => key !== 'expertApplications' || (role === 'intake-admin' || role === 'compliance-admin'));
+  }
 
-    // Nobody is signed in — on the login page, the landing page, signup. Every
-    // endpoint below now requires credentials, so firing them anyway produced
-    // ten 401s and ten console errors before the visitor had typed anything.
-    // The cache stays empty until there is someone to fill it for.
-    if (!role && !token) {
-      // Still establish reachability, or `isOnline()` would report the API
-      // down to every visitor who has not signed in. One public endpoint is
-      // enough — this is the application-status lookup, which needs no
-      // credentials by design.
-      let reachable = null;
-      try { reachable = _syncFetch(API + '/expert-applications/status?email=ping@none.invalid'); } catch (e) {}
-      _online = reachable !== null;
-      _reachedEndpoints = _online ? 1 : 0;
-      return;
-    }
+  /** Reachability for visitors who are not signed in — one public endpoint. */
+  function _ping() {
+    let reachable = null;
+    try { reachable = _syncFetch(API + '/stats/public'); } catch (e) {}
+    _online = reachable !== null;
+    _reachedEndpoints = _online ? 1 : 0;
+  }
 
-    const allowed = endpoints.filter(([key]) => key !== 'expertApplications' || (role === 'intake-admin' || role === 'compliance-admin'));
+  /** Refills the cache synchronously (after a seed reset). Page loads use initAsync. */
+  function init() {
+    const allowed = _initPlan();
+    if (!allowed) { _ping(); return _online; }
 
     _reachedEndpoints = 0;
     for (const [key, path] of allowed) {
@@ -339,6 +347,44 @@ const Store = (() => {
     // The rates every preview is computed with. Read from the server so a
     // change the revenue desk makes shows up in every form's preview.
     const rates = _syncFetch(API + '/ledger/fee-rates');
+    if (rates) _applyRates(rates);
+    return _online;
+  }
+
+  /**
+   * Refills the cache with every read in parallel, without blocking the page.
+   *
+   * init() makes about a dozen synchronous requests one after another, and it
+   * ran on every navigation — the whole UI froze for the sum of them. The
+   * router now awaits this instead and shows a loading state meanwhile.
+   */
+  async function initAsync() {
+    const allowed = _initPlan();
+    if (!allowed) {
+      try { _online = (await fetch(API + '/stats/public')).ok; } catch { _online = false; }
+      _reachedEndpoints = _online ? 1 : 0;
+      return _online;
+    }
+    const h = _headers();
+    delete h['Content-Type'];
+    const read = async (path) => {
+      try {
+        const res = await fetch(API + path, { headers: h });
+        if (res.status === 401) { _handleUnauthorized(401); return null; }
+        if (!res.ok) return null;
+        const json = await res.json();
+        return json.data !== undefined ? json.data : json;
+      } catch { return null; }
+    };
+    const results = await Promise.all([...allowed.map(([, path]) => read(path)), read('/ledger/fee-rates')]);
+    _reachedEndpoints = 0;
+    allowed.forEach(([key], i) => {
+      const data = results[i];
+      if (data) { _cache[key] = data; _reachedEndpoints++; }
+      else if (!Array.isArray(_cache[key])) { _cache[key] = []; }
+    });
+    _online = _reachedEndpoints > 0;
+    const rates = results[results.length - 1];
     if (rates) _applyRates(rates);
     return _online;
   }
@@ -379,13 +425,12 @@ const Store = (() => {
     // Staff/admin roles cannot be created through the public signup endpoint.
     // When the caller is a superuser creating a privileged role, use the
     // dedicated staff route that bypasses the self-service restriction.
-    const STAFF_ROLES = ['superuser', 'revenue-admin', 'intake-admin', 'compliance-admin', 'expert'];
+    // Every account a superuser makes goes through the staff route, which
+    // records who made it and makes its owner choose their own password.
     let endpoint = `${API}/users`;
     try {
       const session = JSON.parse(localStorage.getItem('lannent_session') || '{}');
-      if (session.role === 'superuser' && STAFF_ROLES.includes(data.role)) {
-        endpoint = `${API}/users/staff`;
-      }
+      if (session.role === 'superuser') endpoint = `${API}/users/staff`;
     } catch {}
     // No local fallback: a signup the server refused (e.g. a taken email)
     // used to create a fake account in the cache and carry on.
@@ -449,12 +494,21 @@ const Store = (() => {
     return _syncFetch(`${API}/ledger/my-escrow`) || { projects: [], totals: { project: 0, audit: 0, dispute: 0, total: 0 } };
   }
 
+  /**
+   * Changing a password ends every other session. The server hands this one a
+   * fresh token, kept here so the person who changed it stays signed in.
+   */
   function changePassword(userId, currentPassword, newPassword) {
-    return _write('POST', `${API}/users/${userId}/password`, { currentPassword, newPassword });
-  }
-
-  function resetUserPassword(userId, newPassword) {
-    return _write('POST', `${API}/users/${userId}/password-reset`, { newPassword });
+    const result = _write('POST', `${API}/users/${userId}/password`, { currentPassword, newPassword });
+    try {
+      if (result && result.token) localStorage.setItem('lannent_token', result.token);
+      const session = JSON.parse(localStorage.getItem('lannent_session') || '{}');
+      if (session.mustChangePassword) {
+        session.mustChangePassword = false;
+        localStorage.setItem('lannent_session', JSON.stringify(session));
+      }
+    } catch {}
+    return result;
   }
 
   /** Re-reads one user (e.g. the signed-in one after a balance change). */
@@ -522,6 +576,13 @@ const Store = (() => {
   function declineAuditEngagement(id, reason) {
     const r = _write('POST', `${API}/audit-requests/${id}/decline`, { reason });
     _refreshAuditRequests(); _refreshUser(_sessionUserId());
+    return r;
+  }
+  /** Withdraws a request the reviewer has not accepted; any funded fee comes back. */
+  function cancelAuditRequest(id) {
+    const r = _write('POST', `${API}/audit-requests/${id}/cancel`, {});
+    refresh('auditRequests', 'disputes', 'milestones', 'transactions');
+    _refreshUser(_sessionUserId());
     return r;
   }
   function cancelDraftTask(taskId) {
@@ -695,19 +756,35 @@ const Store = (() => {
   }
 
   /**
-   * Posts a project with its milestones as one action. If a milestone is
-   * refused, the project is deleted again (which returns its budget), so a
-   * half-created project is never left behind.
+   * Posts a project with its milestones in one request. The server checks
+   * them all before any money moves — the old way posted the project, then
+   * deleted it again if a milestone was refused, which could charge a
+   * cancellation fee for a project that never really existed.
    */
   function createTaskWithMilestones(taskData, milestones) {
-    const task = createTask(taskData);
-    try {
-      for (const m of milestones) createMilestone({ ...m, taskId: task.id });
-    } catch (e) {
-      try { deleteTask(task.id); } catch (e2) { /* report the original error */ }
-      throw e;
-    }
+    const task = createTask({ ...taskData, milestones });
+    refresh('milestones');
     return task;
+  }
+
+  /** Removes a milestone that has not started, before anyone is hired. */
+  function deleteMilestone(id) {
+    const result = _write('DELETE', `${API}/milestones/${id}`);
+    _cache.milestones = _cache.milestones.filter(m => m.id !== id);
+    return result;
+  }
+
+  /** Whether the client may end the contract because the worker stopped delivering. */
+  function getNonDeliveryStatus(taskId) {
+    return _syncFetch(`${API}/tasks/${taskId}/non-delivery`) || { eligible: false, reason: '' };
+  }
+
+  /** Ends a contract for non-delivery: undelivered milestones are cancelled and refunded. */
+  function endForNonDelivery(taskId) {
+    const result = _write('POST', `${API}/tasks/${taskId}/end-for-non-delivery`, {});
+    refresh('tasks', 'milestones', 'auditRequests', 'transactions');
+    _refreshUser(_sessionUserId());
+    return result;
   }
 
   function updateMilestone(id, updates) {
@@ -860,6 +937,14 @@ const Store = (() => {
     return result;
   }
 
+  /** The client withdraws a dispute the reviewer has not accepted yet. */
+  function withdrawDispute(id) {
+    const result = _write('POST', `${API}/disputes/${id}/withdraw`, {});
+    refresh('disputes', 'milestones', 'auditRequests', 'transactions');
+    _refreshUser(_sessionUserId());
+    return result;
+  }
+
   function resolveDispute(id, { verdict, resolution }) {
     // The server records the caller as the reviewer, so no expertId is sent.
     const result = _write('POST', `${API}/disputes/${id}/resolve`, { verdict, resolution });
@@ -879,16 +964,6 @@ const Store = (() => {
   function getExpertApplications() { return _cache.expertApplications || []; }
   function getExpertApplicationById(id) { return (_cache.expertApplications || []).find(a => a.id === id) || null; }
   function getExpertApplicationByEmail(email) { return (_cache.expertApplications || []).find(a => a.email.toLowerCase() === email.toLowerCase()) || null; }
-
-  /**
-   * Public lookup: does an application exist for this email, and what is its
-   * status. The full application list is admin-only — it holds applicants'
-   * contact details — so signup and login use this instead.
-   */
-  function getExpertApplicationStatus(email) {
-    return _syncFetch(`${API}/expert-applications/status?email=${encodeURIComponent(email)}`)
-      || { exists: false, status: null };
-  }
 
   function saveExpertApplication(data) {
     // The server rejects a duplicate email itself; this cache is empty for
@@ -945,26 +1020,27 @@ const Store = (() => {
 
   // ─── PUBLIC API ───────────────────────────────────────────────────────────
   return {
-    init, resetToSeed, isOnline,
+    init, initAsync, resetToSeed, isOnline,
     getUsers, getUserById, getUserByEmail, createUser, updateUser, deleteUser, addToWallet, withdrawFromWallet, Fees, getLedgerSummary, getEscrowForTask,
     getRevenueSummary, getRevenueByFeeType, getRevenueTimeseries, getRevenueByUser,
     getRevenueDistribution, getRevenueByProject, getProjectBreakdown, getFeeConfig, updateFeeConfig,
     getTasks, getTaskById, getTasksByClient, getTasksByWorker, getOpenTasks, createTask, updateTask, deleteTask,
     getCancellationQuote, cancelTask,
-    getMilestones, getMilestonesByTask, getMilestoneById, createMilestone, updateMilestone, submitDeliverable, approveDeliverable,
+    getMilestones, getMilestonesByTask, getMilestoneById, createMilestone, updateMilestone, deleteMilestone, submitDeliverable, approveDeliverable,
+    getNonDeliveryStatus, endForNonDelivery,
     getProposals, getProposalsByTask, getProposalsByWorker, getInvitationsByWorker, createProposal, updateProposal, hireWorker, acceptInvitation, declineInvitation,
     getAuditRequests, getAuditRequestById, createAuditRequest, updateAuditRequest,
     getAuditPreview, getAuditRequestsByTask, makeAuditOffer, acceptAuditOffer, fundAuditEscrow,
-    acceptAuditEngagement, declineAuditEngagement, cancelDraftTask, getExperts,
-    uploadFile, fileUrl, downloadFile,
+    acceptAuditEngagement, declineAuditEngagement, cancelDraftTask, cancelAuditRequest, getExperts,
+    uploadFile, fileUrl, downloadFile, deleteFile,
     getAuditReports, getAuditReportByRequest, getReportsByRequest, getReportsByTask, saveAuditReport,
-    getDisputes, getDisputeById, createDispute, resolveDispute,
+    getDisputes, getDisputeById, createDispute, resolveDispute, withdrawDispute,
     getTransactions, getTransactionsByUser,
     getNotifications, markNotificationsRead, markNotificationRead, refreshNotifications,
     getMessagesByTask, getMessagesByUser, sendMessage, refreshMessages,
-    getMyEscrow, changePassword, resetUserPassword,
+    getMyEscrow, changePassword,
     refreshUser, refresh, reassignAudit, createTaskWithMilestones,
-    getExpertApplications, getExpertApplicationById, getExpertApplicationByEmail, getExpertApplicationStatus, saveExpertApplication, updateExpertApplicationStatus,
+    getExpertApplications, getExpertApplicationById, getExpertApplicationByEmail, saveExpertApplication, updateExpertApplicationStatus,
   };
 })();
 

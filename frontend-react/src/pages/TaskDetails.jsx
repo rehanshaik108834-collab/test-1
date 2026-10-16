@@ -63,6 +63,11 @@ export default function TaskDetails() {
   const [applyOpen, setApplyOpen] = useState(false);
   const [timeline, setTimeline] = useState('3 weeks');
   const [coverLetter, setCoverLetter] = useState('');
+  // The worker's price for the whole project. Binding: hiring makes it the contract.
+  const [price, setPrice] = useState(() => {
+    const t = urlId ? Store.getTaskById(urlId) : null;
+    return t && typeof t.budget === 'number' ? String(t.budget) : '';
+  });
   // The page shows the proposal count from when it was opened (it is not
   // refreshed after submitting, as before).
   const [proposalCount, setProposalCount] = useState(() => (urlId ? Store.getProposalsByTask(urlId).filter(p => p.type !== 'invitation').length : 0));
@@ -127,20 +132,21 @@ export default function TaskDetails() {
       return;
     }
 
-    const taskBudget = latest ? (typeof latest.budget === 'number' ? latest.budget : parseInt(String(latest.budget).replace(/[^0-9]/g, '')) || 1000) : 1000;
+    const bidPrice = Number(price);
+    if (!/^\d+(\.\d{1,2})?$/.test(String(price).trim()) || !(bidPrice >= 1)) {
+      Validate.toast('Enter your price for the whole project in dollars (e.g. 1200).', 'error');
+      return;
+    }
 
     try {
+      // The server fills in who the worker is; the price is the one figure
+      // that matters — it becomes the contract if the client hires.
       Store.createProposal({
         taskId: task.id,
-        workerId: currentUser.userId,
-        workerName: currentUser.name || 'Worker',
-        avatar: currentUser.avatar || 'WK',
-        avatarColor: currentUser.avatarColor || '#6366f1',
-        bidPrice: '$' + taskBudget.toLocaleString(),
+        bidPrice,
         timeline,
         coverLetter: letter,
         skills: currentUser.skills || [],
-        status: 'pending',
       });
     } catch (e) {
       console.error('[submitProposal] Error:', e);
@@ -326,6 +332,15 @@ export default function TaskDetails() {
               <button onClick={() => setApplyOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted-foreground)' }}>
                 <Icon name="x" style={{ width: 20, height: 20 }} />
               </button>
+            </div>
+            <div className="form-group">
+              <label className="form-label" htmlFor="bidPriceInput">Your price for the whole project (USD)</label>
+              {' '}
+              <input id="bidPriceInput" type="number" min="1" step="0.01" className="form-input" style={{ padding: '12px 16px' }}
+                     value={price} onChange={e => setPrice(e.target.value)} />
+              <div style={{ fontSize: 12, marginTop: 4, color: 'var(--muted-foreground)' }}>
+                {`The client posted ${budgetDisplay}. If they hire you, your price becomes the contract and is held in escrow; you are paid it milestone by milestone, less the service fee.`}
+              </div>
             </div>
             <div className="form-group">
               <label className="form-label">Delivery Timeline</label>

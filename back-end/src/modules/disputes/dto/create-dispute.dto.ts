@@ -1,4 +1,5 @@
-import { IsString, IsOptional, IsNumber, Min, MinLength, MaxLength } from 'class-validator';
+import { IsString, IsOptional, MinLength, MaxLength } from 'class-validator';
+import { IsMoney } from '../../../common/validation/money';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateDisputeDto {
@@ -57,6 +58,6 @@ export class CreateDisputeDto {
   expertId?: string;
 
   @ApiProperty({ example: 150, description: "What the person raising the dispute offers to pay the reviewer" })
-  @IsNumber() @Min(1)
+  @IsMoney()
   reviewerFee: number;
 }

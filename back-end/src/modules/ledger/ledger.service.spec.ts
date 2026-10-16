@@ -4,6 +4,8 @@ import { LedgerService } from './ledger.service';
 import { LoggingModule } from '../../common/logging/logging.module';
 import { LedgerRepository } from './ledger.repository';
 import { UsersModule } from '../users/users.module';
+import { AuthModule } from '../auth/auth.module';
+import { AuditModule } from '../audit/audit.module';
 import { TransactionsModule } from '../transactions/transactions.module';
 import { UsersService } from '../users/users.service';
 import { TransactionsService } from '../transactions/transactions.service';
@@ -29,7 +31,9 @@ describe('LedgerService', () => {
     const mod = await Test.createTestingModule({
       // LoggingModule is @Global, so importing it here registers AppLoggerService
       // for LedgerModule too — the same way AppModule does it at runtime.
-      imports: [LoggingModule, UsersModule, TransactionsModule],
+      // The users controller signs tokens and writes to the audit trail, so the
+      // two global modules it relies on are registered too.
+      imports: [LoggingModule, AuditModule, AuthModule, UsersModule, TransactionsModule],
       providers: [LedgerRepository, LedgerService],
     }).compile();
 

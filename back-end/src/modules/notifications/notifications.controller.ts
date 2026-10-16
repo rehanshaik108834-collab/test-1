@@ -1,21 +1,15 @@
-import { Controller, Get, Post, Patch, Body, Param, UseGuards, ForbiddenException, Inject, forwardRef } from '@nestjs/common';
+import { Controller, Get, Patch, Param, UseGuards, ForbiddenException } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { NotificationsService } from './notifications.service';
-import { CreateNotificationDto } from './dto/create-notification.dto';
 import { RoleGuard } from '../../common/guards/role.guard';
 import { CurrentActor } from '../../common/decorators/actor.decorator';
 import type { Actor } from '../../common/decorators/actor.decorator';
-import { ContactsService } from '../contacts/contacts.service';
-import { ROLES } from '../../common/constants/roles';
 
 @ApiTags('Notifications')
 @Controller('notifications')
 @UseGuards(RoleGuard)
 export class NotificationsController {
-  constructor(
-    private readonly notificationsService: NotificationsService,
-    @Inject(forwardRef(() => ContactsService)) private readonly contacts: ContactsService,
-  ) {}
+  constructor(private readonly notificationsService: NotificationsService) {}
 
   /** Your own notifications. `?userId=` used to return anyone's — or, omitted, everyone's. */
   @Get()
@@ -24,18 +18,11 @@ export class NotificationsController {
     return this.notificationsService.findAll({ userId: actor.id });
   }
 
-  @Post()
-  @ApiOperation({ summary: 'Notify someone you share a project with' })
-  create(@Body() dto: CreateNotificationDto, @CurrentActor() actor: Actor) {
-    const allowed =
-      dto.userId === actor.id ||
-      actor.role === ROLES.SUPERUSER ||
-      this.contacts.shareTask(actor.id, dto.userId);
-    if (!allowed) {
-      throw new ForbiddenException('You can only notify people you share a project with.');
-    }
-    return this.notificationsService.create({ ...dto, fromUserId: actor.id } as any);
-  }
+  // POST /notifications was removed. It let anyone who had bid on a client's
+  // project put any text — "Your account is locked, message me to unlock it"
+  // — into that client's notifications, styled as a payment or a dispute.
+  // Every notification is now written by the platform itself, about
+  // something that actually happened.
 
   @Patch(':id/read')
   @ApiOperation({ summary: 'Mark one of your notifications as read' })

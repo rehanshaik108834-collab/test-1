@@ -124,8 +124,8 @@ export function initiationFee(budget: number): number {
 }
 
 /** Percent rate a worker pays, given their prior lifetime billings with this client. */
-export function workerServiceRate(lifetimeBillings: number): number {
-  return pickTier(FEE_CONFIG.workerService, lifetimeBillings).percent ?? 0;
+export function workerServiceRate(lifetimeBillings: number, tiers: AmountTier[] = FEE_CONFIG.workerService): number {
+  return pickTier(tiers, lifetimeBillings).percent ?? 0;
 }
 
 export function workerServiceFee(amount: number, lifetimeBillings: number): number {

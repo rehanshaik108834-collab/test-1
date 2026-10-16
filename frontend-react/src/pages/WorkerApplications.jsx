@@ -19,7 +19,8 @@ import pageCss from './WorkerApplications.css?raw';
 
 const SANS = 'system-ui,-apple-system,sans-serif';
 const formatDate = d => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-const money = n => '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const money = n => '$' + (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const toAmount = v => (typeof v === 'number' ? v : parseFloat(String(v || '').replace(/[$,\s]/g, '')) || 0);
 
 /** The client's open projects — only open tasks can still hire. */
 function loadProjects(Store, Auth) {
@@ -53,7 +54,9 @@ function buildAllProposals(Store, Auth) {
         avatar: p.avatar || worker?.avatar || 'WK',
         avatarColor: p.avatarColor || worker?.avatarColor || '',
         location: worker?.location || 'Location not set',
-        bidPrice: p.bidPrice || '$0',
+        // A bid is the price the worker will do the project for; old string bids ("$1,100") still read.
+        bidAmount: toAmount(p.bidPrice),
+        bidPrice: money(toAmount(p.bidPrice)),
         timeline: p.timeline || '2 weeks',
         coverLetter: p.coverLetter || '',
         skills: p.skills || worker?.skills || [],
@@ -267,8 +270,13 @@ export default function WorkerApplications() {
   let hireQuote = null;
   if (hireProposal) {
     const task = Store.getTaskById(hireProposal.taskId);
-    const budget = task ? task.budget : parseFloat(String(hireProposal.bidPrice).replace(/[$,]/g, '')) || 0;
-    hireQuote = Store.Fees.projectFunding(budget);
+    // Hiring makes the bid the contract price: escrow is brought to it and the
+    // fees are charged on it.
+    const price = hireProposal.bidAmount || (task ? task.budget : 0);
+    const held = task ? Number(task.budget) || 0 : 0;
+    const planned = task ? Store.getMilestonesByTask(task.id).reduce((a, m) => a + (Number(m.budget) || 0), 0) : 0;
+    const f = Store.Fees.projectFunding(price);
+    hireQuote = { ...f, price, held, planned, topUp: Math.max(0, Store.Fees.round2(price - held)), refund: Math.max(0, Store.Fees.round2(held - price)) };
   }
 
   return (
@@ -377,9 +385,21 @@ export default function WorkerApplications() {
             </p>
             <div style={{ padding: 16, borderRadius: 12, background: '#f0fdf4', border: '1px solid #bbf7d0', marginBottom: 20 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, fontSize: 13 }}>
-                <span style={{ color: '#374151' }}>Project budget (already held in escrow)</span>
-                <span style={{ fontWeight: 700 }} id="hireBidAmount">{hireQuote ? money(hireQuote.budget) : ''}</span>
+                <span style={{ color: '#374151' }}>Contract price (the worker's bid)</span>
+                <span style={{ fontWeight: 700 }} id="hireBidAmount">{hireQuote ? money(hireQuote.price) : ''}</span>
               </div>
+              {hireQuote && hireQuote.refund > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, fontSize: 13 }}>
+                  <span style={{ color: '#374151' }}>Returned from escrow (bid is below your budget)</span>
+                  <span style={{ fontWeight: 600, color: '#059669' }}>{money(hireQuote.refund)}</span>
+                </div>
+              )}
+              {hireQuote && hireQuote.topUp > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, fontSize: 13 }}>
+                  <span style={{ color: '#374151' }}>Added to escrow (bid is above your budget)</span>
+                  <span style={{ fontWeight: 600, color: '#dc2626' }}>{money(hireQuote.topUp)}</span>
+                </div>
+              )}
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, fontSize: 13 }}>
                 <span style={{ color: '#374151' }}>{`Marketplace fee (${Store.Fees.rates().clientMarketplace.percent}%)`}</span>
                 <span style={{ fontWeight: 600, color: '#dc2626' }} id="hireFee">{hireQuote ? money(hireQuote.marketplace) : ''}</span>
@@ -390,11 +410,16 @@ export default function WorkerApplications() {
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, borderTop: '1px solid #bbf7d0', paddingTop: 8, marginTop: 4 }}>
                 <span style={{ fontWeight: 600 }}>Charged to your wallet now</span>
-                <span style={{ fontWeight: 700, color: '#10b981' }} id="hireTotal">{hireQuote ? money(hireQuote.fees) : ''}</span>
+                <span style={{ fontWeight: 700, color: '#10b981' }} id="hireTotal">{hireQuote ? money(Store.Fees.round2(hireQuote.fees + hireQuote.topUp)) : ''}</span>
               </div>
               <div style={{ fontSize: 11, color: '#6b7280', marginTop: 8 }} id="hireBidNote">
-                {hireProposal ? `${hireProposal.workerName} bid ${hireProposal.bidPrice}. The contract is for the project budget of ${money(hireQuote.budget)}, paid out milestone by milestone.` : ''}
+                {hireProposal ? `${hireProposal.workerName} will do the project for ${money(hireQuote.price)}, paid out milestone by milestone.` : ''}
               </div>
+              {hireQuote && Math.abs(hireQuote.planned - hireQuote.price) > 0.005 && (
+                <div style={{ fontSize: 12, color: '#b45309', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '8px 10px', marginTop: 10 }}>
+                  {`Your milestones add up to ${money(hireQuote.planned)}. Edit them on the milestone board so they add up to exactly ${money(hireQuote.price)} before hiring — that is how the worker is paid their bid.`}
+                </div>
+              )}
             </div>
             <div style={{ display: 'flex', gap: 12 }}>
               <button onClick={() => setHireOpen(false)} className="btn-outline" style={{ flex: 1, padding: 12, borderRadius: 12 }}>Cancel</button>

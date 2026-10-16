@@ -66,7 +66,7 @@ function getReports(Store, taskId) {
     reviewerInitials: reviewerOf(d.expertId)?.avatar || 'ER',
     reviewerColor: 'linear-gradient(135deg,#f59e0b,#d97706)',
     date: d.createdAt,
-    status: d.status === 'resolved' ? 'completed' : d.status === 'open' ? 'in-progress' : 'pending',
+    status: d.status === 'resolved' ? 'completed' : d.status === 'open' ? 'in-progress' : ['withdrawn', 'expired'].includes(d.status) ? 'closed' : 'pending',
     verdict: d.verdict,
     findings: d.resolution,
     project: d.project,
@@ -111,6 +111,7 @@ function statusConfig(status) {
     case 'in-progress': return { bg: '#eff6ff', border: '#bae6fd', text: '#0284c7', dot: '#38bdf8', label: 'In Progress' };
     case 'failed': return { bg: '#fef2f2', border: '#fecaca', text: '#b91c1c', dot: '#ef4444', label: 'Failed' };
     case 'pending': return { bg: '#fffbeb', border: '#fde68a', text: '#b45309', dot: '#f59e0b', label: 'Pending' };
+    case 'closed': return { bg: '#f9fafb', border: '#e5e7eb', text: '#6b7280', dot: '#9ca3af', label: 'Closed — no verdict' };
     default: return { bg: '#f9fafb', border: '#e5e7eb', text: '#6b7280', dot: '#9ca3af', label: status };
   }
 }
@@ -163,7 +164,7 @@ function downloadReportPdf(r) {
       meta: `Case ${r.id} · raised ${fmtDate(x.createdAt)}${x.resolvedAt ? ' · resolved ' + fmtDate(x.resolvedAt) : ''}`,
       sections: [
         { heading: 'Case', rows: [
-          ['Status', x.status === 'resolved' ? 'Resolved' : 'Open'],
+          ['Status', { resolved: 'Resolved', open: 'Open', withdrawn: 'Withdrawn by the client', expired: 'Expired without a verdict' }[x.status] || x.status],
           ['Decision', VERDICT_TEXT[x.verdict] || 'Pending'],
           ['Amount in question', x.amount || '-'],
           ['Raised by', x.raisedByName || '-'],

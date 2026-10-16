@@ -48,7 +48,7 @@ function buildCase(Store, raw) {
     issue: raw.reason || 'Dispute',
     description: raw.details || raw.reason || 'No description provided.',
     outcome: raw.outcome || '',
-    status: raw.status === 'open' ? 'Open' : raw.status === 'resolved' ? 'Resolved' : 'Under Investigation',
+    status: raw.status === 'open' ? 'Open' : raw.status === 'resolved' ? 'Resolved' : raw.status === 'withdrawn' ? 'Withdrawn' : raw.status === 'expired' ? 'Expired' : 'Under Investigation',
     severity: raw.severity || 'medium',
     escrow: raw.amount || '$0',
     raisedDate: raised || 'Recently',

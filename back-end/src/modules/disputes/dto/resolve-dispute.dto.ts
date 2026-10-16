@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsIn, MinLength } from 'class-validator';
+import { IsString, IsOptional, IsIn, MinLength, MaxLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class ResolveDisputeDto {
@@ -17,6 +17,6 @@ export class ResolveDisputeDto {
   verdict: string;
 
   @ApiProperty({ example: 'After review, milestone is complete. Releasing escrow.' })
-  @IsString() @MinLength(1)
+  @IsString() @MinLength(20, { message: 'Explain the verdict in at least 20 characters — both parties read it.' }) @MaxLength(5000)
   resolution: string;
 }

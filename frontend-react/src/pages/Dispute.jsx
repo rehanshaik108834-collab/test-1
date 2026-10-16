@@ -62,13 +62,6 @@ function loadTarget(Store, milestoneId) {
   };
 }
 
-/** The reviewer the client chose for this project's technical audit, if any. */
-function assignedReviewer(Store, taskId) {
-  const ar = (Store.getAuditRequestsByTask(taskId) || []).find(a =>
-    a.kind === 'project-audit' && a.expertId && !['declined', 'cancelled'].includes(a.status));
-  return ar ? ar.expertId : null;
-}
-
 // Read-only "Milestone" / "Amount" boxes
 const READONLY_FIELD_STYLE = { padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 10, background: 'var(--secondary)', fontWeight: 600 };
 
@@ -90,13 +83,13 @@ export default function Dispute() {
   const notSubmitted = target && !['submitted', 'review'].includes(target.status);
   const backURL = target ? `${workroomURL}?id=${target.taskId}` : workroomURL;
   const targetTask = target ? target.task : null;
-  // A project audited at creation already has its reviewer: that is who
-  // arbitrates, rather than anyone the category happens to match.
-  const [lockedReviewerId] = useState(() => (target ? assignedReviewer(Store, target.taskId) : null));
+  // The client chooses who arbitrates — any available reviewer covering the
+  // category, the project's auditor included. Forcing the auditor meant that
+  // if they were unavailable the list was empty and no dispute could be raised.
   const [reason, setReason] = useState('');
   const [details, setDetails] = useState('');
   const [outcome, setOutcome] = useState('');
-  const [expertId, setExpertId] = useState(lockedReviewerId);
+  const [expertId, setExpertId] = useState(null);
   const [reviewerFee, setReviewerFee] = useState('');
   const [showExpertError, setShowExpertError] = useState(false);
   // The client pays the reviewer, so only the client proposes a fee.
@@ -218,14 +211,11 @@ export default function Dispute() {
               <div className="field-group">
                 <label>Expert Reviewer</label>
                 <div style={{ fontSize: 12, color: 'var(--muted-foreground)', marginBottom: 10 }}>
-                  {lockedReviewerId
-                    ? 'This project\'s Expert Reviewer, chosen when it was created, arbitrates the dispute. Only they will be able to see the case.'
-                    : 'Choose who arbitrates this dispute. Only reviewers covering this project\'s category are shown, and only they will be able to see the case.'}
+                  Choose who arbitrates this dispute. Only available reviewers covering this project&apos;s category are shown, and only the one you choose will see the case.
                 </div>
                 <div id="disputeExpertList">
                   <ExpertPicker
                     category={targetTask ? targetTask.category : null}
-                    lockedId={lockedReviewerId}
                     selectedId={expertId}
                     onChange={id => { setExpertId(id); setShowExpertError(false); }}
                   />

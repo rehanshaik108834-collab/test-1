@@ -40,8 +40,11 @@ function loadWorkerMilestones(Store, Auth, taskId) {
         assignee: session.avatar || 'AW', assigneeColor: session.avatarColor || 'linear-gradient(135deg,#10b981,#059669)',
         priority: m.priority || 'Medium', progress: m.progress || 0, status: m.status || 'todo',
         revisionNote: m.status === 'revision-needed' ? m.revisionNote : null,
+        cancelled: m.status === 'cancelled',
       };
-      if (DONE_STATUSES.includes(m.status)) colMap.done.push(card);
+      // A contract ended for non-delivery cancels the undelivered milestones;
+      // they are finished, not "To Do".
+      if (DONE_STATUSES.includes(m.status) || m.status === 'cancelled') colMap.done.push(card);
       else if (m.status === 'review' || m.status === 'submitted') colMap.review.push(card);
       // Had no column, so it fell through to To Do with "Start Working".
       else if (m.status === 'disputed') colMap.disputed.push(card);
@@ -53,7 +56,7 @@ function loadWorkerMilestones(Store, Auth, taskId) {
 }
 
 /** Sum of "$1,234"-style amounts. */
-const sumAmounts = cards => cards.reduce((s, m) => s + parseFloat((m.amount || '$0').replace(/[^0-9.]/g, '') || 0), 0);
+const sumAmounts = cards => cards.filter(m => !m.cancelled).reduce((s, m) => s + parseFloat((m.amount || '$0').replace(/[^0-9.]/g, '') || 0), 0);
 
 /** One milestone card; `col` decides the action at the bottom. */
 function MilestoneCard({ m, col, onChange }) {
@@ -107,7 +110,9 @@ function MilestoneCard({ m, col, onChange }) {
       </div>
       {col === 'done' ? (
         <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid rgba(0,0,0,0.05)', textAlign: 'center' }}>
-          <span style={{ fontSize: 12, color: '#10b981', fontWeight: 600 }}>✓ Paid</span>
+          {m.cancelled
+            ? <span style={{ fontSize: 12, color: '#64748b', fontWeight: 600 }}>Cancelled — contract ended</span>
+            : <span style={{ fontSize: 12, color: '#10b981', fontWeight: 600 }}>✓ Paid</span>}
         </div>
       ) : ''}
       {m.revisionNote ? (

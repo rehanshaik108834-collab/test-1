@@ -49,6 +49,9 @@ export class UsersService {
       email: user.email,
       avatar: user.avatar,
       avatarColor: user.avatarColor,
+      // An account someone else created must choose its own password before
+      // it can do anything else (see AuthMiddleware).
+      mustChangePassword: !!user.mustChangePassword,
     };
     return { user, session };
   }
@@ -78,15 +81,29 @@ export class UsersService {
    * Skips the self-service role restriction; the caller is responsible for
    * having checked authority.
    */
-  createPrivileged(dto: CreateUserDto, expertProfile?: { domains?: string[]; hourlyRate?: number }) {
-    return this.insertUser(dto, expertProfile);
+  createPrivileged(
+    dto: CreateUserDto,
+    expertProfile?: { domains?: string[]; hourlyRate?: number },
+    opts: PrivilegedOptions = {},
+  ) {
+    return this.insertUser(dto, expertProfile, opts);
   }
 
-  private insertUser(dto: CreateUserDto, expertProfile?: { domains?: string[]; hourlyRate?: number }) {
+  private insertUser(
+    dto: CreateUserDto,
+    expertProfile?: { domains?: string[]; hourlyRate?: number },
+    opts: PrivilegedOptions = {},
+  ) {
     const existing = this.findByEmail(dto.email);
     if (existing) throw new BadRequestException('A user with this email already exists.');
 
-    assertStrongPassword(dto.password);
+    const name = String(dto.name || '').trim();
+    if (name.length < 2) throw new BadRequestException('Enter a name of at least 2 characters.');
+
+    // An approved application carries the password its applicant chose,
+    // already checked and hashed when they applied. Anything arriving from a
+    // form is plaintext and must meet the rules.
+    if (!opts.passwordIsHash) assertStrongPassword(dto.password);
     const initials = initialsOf(dto.name);
     const colors = [
       'linear-gradient(135deg,#6366f1,#4f46e5)',
@@ -100,15 +117,20 @@ export class UsersService {
     // ── Insert into base USERS table ────────────────────────────────────
     const baseUser: any = {
       id,
-      name: dto.name.trim(),
+      name,
       email: dto.email.trim().toLowerCase(),
-      password: hashPassword(dto.password),
+      password: opts.passwordIsHash ? dto.password : hashPassword(dto.password),
       role: dto.role,
       avatar: dto.avatar || initials,
       avatarColor: dto.avatarColor || colors[Math.floor(Math.random() * colors.length)],
       status: 'active',
       joinDate: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
       walletBalance: 0,
+      // Bumped on every password change; tokens carry it, so changing a
+      // password signs out every session that used the old one.
+      tokenVersion: 0,
+      createdBy: opts.createdBy || null,
+      mustChangePassword: !!opts.mustChangePassword,
     };
     this.usersRepository.insertBase(baseUser);
 
@@ -133,6 +155,9 @@ export class UsersService {
         // project category, so an expert created with none could never be
         // picked by anyone.
         domains: expertProfile?.domains || [],
+        // What intake approved. A reviewer may narrow their domains but never
+        // add one the intake desk did not vet.
+        approvedDomains: expertProfile?.domains || [],
         hourlyRate: expertProfile?.hourlyRate || 0,
       });
     }
@@ -197,6 +222,18 @@ export class UsersService {
       if (dto.domains !== undefined && !dto.domains.length) {
         throw new BadRequestException('Choose at least one domain — clients can only pick reviewers who cover their category.');
       }
+      if (dto.domains !== undefined) {
+        // Domains are what the intake desk vetted. Self-assigning a new one
+        // would put an unvetted reviewer in front of clients in that category.
+        const approved: string[] = sub.approvedDomains || sub.domains || [];
+        const extra = dto.domains.filter(d => !approved.includes(d));
+        if (extra.length) {
+          throw new BadRequestException(
+            `You were approved to review ${approved.join(', ') || 'no categories'}. ` +
+              `${extra.join(', ')} needs approval from the intake team.`,
+          );
+        }
+      }
       set(sub, ['specialization', 'domains', 'hourlyRate', 'availability']);
     }
 
@@ -220,17 +257,15 @@ export class UsersService {
       throw new BadRequestException('Choose a password different from your current one.');
     }
     base.password = hashPassword(newPassword);
+    // Every token issued before this moment stops working.
+    base.tokenVersion = (base.tokenVersion || 0) + 1;
+    base.mustChangePassword = false;
     return { changed: true };
   }
 
-  /** Operations sets a new password for someone who lost theirs. */
-  resetPassword(id: string, newPassword: string) {
-    const base = this.usersRepository.getRawBase(id);
-    if (!base) throw new NotFoundException(`User with id "${id}" not found`);
-    assertStrongPassword(newPassword);
-    base.password = hashPassword(newPassword);
-    return { reset: true };
-  }
+  // There is deliberately no "set someone else's password". An operator who
+  // could reset a password could sign in as that person and withdraw their
+  // balance, so the route was removed outright.
 
   delete(id: string) {
     const deleted = this.usersRepository.deleteById(id);
@@ -262,6 +297,15 @@ export class UsersService {
   }
 }
 
+export interface PrivilegedOptions {
+  /** Who created the account, for the record. */
+  createdBy?: string;
+  /** The account must choose its own password at first sign-in. */
+  mustChangePassword?: boolean;
+  /** `password` is already a bcrypt hash (an approved application). */
+  passwordIsHash?: boolean;
+}
+
 function initialsOf(name: string): string {
   return String(name || '').trim().split(/\s+/).map(w => w[0] || '').join('').toUpperCase().slice(0, 2) || '?';
 }
@@ -272,7 +316,11 @@ function initialsOf(name: string): string {
  * Enforced here as well, so the API cannot be used to set a weaker one.
  */
 export function assertStrongPassword(pw: string) {
-  if (isHashed(pw)) return; // an applicant's password, already checked and hashed
+  // A value shaped like a bcrypt hash would be stored as-is and skip every
+  // rule below — signing up with the hash of "a" made "a" a working password.
+  if (isHashed(pw)) {
+    throw new BadRequestException('That password cannot be used. Choose a different one.');
+  }
   const ok = typeof pw === 'string' && pw.length >= 8 && /[A-Z]/.test(pw) && /[a-z]/.test(pw)
     && /\d/.test(pw) && /[!@#$%^&*]/.test(pw);
   if (!ok) {

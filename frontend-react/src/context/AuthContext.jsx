@@ -100,6 +100,9 @@ function createAuth(Store) {
   function getRoleRedirect(roles) {
     const user = getCurrentUser();
     if (!user) return '/login';
+    // An account created by someone else must choose its own password before
+    // anything else (the server refuses every other request until it has).
+    if (user.mustChangePassword) return '/change-password';
     if (!roles.flat().includes(user.role)) return getDashboardUrl(user.role);
     return null;
   }

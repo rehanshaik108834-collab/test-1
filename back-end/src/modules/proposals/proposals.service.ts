@@ -11,6 +11,10 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { Actor } from '../../common/decorators/actor.decorator';
 import { assertAllowed, canViewAnyRecord } from '../../common/guards/viewer.util';
 import { ROLES } from '../../common/constants/roles';
+import { round2 } from '../ledger/fee-config';
+
+/** How many proposals one worker may send on one project, withdrawn ones included. */
+const MAX_BIDS_PER_PROJECT = 3;
 
 /**
  * ProposalsService — Business Logic Layer
@@ -87,6 +91,28 @@ export class ProposalsService {
     }
   }
 
+  /** A worker who can no longer work (suspended, removed): their open bids and invitations close. */
+  closeAllForWorker(workerId: string, why: string) {
+    // Bids and invitations both — findAll({ workerId }) returns bids only.
+    for (const p of this.proposalsRepository.findAll().filter((x: any) => x.workerId === workerId)) {
+      if (p.status !== 'pending') continue;
+      this.proposalsRepository.update(p.id, { status: 'closed', closedReason: why });
+      const task = this.safeTask(p.taskId);
+      if (task && p.type !== 'invitation') {
+        this.notifications.notify(task.clientId, {
+          type: 'proposal',
+          text: `A proposal on "${task.title}" was closed`,
+          subtext: why,
+          link: '/worker-applications',
+        });
+      }
+    }
+  }
+
+  private safeTask(taskId: string) {
+    try { return this.tasksService.findById(taskId); } catch { return null; }
+  }
+
   private titleOf(taskId: string) {
     try { return this.tasksService.findById(taskId).title; } catch { return 'Project'; }
   }
@@ -125,17 +151,35 @@ export class ProposalsService {
     if (worker.role !== ROLES.WORKER || worker.status !== 'active') {
       throw new BadRequestException(`${worker.name} is not an active worker.`);
     }
-    const duplicate = this.proposalsRepository
+    const history = this.proposalsRepository
       .findAll({ taskId: task.id })
-      .find((p: any) => p.workerId === workerId && p.status === 'pending');
+      .filter((p: any) => p.workerId === workerId);
+    const duplicate = history.find((p: any) => p.status === 'pending');
     if (duplicate) {
       throw new BadRequestException(
         type === 'invitation' ? `${worker.name} already has a pending invitation or bid on this project.` : 'You already have a pending proposal on this project.',
       );
     }
+    if (type === 'proposal') {
+      // Each bid notifies the client, so withdraw-and-rebid was a way to
+      // flood them. A turned-down bid is final for that project.
+      if (history.some((p: any) => p.type !== 'invitation' && p.status === 'rejected')) {
+        throw new BadRequestException('The client turned down your proposal on this project, so you cannot bid on it again.');
+      }
+      if (history.filter((p: any) => p.type !== 'invitation').length >= MAX_BIDS_PER_PROJECT) {
+        throw new BadRequestException(`You can send at most ${MAX_BIDS_PER_PROJECT} proposals on one project.`);
+      }
+      // The bid is the price the worker is committing to — hiring makes it the contract.
+      if (!dto.bidPrice) throw new BadRequestException('Enter your price for the whole project.');
+      if (!dto.coverLetter || dto.coverLetter.trim().length < 30) {
+        throw new BadRequestException('Write a cover letter of at least 30 characters.');
+      }
+    }
 
     const prop = {
       ...dto,
+      // An invitation is an offer at the project's posted budget.
+      bidPrice: type === 'invitation' ? task.budget : dto.bidPrice,
       id: this.proposalsRepository.generateId(),
       workerId,
       type,
@@ -161,7 +205,7 @@ export class ProposalsService {
       this.notifications.notify(task.clientId, {
         type: 'proposal',
         text: `New proposal from ${worker.name}`,
-        subtext: `${task.title}${dto.bidPrice ? ' · bid ' + dto.bidPrice : ''}`,
+        subtext: `${task.title} · bid $${dto.bidPrice}`,
         link: '/worker-applications',
       });
     }
@@ -185,7 +229,9 @@ export class ProposalsService {
 
     const patch: Record<string, any> = {};
     if (isWorker) {
-      for (const key of ['bidPrice', 'timeline', 'coverLetter'] as const) {
+      // An invitation's price is the client's offer; the worker accepts or declines it.
+      const keys = prop.type === 'invitation' ? [] : (['bidPrice', 'timeline', 'coverLetter'] as const);
+      for (const key of keys) {
         if (dto[key] !== undefined) patch[key] = dto[key];
       }
     }
@@ -225,15 +271,48 @@ export class ProposalsService {
    * fees are charged. Deliberately NOT swallowed: if the client cannot cover
    * the fees, hiring must fail loudly rather than start an unpaid contract.
    */
+  /**
+   * Assigns the worker and starts the contract at the agreed price.
+   *
+   * The price is the worker's bid (an invitation is at the posted budget).
+   * Escrow is brought to exactly that price — topped up from the client's
+   * wallet or the difference refunded — and the marketplace and initiation
+   * fees are charged on it. The milestones must add up to the same price, or
+   * the worker would be paid a different amount than they bid.
+   *
+   * Deliberately NOT swallowed: if the client cannot cover the price and
+   * fees, hiring fails loudly rather than start an unfunded contract.
+   */
   private assignAndFund(prop: any) {
     const task = this.tasksService.findById(prop.taskId);
+    const worker = this.safeUser(prop.workerId);
+    if (!worker || worker.role !== ROLES.WORKER || worker.status !== 'active') {
+      throw new BadRequestException(
+        `${prop.workerName || 'This worker'}'s account is not active, so they cannot be hired. Choose another proposal.`,
+      );
+    }
+    const milestones = this.milestonesService.findAll({ taskId: task.id });
     // Payment happens milestone by milestone; a contract with none could never
     // pay out or complete, and its budget would sit in escrow indefinitely.
-    if (!this.milestonesService.findAll({ taskId: task.id }).length) {
+    if (!milestones.length) {
       throw new BadRequestException('Add at least one milestone to this project before hiring — that is how the worker gets paid.');
     }
-    this.ledger.chargeContractFees(task.id, task.clientId, task.budget, task.title);
-    this.tasksService.assignWorker(prop.taskId, prop.workerId);
+    const price = round2(Number(prop.type === 'invitation' ? task.budget : prop.bidPrice ?? task.budget));
+    const planned = this.milestonesService.totalBudget(task.id);
+    if (planned !== price) {
+      throw new BadRequestException(
+        `The milestones add up to $${planned}, but the agreed price is $${price}. ` +
+          `Edit the milestones so they add up to exactly $${price}, then hire.`,
+      );
+    }
+
+    // Check the client can cover everything before any money moves.
+    this.ledger.assertCanStartContract(task.id, task.clientId, price);
+    if (price !== round2(Number(task.budget))) {
+      this.ledger.adjustProjectBudget(task.id, task.clientId, price, task.title);
+    }
+    this.ledger.chargeContractFees(task.id, task.clientId, price, task.title);
+    this.tasksService.assignWorker(prop.taskId, prop.workerId, price);
 
     // Milestones created before anyone was hired carry no workerId. Without this
     // backfill their payment has no recipient — which used to fail silently and
@@ -242,11 +321,15 @@ export class ProposalsService {
     // for a missing workerId was not enough: a milestone created with someone
     // else's id (the client's, in one case) silently kept it and was paid out
     // to the wrong person.
-    for (const ms of this.milestonesService.findAll({ taskId: task.id })) {
+    for (const ms of milestones) {
       if (ms.workerId !== prop.workerId) {
         this.milestonesService.systemUpdate(ms.id, { workerId: prop.workerId });
       }
     }
+  }
+
+  private safeUser(id: string) {
+    try { return this.users.findById(id); } catch { return null; }
   }
 
   hireWorker(proposalId: string, actor: Actor) {
@@ -267,8 +350,8 @@ export class ProposalsService {
     this.settleOthers(prop, task);
     this.notifications.notify(prop.workerId, {
       type: 'hire',
-      text: `You were hired for "${task.title}"`,
-      subtext: 'The budget is in escrow — open the milestone board to start',
+      text: `You were hired for "${task.title}" at $${prop.bidPrice ?? task.budget}`,
+      subtext: 'The full price is in escrow — open the milestone board to start',
       link: `/worker-milestone-board?id=${task.id}`,
     });
 

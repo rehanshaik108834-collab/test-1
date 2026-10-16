@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Param, Body, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiHeader, ApiQuery } from '@nestjs/swagger';
 import { MilestonesService } from './milestones.service';
 import { CreateMilestoneDto } from './dto/create-milestone.dto';
@@ -41,6 +41,13 @@ export class MilestonesController {
   @ApiOperation({ summary: 'Update a milestone' })
   update(@Param('id') id: string, @Body() dto: UpdateMilestoneDto, @CurrentActor() actor: Actor) {
     return this.milestonesService.update(id, dto, actor);
+  }
+
+  @Delete(':id')
+  @Roles('client')
+  @ApiOperation({ summary: 'Remove a milestone that has not started, before anyone is hired' })
+  remove(@Param('id') id: string, @CurrentActor() actor: Actor) {
+    return this.milestonesService.remove(id, actor);
   }
 
   @Post(':id/submit')

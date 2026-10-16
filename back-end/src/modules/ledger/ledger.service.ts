@@ -9,10 +9,9 @@ import {
   withdrawalFee,
   marketplaceFee,
   initiationFee,
-  workerServiceFee,
   workerServiceRate,
-  expertServiceFee,
   FEE_CONFIG,
+  AmountTier,
   resetFeeConfig,
 } from './fee-config';
 
@@ -229,6 +228,29 @@ export class LedgerService {
   }
 
   /**
+   * Refuses a hire the client cannot pay for, before anything moves: the
+   * difference between what is held and the agreed price, plus the fees on
+   * that price. Checking piece by piece could refund or top up escrow and then
+   * fail on the fees.
+   */
+  assertCanStartContract(taskId: string, clientId: string, price: number) {
+    const held = this.ledger.getEscrow(taskId).projectHeld;
+    const topUp = round2(Math.max(0, price - held));
+    const fees = round2(marketplaceFee(price) + initiationFee(price));
+    this.requireFunds(clientId, round2(topUp + fees), 'hiring at this price');
+  }
+
+  /** The worker fee schedule as it stands now — stored on a contract when it starts. */
+  workerServiceSnapshot(): AmountTier[] {
+    return FEE_CONFIG.workerService.map(t => ({ ...t }));
+  }
+
+  /** The reviewer commission as it stands now — stored on an engagement when it is funded. */
+  expertCommissionSnapshot(): number {
+    return FEE_CONFIG.expertService.percent;
+  }
+
+  /**
    * Funds the budget and charges the contract fees in one step — the client
    * pays the budget plus fees; only the budget is held.
    */
@@ -350,6 +372,8 @@ export class LedgerService {
     workerId: string;
     amount: number;
     description?: string;
+    /** The fee schedule agreed when the contract started. Defaults to today's. */
+    workerServiceTiers?: AmountTier[];
   }) {
     const { milestoneId, taskId, clientId, workerId, amount } = params;
 
@@ -371,9 +395,11 @@ export class LedgerService {
       );
     }
 
+    // A rate change by the revenue desk applies to contracts started after
+    // it, not to work a worker already agreed to at the old rate.
     const priorBillings = this.ledger.getBillings(clientId, workerId);
-    const rate = workerServiceRate(priorBillings);
-    const fee = workerServiceFee(amount, priorBillings);
+    const rate = workerServiceRate(priorBillings, params.workerServiceTiers);
+    const fee = round2(amount * (rate / 100));
     const net = round2(amount - fee);
 
     this.ledger.addProjectHeld(taskId, -amount);
@@ -424,11 +450,16 @@ export class LedgerService {
     amount: number;
     description?: string;
     bucket?: 'audit' | 'dispute';
+    /** What makes this payout unique. One per engagement, or one per audited milestone. */
+    payoutKey?: string;
+    /** The commission agreed when the fee was funded. Defaults to today's. */
+    commissionPercent?: number;
   }) {
     const { auditRequestId, taskId, expertId, amount } = params;
     const bucket = params.bucket || 'audit';
+    const key = params.payoutKey || auditRequestId;
 
-    if (this.ledger.isAuditPaid(auditRequestId)) {
+    if (this.ledger.isAuditPaid(key)) {
       this.log.money('audit.release.skipped', {
         audit: auditRequestId, task: taskId, reason: 'already-paid',
       });
@@ -444,18 +475,19 @@ export class LedgerService {
       );
     }
 
-    const fee = expertServiceFee(amount);
+    const commission = params.commissionPercent ?? FEE_CONFIG.expertService.percent;
+    const fee = round2(amount * (commission / 100));
     const net = round2(amount - fee);
 
     this.ledger.addHeld(taskId, bucket, -amount);
     this.users.addToWallet(expertId, net);
-    this.ledger.markAuditPaid(auditRequestId);
+    this.ledger.markAuditPaid(key);
 
     this.ledger.recordRevenue({
       feeType: 'expert-service',
       amount: fee,
       baseAmount: amount,
-      rate: FEE_CONFIG.expertService.percent,
+      rate: commission,
       fromUserId: expertId,
       taskId,
       milestoneId: null,
@@ -473,7 +505,7 @@ export class LedgerService {
       auditRequestId,
       description:
         params.description ||
-        `${bucket === 'dispute' ? 'Dispute review' : 'Audit'} fee released ($${amount} less ${FEE_CONFIG.expertService.percent}% commission)`,
+        `${bucket === 'dispute' ? 'Dispute review' : 'Audit'} fee released ($${amount} less ${commission}% commission)`,
       status: 'completed',
     });
 

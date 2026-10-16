@@ -3,9 +3,10 @@ import { CreateExpertApplicationDto } from './dto/create-expert-application.dto'
 import { UpdateExpertApplicationStatusDto } from './dto/update-expert-application.dto';
 import { ExpertApplicationsRepository } from './expert-applications.repository';
 import { UsersService } from '../users/users.service';
-import { hashPassword } from '../../common/security/password.util';
+import { hashPassword, verifyPassword } from '../../common/security/password.util';
 import { assertStrongPassword } from '../users/users.service';
 import { AppLoggerService } from '../../common/logging/app-logger.service';
+import { ModuleRef } from '@nestjs/core';
 
 /**
  * The signup form's expertise → the task categories a reviewer covers.
@@ -36,6 +37,7 @@ export class ExpertApplicationsService {
     private readonly expertApplicationsRepository: ExpertApplicationsRepository,
     @Inject(forwardRef(() => UsersService)) private usersService: UsersService,
     private readonly log: AppLoggerService,
+    private readonly moduleRef: ModuleRef,
   ) {}
 
   /**
@@ -60,17 +62,28 @@ export class ExpertApplicationsService {
   }
 
   /** Public: whether an application exists for this email, and nothing else. */
-  statusFor(email: string) {
-    if (!email) return { exists: false, status: null };
+  /**
+   * An application's status, for its applicant only: the password must match
+   * the one they applied with. Returns null for no match.
+   */
+  statusForCredentials(email: string, password: string): string | null {
+    if (!email || !password) return null;
     const app = this.expertApplicationsRepository
       .findAll()
-      .find((a: any) => String(a.email).toLowerCase() === email.toLowerCase());
-    return app ? { exists: true, status: app.status } : { exists: false, status: null };
+      .filter((a: any) => String(a.email).toLowerCase() === String(email).trim().toLowerCase())
+      .pop();
+    if (!app || !app.password || !verifyPassword(password, app.password)) return null;
+    return app.status;
   }
 
   create(dto: CreateExpertApplicationDto) {
     // One live application per address, and none for an existing account.
     assertStrongPassword(dto.password);
+    if (!DOMAINS_BY_EXPERTISE[dto.expertise || '']) {
+      // The expertise decides which project categories the reviewer covers.
+      // An unknown one left them with no domains at all.
+      throw new BadRequestException(`Choose your area of expertise from: ${Object.keys(DOMAINS_BY_EXPERTISE).join(', ')}.`);
+    }
     const email = dto.email.trim().toLowerCase();
     const clash = this.expertApplicationsRepository
       .findAll()
@@ -78,6 +91,17 @@ export class ExpertApplicationsService {
     if (clash || this.usersService.findByEmail(email)) {
       throw new BadRequestException('An application or account with this email already exists.');
     }
+    // A résumé or certificate must be a fresh application upload — not some
+    // other file id, and not one already attached to another application.
+    const fileIds = [dto.resumeFile?.id, dto.certificateFile?.id].filter(Boolean) as string[];
+    const files = this.filesService();
+    for (const id of fileIds) {
+      if (files && !files.isUnclaimedApplicationFile(id)) {
+        throw new BadRequestException('Upload your résumé or certificate again — that file is not available.');
+      }
+    }
+    if (files) files.claimApplicationFiles(fileIds);
+
     const app = {
       id: this.expertApplicationsRepository.generateId(),
       status: 'pending',
@@ -125,6 +149,8 @@ export class ExpertApplicationsService {
           specialization: app.expertise || '',
         },
         { domains: DOMAINS_BY_EXPERTISE[app.expertise] || [] },
+        // The applicant's own password, hashed when they applied.
+        { passwordIsHash: true, createdBy: reviewerId },
       );
       this.log.log('expertApplications.approve', `created expert account for application ${app.id}`);
     }
@@ -133,6 +159,15 @@ export class ExpertApplicationsService {
     app.reviewedAt = new Date().toISOString().slice(0, 10);
     app.reviewedBy = reviewerId;
     return this.redact(app);
+  }
+
+  private filesService(): any {
+    try {
+      const { FilesService } = require('../files/files.service');
+      return this.moduleRef.get(FilesService, { strict: false });
+    } catch {
+      return null;
+    }
   }
 
   resetToSeed() {

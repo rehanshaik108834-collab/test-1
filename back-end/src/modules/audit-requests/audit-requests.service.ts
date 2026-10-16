@@ -12,6 +12,7 @@ import { DisputesService } from '../disputes/disputes.service';
 import { LedgerService } from '../ledger/ledger.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { Actor } from '../../common/decorators/actor.decorator';
+import { round2 } from '../ledger/fee-config';
 
 /** Which side of an engagement someone is on. The client always pays; the reviewer quotes. */
 type Side = 'client' | 'expert';
@@ -146,6 +147,15 @@ export class AuditRequestsService {
       task.clientId === actor.id,
       'You can only request an audit of your own project.',
     );
+    // An audit reviews work still to come. On a finished or cancelled project
+    // nothing could ever be reported, and the fee would sit in escrow forever.
+    if (!['open', 'in-progress'].includes(task.status)) {
+      throw new BadRequestException(`This project is ${task.status}, so there is nothing left to audit.`);
+    }
+    if (dto.milestoneId) {
+      const ms = this.safe(() => this.milestones.findById(dto.milestoneId!));
+      if (!ms || ms.taskId !== task.id) throw new BadRequestException('That milestone does not belong to this project.');
+    }
     if (!dto.expertId) throw new BadRequestException('Choose the Expert Reviewer you want to audit this project.');
     if (!dto.openingOffer || dto.openingOffer < 1) throw new BadRequestException('Enter an opening offer of at least $1.');
     if (this.activeProjectAudit(task.id) || this.liveEngagements(task.id, AUDIT_KIND.PROJECT).length) {
@@ -404,6 +414,9 @@ export class AuditRequestsService {
 
     this.ledger.fundAuditEscrow(ar.taskId, this.payerOf(ar), ar.agreedAmount, this.label(ar), this.bucketOf(ar));
     ar.status = AUDIT_STATUS.ESCROW_FUNDED;
+    // The commission in force when the fee was put up is the one taken from it.
+    ar.commissionPercent = this.ledger.expertCommissionSnapshot();
+    ar.fundedAt = new Date().toISOString();
     const updated = this.auditRequestsRepository.update(id, ar);
     this.notifications.notify(ar.expertId, {
       type: 'audit-funded',
@@ -436,7 +449,11 @@ export class AuditRequestsService {
 
     ar.expertId = dto.expertId;
     ar.status = AUDIT_STATUS.IN_PROGRESS;
+    ar.acceptedAt = new Date().toISOString();
     this.auditRequestsRepository.update(id, ar);
+    if (ar.kind === AUDIT_KIND.DISPUTE && ar.disputeId) {
+      this.safe(() => this.disputes.reviewerAccepted(ar.disputeId));
+    }
 
     if (ar.kind === AUDIT_KIND.PROJECT) {
       this.safe(() => this.tasks.publishDraft(ar.taskId));
@@ -462,8 +479,9 @@ export class AuditRequestsService {
     if (TERMINAL.includes(ar.status)) {
       throw new BadRequestException(`This engagement is already ${ar.status}.`);
     }
-    if (ar.status === AUDIT_STATUS.IN_PROGRESS && (ar.auditedMilestoneIds || []).length) {
-      throw new BadRequestException('You have already filed reports on this project, so it can no longer be declined.');
+    if (ar.status === AUDIT_STATUS.IN_PROGRESS
+        && ((ar.auditedMilestoneIds || []).length || Object.keys(ar.milestonePayouts || {}).length)) {
+      throw new BadRequestException('You have already been paid for part of this project, so it can no longer be declined.');
     }
     // A decline after funding goes home to whoever paid.
     const refund = this.refundHeld(ar, `${this.label(ar)} declined — fee returned`);
@@ -500,6 +518,42 @@ export class AuditRequestsService {
     return this.ledger.refundAuditEscrow({ taskId: ar.taskId, clientId: this.payerOf(ar), amount, reason, bucket });
   }
 
+  /**
+   * The payer withdraws a request the reviewer has not taken on yet, and gets
+   * back anything they funded. Without this a reviewer who never answered
+   * held the client's money indefinitely. A dispute's engagement is withdrawn
+   * by withdrawing the dispute itself.
+   */
+  cancelByPayer(id: string, actor: Actor) {
+    const ar = this.raw(id);
+    assertAllowed(actor.id === this.payerOf(ar), 'Only the person paying for this review can withdraw it.');
+    if (ar.kind === AUDIT_KIND.DISPUTE) {
+      return this.disputes.withdraw(ar.disputeId, actor);
+    }
+    if (ar.status === AUDIT_STATUS.IN_PROGRESS || TERMINAL.includes(ar.status)) {
+      throw new BadRequestException(
+        ar.status === AUDIT_STATUS.IN_PROGRESS
+          ? 'The reviewer has already started, so this audit can no longer be withdrawn.'
+          : `This engagement is already ${ar.status}.`,
+      );
+    }
+    const task = this.safe(() => this.tasks.findById(ar.taskId));
+    if (task && task.status === 'draft') {
+      throw new BadRequestException('This project cannot go live without its audit. Cancel the draft project instead to get everything back.');
+    }
+    const refund = this.refundHeld(ar, `${this.label(ar)} withdrawn — fee returned`);
+    const updated = this.auditRequestsRepository.update(id, { status: AUDIT_STATUS.CANCELLED, refund, cancelledBy: actor.id });
+    if (ar.expertId) {
+      this.notifications.notify(ar.expertId, {
+        type: 'audit-cancelled',
+        text: `The ${this.label(ar)} for "${ar.project || 'a project'}" was withdrawn`,
+        subtext: 'The client withdrew the request before you accepted it.',
+        link: '/expert-audit-requests',
+      });
+    }
+    return this.withProgress(updated);
+  }
+
   /** Every engagement on a project that is not finished, declined or cancelled. */
   private liveEngagements(taskId: string, kind?: string) {
     return this.auditRequestsRepository
@@ -526,118 +580,210 @@ export class AuditRequestsService {
   }
 
   // ── Settlement ────────────────────────────────────────────────────────────
+  //
+  // A technical audit is paid milestone by milestone. Each milestone carries a
+  // share of the agreed fee in proportion to its budget (the last one takes
+  // whatever cents are left), and the share is settled once:
+  //
+  //   - the reviewer files that milestone's report            → paid
+  //   - the client approves it within 5 days of submission,
+  //     report or not                                         → paid
+  //   - the client approves it later, with no report filed     → forfeited:
+  //                                         the share goes back to the client
+  //
+  // Settled shares are recorded on the engagement in `milestonePayouts`.
 
-  /**
-   * The project has completed. Its technical audit cannot cover any more
-   * milestones, so it is closed now rather than left holding the client's
-   * money: the reviewer is paid for the share of the budget they actually
-   * audited, and the rest of the fee goes back to the client. Without this,
-   * a project whose milestones were approved before their reports finished
-   * with the audit fee frozen in escrow forever.
-   */
-  closeProjectAudit(taskId: string) {
-    const results: any[] = [];
-    for (const a of this.liveEngagements(taskId, AUDIT_KIND.PROJECT)) {
-      if (a.status !== AUDIT_STATUS.IN_PROGRESS) {
-        const refund = this.refundHeld(a, 'Project completed before the audit started — fee returned');
-        this.auditRequestsRepository.update(a.id, { status: AUDIT_STATUS.CANCELLED, refund });
-        results.push({ id: a.id, refund });
-        continue;
-      }
-      if (a.feePaid) {
-        this.auditRequestsRepository.update(a.id, { status: AUDIT_STATUS.PAID });
-        continue;
-      }
-      const milestones = this.milestones.findAll({ taskId });
-      const audited: string[] = a.auditedMilestoneIds || [];
-      const total = milestones.reduce((s: number, m: any) => s + (Number(m.budget) || 0), 0);
-      const covered = milestones.filter((m: any) => audited.includes(m.id)).reduce((s: number, m: any) => s + (Number(m.budget) || 0), 0);
-      const share = total > 0 ? covered / total : 0;
-      const pay = Math.round(a.agreedAmount * share * 100) / 100;
+  /** Days the reviewer has after a submission before an approval without their report costs them that milestone. */
+  static readonly REPORT_WINDOW_DAYS = 5;
 
-      let payout: any = null;
-      if (pay > 0) {
-        payout = this.ledger.releaseAuditFee({
-          auditRequestId: a.id, taskId, expertId: a.expertId, amount: pay, bucket: 'audit',
-          description: `Audit fee for the ${Math.round(share * 100)}% of the project audited`,
+  private payoutsOf(ar: any): Record<string, any> {
+    return ar.milestonePayouts || {};
+  }
+
+  private recordedTotal(ar: any) {
+    return round2(Object.values(this.payoutsOf(ar)).reduce((a: number, p: any) => a + (Number(p.amount) || 0), 0));
+  }
+
+  /** This milestone's share of the agreed fee. */
+  private shareFor(ar: any, milestoneId: string) {
+    const agreed = Number(ar.agreedAmount) || 0;
+    const remaining = round2(Math.max(0, agreed - this.recordedTotal(ar)));
+    if (remaining <= 0) return 0;
+    const milestones = this.milestones.findAll({ taskId: ar.taskId });
+    const payouts = this.payoutsOf(ar);
+    const others = milestones.filter((m: any) => m.id !== milestoneId && !payouts[m.id]);
+    if (!others.length) return remaining;
+    const total = milestones.reduce((a: number, m: any) => a + (Number(m.budget) || 0), 0);
+    const ms = milestones.find((m: any) => m.id === milestoneId);
+    if (!ms || total <= 0) return 0;
+    return Math.min(remaining, round2(agreed * (Number(ms.budget) || 0) / total));
+  }
+
+  /** Pays or returns one milestone's share, once. */
+  private settleShare(ar: any, ms: any, outcome: 'paid' | 'forfeited', why: string) {
+    if (this.payoutsOf(ar)[ms.id]) return this.payoutsOf(ar)[ms.id];
+    const amount = this.shareFor(ar, ms.id);
+    let payout: any = null;
+    let refund: any = null;
+    if (amount > 0 && outcome === 'paid') {
+      payout = this.ledger.releaseAuditFee({
+        auditRequestId: ar.id, taskId: ar.taskId, expertId: ar.expertId, amount, bucket: 'audit',
+        payoutKey: `${ar.id}:${ms.id}`,
+        commissionPercent: ar.commissionPercent,
+        description: `Audit fee for "${ms.title}" ($${amount} less commission)`,
+      });
+    } else if (amount > 0) {
+      const held = this.ledger.getEscrow(ar.taskId).auditHeld;
+      const back = Math.min(held, amount);
+      if (back > 0) {
+        refund = this.ledger.refundAuditEscrow({
+          taskId: ar.taskId, clientId: this.payerOf(ar), amount: back, bucket: 'audit',
+          reason: `"${ms.title}" was approved without an audit report — that part of the audit fee is returned`,
         });
       }
-      const held = this.ledger.getEscrow(taskId).auditHeld;
-      const refundAmount = Math.min(held, Math.round((a.agreedAmount - pay) * 100) / 100);
-      const refund = refundAmount > 0
-        ? this.ledger.refundAuditEscrow({
-            taskId, clientId: this.payerOf(a), amount: refundAmount, bucket: 'audit',
-            reason: 'Project completed — unaudited part of the audit fee returned',
-          })
-        : null;
-      this.auditRequestsRepository.update(a.id, {
-        status: AUDIT_STATUS.PAID, feePaid: pay > 0, closedEarly: true, paidAmount: pay,
-        paidAt: new Date().toISOString().slice(0, 10), refund,
-      });
-      this.notifications.notify(a.expertId, {
-        type: 'payment',
-        text: pay > 0 ? `$${payout?.net ?? 0} paid for your audit of "${a.project || 'a project'}"` : `The audit of "${a.project || 'a project'}" was closed`,
-        subtext: `The project completed with ${audited.length} of ${milestones.length} milestones audited.`,
-        link: pay > 0 ? '/expert-wallet' : '/expert-audit-requests',
-      });
-      if (refund) {
-        this.notifications.notify(this.payerOf(a), {
-          type: 'payment',
-          text: `$${refund.amount} of the audit fee returned`,
-          subtext: `${a.project || 'Project'} completed before every milestone was audited.`,
-          link: '/client-wallet',
-        });
-      }
-      results.push({ id: a.id, payout, refund });
     }
-    return results;
+    const entry = { status: outcome, amount, net: payout?.net ?? 0, why, at: new Date().toISOString() };
+    const payouts: Record<string, any> = { ...this.payoutsOf(ar), [ms.id]: entry };
+    const paidAmount = round2(Object.values(payouts).filter((p: any) => p.status === 'paid').reduce((a: number, p: any) => a + (Number(p.amount) || 0), 0));
+    const milestones = this.milestones.findAll({ taskId: ar.taskId });
+    const allSettled = milestones.length > 0 && milestones.every((m: any) => payouts[m.id]);
+    this.auditRequestsRepository.update(ar.id, {
+      milestonePayouts: payouts,
+      paidAmount,
+      feePaid: paidAmount > 0,
+      paidAt: paidAmount > 0 ? (ar.paidAt || new Date().toISOString().slice(0, 10)) : ar.paidAt,
+      ...(allSettled ? { status: AUDIT_STATUS.PAID } : {}),
+    });
+
+    if (payout) {
+      this.notifications.notify(ar.expertId, {
+        type: 'payment',
+        text: `$${payout.net ?? 0} paid for your audit of "${ms.title}"`,
+        subtext: `${ar.project || 'Project'} — ${why}`,
+        link: '/expert-wallet',
+      });
+    } else if (outcome === 'forfeited' && amount > 0) {
+      this.notifications.notify(ar.expertId, {
+        type: 'audit-forfeited',
+        text: `"${ms.title}" was approved without your report`,
+        subtext: `No report was filed within ${AuditRequestsService.REPORT_WINDOW_DAYS} days of submission, so its $${amount} share went back to the client.`,
+        link: '/expert-audit-requests',
+      });
+      this.notifications.notify(this.payerOf(ar), {
+        type: 'payment',
+        text: `$${refund?.amount ?? amount} of the audit fee returned`,
+        subtext: `"${ms.title}" was approved without an audit report.`,
+        link: '/client-wallet',
+      });
+    }
+    return entry;
   }
 
   /**
-   * Called by AuditReportsService once a technical-audit report is filed.
-   *
-   * The fee is agreed once for the whole project audit and is released once,
-   * when the audit is actually finished — every milestone on the task has a
-   * report. Until then it stays in escrow.
+   * A milestone was accepted (approved, auto-approved or won by the worker in
+   * a dispute). Settles the reviewer's share for it if their report has not
+   * already done so.
    */
-  settle(id: string, milestoneId?: string) {
+  settleMilestoneOnApproval(ms: any) {
+    const ar = this.auditRequestsRepository
+      .findAll({ taskId: ms.taskId, kind: AUDIT_KIND.PROJECT })
+      .find((a: any) => a.expertId && a.status === AUDIT_STATUS.IN_PROGRESS);
+    if (!ar || this.payoutsOf(ar)[ms.id]) return null;
+    if (this.isMilestoneAudited(ar, ms.id)) {
+      return this.settleShare(ar, ms, 'paid', 'report filed');
+    }
+    const submitted = ms.submittedAt ? new Date(ms.submittedAt).getTime() : NaN;
+    const windowMs = AuditRequestsService.REPORT_WINDOW_DAYS * 86_400_000;
+    const late = !Number.isFinite(submitted) || Date.now() - submitted >= windowMs;
+    return late
+      ? this.settleShare(ar, ms, 'forfeited', `approved with no report after ${AuditRequestsService.REPORT_WINDOW_DAYS} days`)
+      : this.settleShare(ar, ms, 'paid', 'approved by the client before the report was due');
+  }
+
+  /**
+   * Refuses a report that cannot be filed — checked BEFORE the report is
+   * written. It used to be checked after, so a refused report (on a closed
+   * audit, say) still overwrote the stored one and the caller just saw a 400.
+   */
+  assertCanFile(id: string, milestoneId?: string) {
     const ar = this.raw(id);
     if (ar.kind !== AUDIT_KIND.PROJECT) {
       throw new BadRequestException('A dispute is settled by its verdict, not by an audit report.');
     }
     if (!milestoneId) throw new BadRequestException('Name the milestone this report covers.');
     if (ar.closedEarly) {
-      throw new BadRequestException('This project has completed and its audit was closed, so no more reports can be filed.');
+      throw new BadRequestException('This project has ended and its audit was closed, so no more reports can be filed.');
     }
-
     const fileable = [AUDIT_STATUS.IN_PROGRESS, AUDIT_STATUS.REPORT_SUBMITTED, AUDIT_STATUS.PAID];
     if (!fileable.includes(ar.status as any)) {
       throw new BadRequestException(
         `A report can only be filed against an audit in progress (current status: ${ar.status}).`,
       );
     }
-
-    // Record coverage before deciding whether the engagement is finished.
-    this.recordMilestoneAudited(id, milestoneId);
-    const fresh = this.raw(id);
-    const progress = this.auditProgress(fresh);
-
-    if (progress && !progress.complete) {
-      this.auditRequestsRepository.update(id, { status: AUDIT_STATUS.IN_PROGRESS });
-      return {
-        auditRequest: this.withProgress(this.raw(id)),
-        payout: {
-          pending: true,
-          reason: 'The audit fee is released once every milestone has a report.',
-          audited: progress.audited,
-          total: progress.total,
-          remaining: progress.pendingMilestoneIds,
-        },
-      };
+    const record = this.payoutsOf(ar)[milestoneId];
+    if (record?.status === 'forfeited') {
+      throw new BadRequestException(
+        `This milestone was approved without a report after the ${AuditRequestsService.REPORT_WINDOW_DAYS}-day window, so it is closed.`,
+      );
     }
+    const ms = this.safe(() => this.milestones.findById(milestoneId));
+    if (ms && ['completed', 'approved', 'cancelled'].includes(ms.status) && this.isMilestoneAudited(ar, milestoneId)) {
+      throw new BadRequestException('This milestone is settled and its report is final.');
+    }
+    return ar;
+  }
 
-    const payout = this.payExpert(fresh);
-    return { auditRequest: this.withProgress(this.raw(id)), payout };
+  /**
+   * Called by AuditReportsService once a technical-audit report is filed:
+   * records coverage and pays this milestone's share.
+   */
+  settle(id: string, milestoneId?: string) {
+    this.assertCanFile(id, milestoneId);
+    this.recordMilestoneAudited(id, milestoneId);
+    const ar = this.raw(id);
+    const ms = this.milestones.findById(milestoneId!);
+    const entry = this.settleShare(ar, ms, 'paid', 'report filed');
+    const progress = this.auditProgress(this.raw(id));
+    return {
+      auditRequest: this.withProgress(this.raw(id)),
+      payout: { milestoneId, ...entry, audited: progress?.audited, total: progress?.total },
+    };
+  }
+
+  /**
+   * The project has ended — completed, or the contract ended for
+   * non-delivery. Its technical audit is closed: anything not yet started is
+   * cancelled and refunded; for an audit under way every milestone without a
+   * settled share is forfeited (there is nothing left to report on), and
+   * whatever is still held for the engagement goes back to the client.
+   */
+  closeProjectAudit(taskId: string, why = 'Project ended') {
+    const results: any[] = [];
+    for (const a of this.liveEngagements(taskId, AUDIT_KIND.PROJECT)) {
+      if (a.status !== AUDIT_STATUS.IN_PROGRESS) {
+        const refund = this.refundHeld(a, `${why} before the audit started — fee returned`);
+        this.auditRequestsRepository.update(a.id, { status: AUDIT_STATUS.CANCELLED, refund });
+        results.push({ id: a.id, refund });
+        continue;
+      }
+      for (const ms of this.milestones.findAll({ taskId })) {
+        if (!this.payoutsOf(this.raw(a.id))[ms.id]) {
+          this.settleShare(this.raw(a.id), ms, 'forfeited', `${why} before this milestone was audited`);
+        }
+      }
+      const fresh = this.raw(a.id);
+      const leftover = round2(Math.max(0, (Number(fresh.agreedAmount) || 0) - this.recordedTotal(fresh)));
+      const held = this.ledger.getEscrow(taskId).auditHeld;
+      const back = Math.min(held, leftover);
+      const refund = back > 0
+        ? this.ledger.refundAuditEscrow({ taskId, clientId: this.payerOf(fresh), amount: back, bucket: 'audit', reason: `${why} — unused audit fee returned` })
+        : null;
+      this.auditRequestsRepository.update(a.id, {
+        status: AUDIT_STATUS.PAID, closedEarly: true, closedAt: new Date().toISOString().slice(0, 10), closeRefund: refund,
+      });
+      results.push({ id: a.id, paidAmount: fresh.paidAmount || 0, refund });
+    }
+    return results;
   }
 
   /**
@@ -686,6 +832,7 @@ export class AuditRequestsService {
       expertId: ar.expertId,
       amount: ar.agreedAmount,
       bucket: this.bucketOf(ar),
+      commissionPercent: ar.commissionPercent,
     });
     this.auditRequestsRepository.update(ar.id, {
       feePaid: true,
@@ -719,9 +866,11 @@ export class AuditRequestsService {
       ? this.safe(() => this.milestones.findAll({ taskId: ar.taskId })) || []
       : [];
     const audited: string[] = ar.auditedMilestoneIds || [];
+    const payouts = ar.milestonePayouts || {};
 
     const auditedIds = milestones.filter((m: any) => audited.includes(m.id)).map((m: any) => m.id);
-    const pending = milestones.filter((m: any) => !audited.includes(m.id));
+    // Settled — reported on, or its share already paid or returned.
+    const pending = milestones.filter((m: any) => !audited.includes(m.id) && !payouts[m.id]);
     // Submitted and waiting on the reviewer, versus not yet handed over at all.
     const awaitingReview = pending.filter((m: any) =>
       ['submitted', 'review', 'disputed'].includes(m.status) || !!m.deliverable,
@@ -734,6 +883,8 @@ export class AuditRequestsService {
       awaitingReview: awaitingReview.length,
       awaitingReviewMilestoneIds: awaitingReview.map((m: any) => m.id),
       pendingMilestoneIds: pending.map((m: any) => m.id),
+      payouts,
+      paidAmount: Number(ar.paidAmount) || 0,
       // No milestones means nothing left to audit, rather than never finished —
       // otherwise the fee could never be released.
       complete: pending.length === 0,
@@ -792,8 +943,8 @@ export class AuditRequestsService {
     if (!expert) throw new BadRequestException(`No user found with id "${expertId}".`);
     if (expert.role !== 'expert') throw new BadRequestException(`${expert.name} is not an Expert Reviewer.`);
     if (expert.status !== 'active') throw new BadRequestException(`${expert.name}'s account is not active.`);
-    if (category && Array.isArray(expert.domains) && expert.domains.length
-        && !expert.domains.includes(category)) {
+    // A reviewer with no domains covers nothing — not everything.
+    if (category && !(Array.isArray(expert.domains) && expert.domains.includes(category))) {
       throw new BadRequestException(`${expert.name} does not review ${category} work.`);
     }
     // A category is only given when someone is being asked to take on a new

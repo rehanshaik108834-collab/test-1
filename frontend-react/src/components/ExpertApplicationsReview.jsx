@@ -122,8 +122,8 @@ function ApplicationDetails({ app, showDocuments, onClose, onAction }) {
         <DetailField label="Country">{app.country || 'N/A'}</DetailField>
         <DetailField label="Primary Expertise">{app.expertise || 'N/A'}</DetailField>
         <DetailField label="Experience">{`${app.experience || 'N/A'} years`}</DetailField>
-        <DetailField label="LinkedIn">{app.linkedin ? <a href={app.linkedin} target="_blank">{app.linkedin}</a> : 'N/A'}</DetailField>
-        <DetailField label="GitHub">{app.github ? <a href={app.github} target="_blank">{app.github}</a> : 'N/A'}</DetailField>
+        <DetailField label="LinkedIn">{app.linkedin ? <a href={app.linkedin} target="_blank" rel="noopener noreferrer">{app.linkedin}</a> : 'N/A'}</DetailField>
+        <DetailField label="GitHub">{app.github ? <a href={app.github} target="_blank" rel="noopener noreferrer">{app.github}</a> : 'N/A'}</DetailField>
       </div>
       {showDocuments && (
         <DetailField label="Documents" style={{ marginTop: 6 }} valueStyle={{ fontWeight: 400, fontSize: 13 }}>

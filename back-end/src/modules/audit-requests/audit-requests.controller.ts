@@ -63,6 +63,13 @@ export class AuditRequestsController {
     return this.auditRequestsService.reassign(id, dto, actor);
   }
 
+  @Post(':id/cancel')
+  @Roles('client')
+  @ApiOperation({ summary: 'Withdraw a request the reviewer has not accepted yet (any funded fee is returned)' })
+  cancel(@Param('id') id: string, @CurrentActor() actor: Actor) {
+    return this.auditRequestsService.cancelByPayer(id, actor);
+  }
+
   @Post(':id/offers')
   @ApiHeader({ name: 'role', required: true, description: 'User role required' })
   @Roles('client', 'expert')

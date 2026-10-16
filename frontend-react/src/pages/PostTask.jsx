@@ -24,6 +24,8 @@ const skillSuggestions = ['React','TypeScript','Node.js','Web Design','JavaScrip
 
 import { CATEGORIES } from '../utils/categories';
 const EMPTY_MILESTONE = { title: '', description: '', budget: '', deadline: '' };
+/** Today as YYYY-MM-DD, the earliest date a deadline may take. */
+const TODAY = () => new Date().toISOString().slice(0, 10);
 const NO_ERRORS = { msTitleErr: '', msDescErr: '', msBudgetErr: '', msDeadlineErr: '' };
 
 // ── Inline SVG paths used by the original markup ──
@@ -77,7 +79,7 @@ export default function PostTask() {
   const [category, setCategory] = useState('Web Development');
   const [deadline, setDeadline] = useState('');
   const [budget, setBudget] = useState(0);
-  const [currency, setCurrency] = useState('USD');
+  const currency = 'USD';
   const [skills, setSkills] = useState([]);
   const [skillInput, setSkillInput] = useState('');
   const [suggestions, setSuggestions] = useState({ active: false, items: [], gen: 0 });
@@ -198,6 +200,7 @@ export default function PostTask() {
     if (!nm.budget || budgetMsg) errs.msBudgetErr = budgetMsg || 'Budget is required';
 
     if (!nm.deadline) errs.msDeadlineErr = 'Deadline is required';
+    else if (nm.deadline < TODAY()) errs.msDeadlineErr = 'The date is in the past';
     else if (deadline && nm.deadline > deadline) errs.msDeadlineErr = `Must be on or before project deadline (${deadline})`;
 
     if (Object.values(errs).some(Boolean)) { setMsErrors(errs); return; }
@@ -295,6 +298,8 @@ export default function PostTask() {
     else clearError('taskTitleInput');
 
     if (!desc || desc.length < 5) { Validate.toast('Description is required.', 'error'); valid = false; }
+    if (deadline && deadline < TODAY()) { Validate.toast('The project deadline is in the past.', 'error'); valid = false; }
+    if (budget && !/^\d+(\.\d{1,2})?$/.test(String(budget).trim())) { Validate.toast('Enter the budget in dollars and cents (e.g. 1500 or 1500.50).', 'error'); valid = false; }
     if (!budget || parseFloat(budget) <= 0) { Validate.toast('Please enter a valid budget greater than 0.', 'error'); valid = false; }
     if (milestones.length === 0) { Validate.toast('Please add at least one milestone before publishing.', 'error'); valid = false; }
 
@@ -435,7 +440,7 @@ export default function PostTask() {
               </div>
               <div className="form-group">
                 <label className="form-label">Deadline</label>
-                <input type="date" className="form-input" onChange={e => setDeadline(e.target.value)} />
+                <input type="date" className="form-input" min={TODAY()} onChange={e => setDeadline(e.target.value)} />
               </div>
               <div className="form-group">
                 <label className="form-label">Required Skills</label>
@@ -473,10 +478,10 @@ export default function PostTask() {
                 </div>
                 <div className="form-group">
                   <label className="form-label">Currency</label>
-                  <select className="form-select" value={currency} onChange={e => setCurrency(e.target.value)}>
+                  {/* Wallets and escrow are held in dollars, so projects are too.
+                      Picking EUR used to charge the same number of dollars. */}
+                  <select className="form-select" value={currency} disabled title="Projects are priced in US dollars">
                     <option value="USD">USD</option>
-                    <option value="EUR">EUR</option>
-                    <option value="GBP">GBP</option>
                   </select>
                 </div>
               </div>
@@ -546,7 +551,7 @@ export default function PostTask() {
                       </div>
                       <div className="form-group">
                         <RequiredLabel>Deadline</RequiredLabel>
-                        {msField('msDeadlineErr', <input type="date" className={errClass('msDeadlineErr')} id="newMilestoneDeadline" defaultValue={newMilestone.deadline} onInput={updateNew('deadline', 'msDeadlineErr')} />)}
+                        {msField('msDeadlineErr', <input type="date" className={errClass('msDeadlineErr')} id="newMilestoneDeadline" min={TODAY()} max={deadline || undefined} defaultValue={newMilestone.deadline} onInput={updateNew('deadline', 'msDeadlineErr')} />)}
                       </div>
                     </div>
                     <div className="milestone-form-actions">

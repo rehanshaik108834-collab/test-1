@@ -8,6 +8,7 @@ import { CurrentActor } from '../../common/decorators/actor.decorator';
 import type { Actor } from '../../common/decorators/actor.decorator';
 import { ContactsService } from '../contacts/contacts.service';
 import { UsersService } from '../users/users.service';
+import { FilesService } from '../files/files.service';
 
 @ApiTags('Messages')
 @Controller('messages')
@@ -18,6 +19,7 @@ export class MessagesController {
     @Inject(forwardRef(() => ContactsService)) private readonly contacts: ContactsService,
     @Inject(forwardRef(() => UsersService)) private readonly users: UsersService,
     @Inject(forwardRef(() => NotificationsService)) private readonly notifications: NotificationsService,
+    @Inject(forwardRef(() => FilesService)) private readonly files: FilesService,
   ) {}
 
   /** Conversations you are in. This returned every message on the platform to any caller. */
@@ -45,7 +47,16 @@ export class MessagesController {
     // message cannot carry an arbitrary URL dressed up as an attachment.
     const a = dto.attachment;
     if (a && !a.id) throw new BadRequestException('Upload the file before attaching it.');
-    const attachment = a ? { id: a.id, name: a.name, size: a.size, mime: a.mime, url: `/api/files/${a.id}` } : null;
+    if (a) {
+      // Only a file uploaded to this project, by the sender — not an id
+      // lifted from somewhere else.
+      const f = this.files.findRecord(a.id!);
+      if (!f || f.taskId !== dto.taskId || f.uploadedBy !== actor.id) {
+        throw new BadRequestException('Attach a file you uploaded to this project.');
+      }
+    }
+    const stored = a ? this.files.findRecord(a.id!) : null;
+    const attachment = stored ? { id: stored.id, name: stored.name, size: stored.size, mime: stored.mime, url: `/api/files/${stored.id}` } : null;
     const msg = this.messagesService.create({
       ...dto,
       content,

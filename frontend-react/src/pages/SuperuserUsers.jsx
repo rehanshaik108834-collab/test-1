@@ -25,7 +25,8 @@ const ROLE_OPTIONS = [
 // Expert Reviewers join through the intake desk's application review, which
 // records the domains they cover — an account made here would have none and
 // could never be offered to a client.
-const CREATE_ROLE_OPTIONS = ROLE_OPTIONS.filter(([value]) => value !== 'expert');
+// A second Super User could never be suspended or removed, so none is made here.
+const CREATE_ROLE_OPTIONS = ROLE_OPTIONS.filter(([value]) => value !== 'expert' && value !== 'superuser');
 const ROLE_BADGES = { client: 'badge-blue', worker: 'badge-green', expert: 'badge-purple', superuser: 'badge-red', 'revenue-admin': 'badge-orange', 'intake-admin': 'badge-blue', 'compliance-admin': 'badge-purple' };
 const ROLE_COLORS = { client: 'linear-gradient(135deg,#6366f1,#4f46e5)', worker: 'linear-gradient(135deg,#10b981,#059669)', expert: 'linear-gradient(135deg,#a855f7,#7c3aed)', superuser: 'linear-gradient(135deg,#ef4444,#dc2626)', 'revenue-admin': 'linear-gradient(135deg,#f97316,#ea580c)', 'intake-admin': 'linear-gradient(135deg,#3b82f6,#2563eb)', 'compliance-admin': 'linear-gradient(135deg,#8b5cf6,#7c3aed)' };
 
@@ -93,7 +94,7 @@ export default function SuperuserUsers() {
       { fieldId: 'mEmail', value: email, checks: [Validate.email] },
       { fieldId: 'mRole', value: role, checks: [v => Validate.selected(v, 'role')] },
     ];
-    if (!editingUserId || password) {
+    if (!editingUserId) {
       rules.push({ fieldId: 'mPassword', value: password, checks: [Validate.password] });
     }
     const { valid } = validateForm(rules);
@@ -110,12 +111,11 @@ export default function SuperuserUsers() {
       if (editingUserId) {
         // A role is fixed when the account is made; everything else here is saved.
         Store.updateUser(editingUserId, { name, email, status });
-        if (password) Store.resetUserPassword(editingUserId, password);
         Validate.toast('User updated.', 'success');
       } else {
         const created = Store.createUser({ name, email, password, role, avatarColor: ROLE_COLORS[role] || '' });
         if (status === 'suspended') Store.updateUser(created.id, { status });
-        Validate.toast('User created.', 'success');
+        Validate.toast('Account created. Give its owner the temporary password — they must choose their own when they first sign in.', 'success');
       }
     } catch (e) {
       Validate.toast((e.message), 'error');
@@ -253,12 +253,20 @@ export default function SuperuserUsers() {
               <input className="form-input" id="mEmail" type="email" placeholder="user@example.com" value={form.email} onChange={setField('email', 'mEmail')} style={errorStyle('mEmail')} />
               <FieldError id="mEmail" message={errors.mEmail} />
             </div>
-            <div className="form-group">
-              <label className="form-label">Password {!editingUserId ? <span className="req" id="pwRequired">*</span> : null}</label>
-              {' '}
-              <input className="form-input" id="mPassword" type="password" placeholder={editingUserId ? 'Leave blank to keep the current password' : 'At least 8 characters with A-z, 0-9 and a symbol'} value={form.password} onChange={setField('password', 'mPassword')} style={errorStyle('mPassword')} />
-              <FieldError id="mPassword" message={errors.mPassword} />
-            </div>
+            {/* Passwords belong to their owners. A new account gets a temporary
+                one that its owner must replace at first sign-in; nobody can set
+                an existing person's password from here. */}
+            {!editingUserId && (
+              <div className="form-group">
+                <label className="form-label">Temporary password <span className="req" id="pwRequired">*</span></label>
+                {' '}
+                <input className="form-input" id="mPassword" type="password" placeholder="At least 8 characters with A-z, 0-9 and a symbol" value={form.password} onChange={setField('password', 'mPassword')} style={errorStyle('mPassword')} />
+                <FieldError id="mPassword" message={errors.mPassword} />
+                <div style={{ fontSize: 12, color: 'var(--muted-foreground)', marginTop: 4 }}>
+                  The new owner must replace it before they can use the account. The account is recorded as created by you.
+                </div>
+              </div>
+            )}
             <div className="form-group">
               <label className="form-label">Role <span className="req">*</span></label>
               {' '}

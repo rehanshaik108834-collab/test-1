@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, Inject, forwardRef, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { CreateDisputeDto } from './dto/create-dispute.dto';
 import { ResolveDisputeDto } from './dto/resolve-dispute.dto';
 import { DisputesRepository } from './disputes.repository';
@@ -16,6 +16,16 @@ import { SETTLED } from '../milestones/milestones.service';
 import { ROLES } from '../../common/constants/roles';
 
 const today = () => new Date().toISOString().slice(0, 10);
+const DAY_MS = 86_400_000;
+/**
+ * A dispute's reviewer has this long to accept it, and then this long again
+ * to give a verdict. Past either, the dispute expires: the reviewer fee goes
+ * back and the milestone returns to the client's review queue. Without it an
+ * unfunded $1 dispute froze a milestone — and the worker's pay — forever.
+ */
+export const DISPUTE_STEP_DAYS = 7;
+/** After a dispute ends without a verdict, the client gets this long before the milestone auto-approves. */
+const REVIEW_GRACE_DAYS = 2;
 
 const VERDICT_TEXT: Record<string, string> = {
   'worker-favour': 'in favour of the worker — milestone paid',
@@ -29,7 +39,9 @@ const VERDICT_TEXT: Record<string, string> = {
  * Delegates all data-access operations to DisputesRepository.
  */
 @Injectable()
-export class DisputesService {
+export class DisputesService implements OnModuleInit, OnModuleDestroy {
+  private timer: ReturnType<typeof setInterval> | null = null;
+
   constructor(
     private readonly disputesRepository: DisputesRepository,
     @Inject(forwardRef(() => MilestonesService)) private milestonesService: MilestonesService,
@@ -40,6 +52,16 @@ export class DisputesService {
     private readonly log: AppLoggerService,
     @Inject(forwardRef(() => NotificationsService)) private notifications: NotificationsService,
   ) {}
+
+  onModuleInit() {
+    if (process.env.NODE_ENV === 'test') return;
+    this.timer = setInterval(() => this.expireDue(), 60_000);
+    this.timer.unref?.();
+  }
+
+  onModuleDestroy() {
+    if (this.timer) clearInterval(this.timer);
+  }
 
   findAll(viewer?: { id?: string; role?: string }) {
     const all = this.disputesRepository.findAll();
@@ -86,6 +108,9 @@ export class DisputesService {
     const task = this.tasksService.findById(dto.taskId);
     if (!task.workerId) {
       throw new BadRequestException('A dispute needs a hired worker — nobody is working on this project yet.');
+    }
+    if (task.status !== 'in-progress') {
+      throw new BadRequestException(`This project is ${task.status}, so its milestones can no longer be disputed.`);
     }
     // Disputes are the client's remedy against submitted work. A worker whose
     // submission is not being approved talks to the client in the workroom.
@@ -141,6 +166,8 @@ export class DisputesService {
       createdAt: new Date().toISOString().slice(0, 10),
       resolvedAt: null,
       milestoneStatusBefore: ms.status,
+      raisedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + DISPUTE_STEP_DAYS * DAY_MS).toISOString(),
     };
 
     // Open the engagement first: if it cannot be opened, no dispute is stored
@@ -163,7 +190,8 @@ export class DisputesService {
     });
     dispute.auditRequestId = auditRequest.id;
     this.disputesRepository.insert(dispute);
-    this.milestonesService.systemUpdate(ms.id, { status: 'disputed' });
+    // The auto-approval clock stops while a reviewer looks at the work.
+    this.milestonesService.systemUpdate(ms.id, { status: 'disputed', reviewDueAt: null });
 
     this.notifications.notify(againstId, {
       type: 'dispute',
@@ -185,7 +213,81 @@ export class DisputesService {
   setReviewer(disputeId: string, expertId: string | null, auditRequestId: string) {
     const d = this.disputesRepository.findById(disputeId);
     if (!d || d.status !== 'open') return d;
-    return this.disputesRepository.update(disputeId, { expertId, auditRequestId });
+    const patch: any = { expertId, auditRequestId };
+    // A new reviewer gets a fresh week to accept.
+    if (expertId) patch.expiresAt = new Date(Date.now() + DISPUTE_STEP_DAYS * DAY_MS).toISOString();
+    return this.disputesRepository.update(disputeId, patch);
+  }
+
+  /** The reviewer accepted: they now have a week to give a verdict. */
+  reviewerAccepted(disputeId: string) {
+    const d = this.disputesRepository.findById(disputeId);
+    if (!d || d.status !== 'open') return d;
+    return this.disputesRepository.update(disputeId, {
+      acceptedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + DISPUTE_STEP_DAYS * DAY_MS).toISOString(),
+    });
+  }
+
+  /**
+   * The client withdraws their dispute before a reviewer has taken it on.
+   * Any fee they funded comes back, and the milestone returns to their review
+   * queue — approve it, ask for changes, or dispute it again.
+   */
+  withdraw(id: string, actor: Actor) {
+    const d = this.findById(id);
+    assertAllowed(d.raisedBy === actor.id, 'Only the client who raised this dispute can withdraw it.');
+    if (d.status !== 'open') throw new BadRequestException(`This dispute is already ${d.status}.`);
+    const engagement = d.auditRequestId ? this.safe(() => this.auditRequests.findById(d.auditRequestId)) : null;
+    if (engagement && engagement.status === 'in-progress') {
+      throw new BadRequestException(
+        'The reviewer has accepted this dispute, so it can no longer be withdrawn. They have until ' +
+          `${String(d.expiresAt || '').slice(0, 10) || 'the deadline'} to give a verdict, after which it expires and your fee is returned.`,
+      );
+    }
+    return this.endWithoutVerdict(d, 'withdrawn', 'Dispute withdrawn by the client — reviewer fee returned');
+  }
+
+  /**
+   * Ends every open dispute whose reviewer missed their step. Runs on a timer;
+   * `now` is a parameter so tests can move the clock. Disputes raised before
+   * these rules carry no `expiresAt` and are left alone.
+   */
+  expireDue(now = Date.now()) {
+    const ended: string[] = [];
+    for (const d of this.disputesRepository.findAll()) {
+      if (d.status !== 'open' || !d.expiresAt || new Date(d.expiresAt).getTime() > now) continue;
+      try {
+        this.endWithoutVerdict(d, 'expired', 'Dispute expired with no verdict — reviewer fee returned');
+        ended.push(d.id);
+      } catch (e) {
+        this.log.warn('disputes.expire', `could not expire dispute ${d.id}`, e);
+      }
+    }
+    return ended;
+  }
+
+  private endWithoutVerdict(d: any, status: 'withdrawn' | 'expired', reason: string) {
+    const refunds = this.auditRequests.closeForDispute(d.id, reason);
+    const ms = d.milestoneId ? this.safe(() => this.milestonesService.findById(d.milestoneId)) : null;
+    if (ms && ms.status === 'disputed') {
+      this.milestonesService.systemUpdate(ms.id, {
+        status: d.milestoneStatusBefore === 'review' ? 'review' : 'submitted',
+        // The client has a short window to act before the work is paid.
+        reviewDueAt: new Date(Date.now() + REVIEW_GRACE_DAYS * DAY_MS).toISOString(),
+      });
+    }
+    const updated = this.disputesRepository.update(d.id, { status, resolvedAt: today(), endedReason: reason });
+    const text = status === 'withdrawn' ? 'The client withdrew the dispute' : 'The dispute expired without a verdict';
+    for (const userId of [d.raisedBy, d.againstId, d.expertId]) {
+      this.notifications.notify(userId, {
+        type: 'dispute-resolved',
+        text,
+        subtext: `${d.project || 'Project'} — ${d.milestone || 'milestone'} is back with the client for review (auto-approves in ${REVIEW_GRACE_DAYS} days).`,
+        link: userId === d.againstId ? `/worker-milestone-board?id=${d.taskId}` : userId === d.expertId ? '/expert-dispute-cases' : `/review-deliverable?milestoneId=${d.milestoneId}`,
+      });
+    }
+    return { ...updated, refunds };
   }
 
   /**
@@ -228,11 +330,9 @@ export class DisputesService {
     let settlement: any = null;
     if (ms) {
       if (dto.verdict === 'worker-favour') {
-        settlement = this.ledger.releaseMilestone({
-          milestoneId: ms.id, taskId: task.id, clientId: task.clientId, workerId: ms.workerId,
-          amount: ms.budget, description: `Dispute resolved in the worker's favour — ${ms.title}`,
-        });
-        this.milestonesService.systemUpdate(ms.id, { status: 'completed', approvedAt: today(), progress: 100 });
+        // The same path as an approval, so the worker's agreed fee rate and
+        // the audit reviewer's share are settled exactly as they would be.
+        settlement = this.milestonesService.payOut(ms, task, `Dispute resolved in the worker's favour — ${ms.title}`, 'verdict').release;
       } else if (dto.verdict === 'client-favour') {
         // The work is not accepted: the milestone goes back to the worker's
         // To Do list with the reviewer's notes, exactly like a revision

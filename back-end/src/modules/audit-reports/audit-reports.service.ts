@@ -79,6 +79,8 @@ export class AuditReportsService {
       throw new BadRequestException('A dispute is settled by its verdict on the Resolve Dispute page, not by an audit report.');
     }
     if (!dto.milestoneId) throw new BadRequestException('Choose the milestone this report covers.');
+    // Every refusal happens before the report is written.
+    this.auditRequestsService.assertCanFile(dto.auditRequestId, dto.milestoneId);
     const ms = this.milestonesService.findById(dto.milestoneId);
     if (ms.taskId !== ar.taskId) {
       throw new BadRequestException('That milestone does not belong to the audited project.');
