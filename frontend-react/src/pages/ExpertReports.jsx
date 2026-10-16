@@ -108,15 +108,22 @@ export default function ExpertReports() {
   const session = Auth.getCurrentUser();
   const [reports] = useState(() => loadReports(Store, session.userId));
   const [activeFilter, setActiveFilter] = useState('All');
-  // "Reports so far" on an audit request opens this page searched to its project.
-  const [searchParams] = useSearchParams();
+  // "Reports so far" / "View Reports" on an audit request open this page
+  // showing every report filed on that one audit (?audit=<auditRequestId>).
+  const [searchParams, setSearchParams] = useSearchParams();
+  const auditFilter = searchParams.get('audit') || '';
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get('q') || '');
+  const auditReports = auditFilter ? reports.filter(r => r.auditRequestId === auditFilter) : [];
+  const auditProject = auditReports[0]?.project
+    || (auditFilter ? Store.getAuditRequestById(auditFilter)?.project : '') || 'this project';
+  const showAll = () => setSearchParams({});
 
   const q = searchQuery.trim().toLowerCase();
   const list = reports.filter(r => {
     const matchQ = !q || [r.project, r.milestone, r.type, r.worker, r.reportId, r.verdict].some(v => String(v).toLowerCase().includes(q));
     const matchF = activeFilter === 'All' || r.type === activeFilter;
-    return matchQ && matchF;
+    const matchA = !auditFilter || r.auditRequestId === auditFilter;
+    return matchQ && matchF && matchA;
   });
 
   const count = type => reports.filter(r => r.type === type).length;
@@ -131,6 +138,18 @@ export default function ExpertReports() {
           <StatCard valueId="statDispute" value={count('Dispute Resolution')} label="Dispute Reports" icon="scale" iconBg="#faf5ff" iconColor="#a855f7" />
           <StatCard valueId="statPublished" value={reports.filter(r => r.status === 'Published').length} valueStyle={{ color: '#10b981' }} label="Published" icon="check-circle" iconBg="#ecfdf5" iconColor="#10b981" />
         </div>
+
+        {auditFilter ? (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, padding: '12px 18px', marginBottom: 16, borderRadius: 12, background: '#eef2ff', border: '1px solid #c7d2fe', fontSize: 14 }}>
+            <span>
+              <strong>{auditProject}</strong>
+              {` · ${auditReports.length} audit report${auditReports.length === 1 ? '' : 's'} filed on this project`}
+            </span>
+            <button onClick={showAll} style={{ padding: '6px 14px', borderRadius: 10, border: '1px solid #c7d2fe', background: 'var(--card)', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>
+              Show all reports
+            </button>
+          </div>
+        ) : null}
 
         <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden' }}>
           <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>

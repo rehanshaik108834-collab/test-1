@@ -161,13 +161,14 @@ function AuditCard({ a }) {
           </button>
         ) : ''}
         {a.rawStatus === 'paid' || (a.auditProgress && a.auditProgress.audited > 0) ? (
-          // A finished audit opens its report. One still running goes to the
-          // Reports page, filtered to this project — the report form would
-          // open on the next milestone, which has not been audited yet.
-          <Link to={a.rawStatus === 'paid' ? `/expert-report-audit?id=${a.id}` : `/expert-reports?q=${encodeURIComponent(a.project)}`}
+          // Every report filed on this project, finished audit or not. The
+          // single-report page only ever showed one milestone: the latest
+          // report once the audit was done, or the next (unaudited) milestone
+          // while it was still running.
+          <Link to={`/expert-reports?audit=${encodeURIComponent(a.id)}`}
                 className="btn-review" style={{ background: '#f8f9fb', color: 'var(--foreground)', border: '1px solid var(--border)' }}>
             <Icon name="file-text" style={{ width: 15, height: 15 }} />
-            {a.rawStatus === 'paid' ? 'View Report' : 'Reports so far'}
+            {a.rawStatus === 'paid' ? 'View Reports' : 'Reports so far'}
           </Link>
         ) : ''}
       </div>
