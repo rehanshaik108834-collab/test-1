@@ -19,10 +19,12 @@ const API = LANNENT_API;
 const KIND_LABEL = {
   'money': 'money', 'fee.change': 'fee change',
   'admin.change': 'admin change', 'admin.read': 'admin read',
+  'account.create': 'account created', 'account.suspend': 'account suspended', 'account.delete': 'account deleted',
 };
 const KIND_CLASS = {
   'money': 'kind-money', 'fee.change': 'kind-fee',
   'admin.change': 'kind-admin-change', 'admin.read': 'kind-admin-read',
+  'account.create': 'kind-account', 'account.suspend': 'kind-account', 'account.delete': 'kind-account',
 };
 
 /** Reads the audit log (optionally one kind) — null when it cannot be read. */
@@ -46,6 +48,15 @@ function detailText(e) {
     if (!rows.length) return 'no rates changed';
     return rows.map(([k, v]) => `${k}: ${v.before} → ${v.after}`).join(', ');
   }
+  // Account events name who was affected; the actor column already says who acted.
+  if (String(e.kind).startsWith('account.') && e.detail) {
+    const d = e.detail;
+    return [d.email || d.userId, d.role].filter(Boolean).join(' · ');
+  }
+  // Payouts and refunds the platform made on its own (auto-approval, dispute expiry).
+  if (e.actorRole === 'system' && e.detail && e.detail.reason) {
+    return [e.detail.reason, e.detail.amount != null ? '₹' + e.detail.amount : ''].filter(Boolean).join(' · ');
+  }
   if (e.detail && e.detail.durationMs != null) return e.detail.durationMs + 'ms';
   return '';
 }
@@ -60,7 +71,7 @@ function AuditRows({ data }) {
       <td className="mono" style={{ whiteSpace: 'nowrap' }}>{e.at.slice(0, 19).replace('T', ' ')}</td>
       <td><span className={`kind ${KIND_CLASS[e.kind] || 'kind-admin-read'}`}>{KIND_LABEL[e.kind] || e.kind}</span></td>
       <td>
-        {(e.actorId && Store.getUserById(e.actorId)?.name) || e.actorId || '—'}
+        {(e.actorId && Store.getUserById(e.actorId)?.name) || e.actorId || (e.actorRole === 'system' ? 'Platform (automatic)' : '—')}
         <div style={{ color: 'var(--muted-foreground)', fontSize: 11.5 }}>{[e.actorRole, e.actorId && Store.getUserById(e.actorId) ? e.actorId : ''].filter(Boolean).join(' · ')}</div>
       </td>
       <td className="mono">{(e.method || '') + ' ' + (e.path || '')}</td>
@@ -121,6 +132,9 @@ export default function ComplianceDashboard() {
             <option value="fee.change">Fee changes</option>
             <option value="admin.change">Admin changes</option>
             <option value="admin.read">Admin reads</option>
+            <option value="account.create">Accounts created</option>
+            <option value="account.suspend">Accounts suspended</option>
+            <option value="account.delete">Accounts deleted</option>
           </select>
           {' '}
           <span style={{ fontSize: 12.5, color: 'var(--muted-foreground)' }}>{note}</span>

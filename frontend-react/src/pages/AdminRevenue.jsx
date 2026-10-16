@@ -147,7 +147,7 @@ function FeeTypeChart({ rows }) {
   );
 }
 
-// ── Chart 3: where each escrowed dollar goes (part-to-whole) ─────────────────
+// ── Chart 3: where each escrowed rupee goes (part-to-whole) ──────────────────
 function DistributionChart({ d }) {
   const segs = d.segments.filter(s => s.amount > 0);
   const W = 660, H = 62, gapPx = 2, r = 4;
@@ -325,6 +325,7 @@ export default function AdminRevenue() {
     byFeeType: Store.getRevenueByFeeType(),
     distribution: Store.getRevenueDistribution(),
     byProject: Store.getRevenueByProject(),
+    byUser: Store.getRevenueByUser(),
   }));
   const [period, setPeriod] = useState('month');
   const [timeseries, setTimeseries] = useState(() => Store.getRevenueTimeseries('month'));
@@ -343,6 +344,7 @@ export default function AdminRevenue() {
   const d = data.distribution || { segments: [], totalFunded: 0 };
   const fees = data.byFeeType || [];
   const projects = data.byProject || [];
+  const people = data.byUser || [];
 
   function changePeriod(p) {
     setPeriod(p);
@@ -429,7 +431,7 @@ export default function AdminRevenue() {
             </div>
 
             <div className="viz-card">
-              <div className="viz-title">Where each escrowed dollar goes</div>
+              <div className="viz-title">Where each escrowed rupee goes</div>
               <div className="viz-sub">{`${money(d.totalFunded)} funded into escrow all-time.`}</div>
               <div className="viz-plot" id="distPlot">
                 {d && d.totalFunded
@@ -496,6 +498,42 @@ export default function AdminRevenue() {
               {breakdown && (breakdown.b
                 ? <ProjectBreakdown b={breakdown.b} onClose={() => setBreakdown(null)} />
                 : <div style={{ padding: 18, color: 'var(--muted-foreground)' }}>Could not load that project.</div>)}
+            </div>
+          </div>
+
+          <div className="viz-card">
+            <div className="viz-title">What each user received and paid</div>
+            <div className="viz-sub">Workers and reviewers: gross earned, fees the platform kept and net received. Clients: money added, put into escrow, and fees paid.</div>
+            <div className="viz-table-wrap" id="userTable">
+              {!people.length ? (
+                <div style={{ padding: 26, textAlign: 'center', color: 'var(--muted-foreground)', fontSize: 13 }}>No user activity yet.</div>
+              ) : (
+                <table className="viz-table">
+                  <thead>
+                    <tr>
+                      <th>User</th><th>Role</th>
+                      <th className="num">Gross earned</th><th className="num">Net received</th>
+                      <th className="num">Deposited</th><th className="num">Into escrow</th><th className="num">Withdrawn</th>
+                      <th className="num">Fees paid</th><th className="num">Wallet now</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {people.map(u => (
+                      <tr key={u.userId}>
+                        <td>{u.name}</td>
+                        <td><span className="rev-role">{u.role}</span></td>
+                        <td className="num">{u.grossEarned ? money(u.grossEarned) : '—'}</td>
+                        <td className="num">{u.netReceived ? money(u.netReceived) : '—'}</td>
+                        <td className="num">{u.totalDeposited ? money(u.totalDeposited) : '—'}</td>
+                        <td className="num">{u.escrowFunded ? money(u.escrowFunded) : '—'}</td>
+                        <td className="num">{u.totalWithdrawn ? money(u.totalWithdrawn) : '—'}</td>
+                        <td className="num" style={{ fontWeight: 600, color: u.feesPaid ? '#b45309' : 'inherit' }}>{money(u.feesPaid)}</td>
+                        <td className="num">{money(u.walletBalance)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </div>
           </div>
         </div>

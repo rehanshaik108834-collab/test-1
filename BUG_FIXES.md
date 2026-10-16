@@ -9,7 +9,7 @@ Each entry says what was wrong, what changed, and where (paths are relative to t
 |---|---|
 | Backend typecheck — `cd back-end && npx tsc --noEmit -p tsconfig.json` | clean |
 | Backend unit tests — `npm test` | 17 / 17 pass |
-| Backend end-to-end tests — `npm run test:e2e` | 92 / 92 pass (24 new in round 4; bidding tests replaced in rounds 5 and 7; 1 new in round 6) |
+| Backend end-to-end tests — `npm run test:e2e` | 98 / 98 pass (24 new in round 4; bidding tests replaced in rounds 5 and 7; 1 new in round 6; 6 admin-figure reconciliation tests in round 8) |
 | Frontend production build — `cd frontend-react && npx vite build` | builds |
 | ESLint on `frontend-react/src` | no undefined variables or parse errors (2 reports are only a missing `react-hooks` plugin definition in the lint config) |
 
@@ -433,4 +433,50 @@ Requested by the project owner. This replaces round 5's "first worker to accept 
   - Sidebar labels were cut off mid-word ("Worker Applicatior"); they now end in an ellipsis and show the full name on hover.
 - **Review Deliverable showed generic placeholder text.** It never showed the link or branch the worker submitted, so a link-only submission looked empty. Both are now shown.
 - **Not done:** phone-width layouts (390px). Most pages still overflow there, mainly because the sidebar stays open. That needs a mobile layout of its own.
+
+## 11. Round 8 — are the admin figures right?
+
+Requested by the project owner. Every admin page reads live data from the API. The question was whether that data is correct.
+
+### How it was checked
+
+A new test file, `back-end/test/admin-figures.e2e-spec.ts`, runs real flows and then cross-checks every admin figure. The flows are:
+
+- deposits and withdrawals;
+- a hire with tiered worker fees;
+- an audit, with one milestone's share paid and one forfeited;
+- disputes: both verdicts, a withdrawal, an expiry and an operations override;
+- a cancellation with a fee, a deletion and a draft cancelled with its audit fee funded;
+- an auto-approval and a contract ended for non-delivery;
+- a fee change.
+
+After each, `reconcile()` checks that:
+
+- total revenue is identical on the summary, the fee-type breakdown, the timeseries (day, week and month), the ledger summary and the raw revenue entries;
+- each fee type equals the fees recorded on the transactions that charged it;
+- gross volume and take rate follow from the payout rows;
+- the escrow distribution accounts for every rupee funded (nothing unaccounted);
+- escrow per project and per bucket equals its transaction rows, never goes negative, and equals what the project still owes (the budget while open, unpaid milestones while in progress, zero once finished);
+- the per-project table agrees with each project's breakdown, and adds up to the total together with the wallet fees;
+- fees paid per user add up to total revenue;
+- **every wallet's change in balance equals what its transactions say.**
+
+**Result: the money logic is correct.** Every figure reconciled in every scenario. The only difference found is cosmetic: fee-type shares are each rounded to 2 decimals, so they can total 99.99% or 100.01%.
+
+### What was wrong, and is fixed
+
+| Problem | Fix |
+|---|---|
+| Auto-approval payouts and dispute-expiry refunds moved money with no request behind them, so they never reached the compliance trail. | Both now write a `money` event with actor "system" (shown as "Platform (automatic)"). Tested. |
+| The Audit Log could not filter account creations, suspensions or deletions, and showed no detail for them. | Added to the filter, labelled, and the detail names the affected account and role. |
+| Super Admin dashboard: "N resolved" counted withdrawn and expired disputes. "Paid to workers" showed the gross, including the platform's fee. | Resolved disputes are counted separately from those withdrawn or expired. Workers' figure is now what they actually received (net). |
+| Super Admin Disputes: no way to see withdrawn or expired disputes, which fell outside both stats. | New "Withdrawn or Expired" stat and filter. |
+| The per-user revenue view existed in the API (`/revenue/by-user`) but no page showed it. | New "What each user received and paid" table on the Revenue page. |
+| "Where each escrowed dollar goes". | Now "rupee". |
+
+### Known and left as is
+
+- Seeded payouts predate the fee model, so seeded workers show no service fees. Only new activity is charged.
+- The money trail records every change made through money-related routes (posting, applying, approving and so on) as `money`, even when that step moves nothing itself.
+- Fee previews in an open browser tab use the rates read at sign-in. The server always charges the current rates.
 

@@ -6,7 +6,7 @@
  * with counts, a type filter, a search box and a link to each report.
  */
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import Icon from '../components/Icon';
 import PageStyle from '../components/PageStyle';
@@ -108,7 +108,9 @@ export default function ExpertReports() {
   const session = Auth.getCurrentUser();
   const [reports] = useState(() => loadReports(Store, session.userId));
   const [activeFilter, setActiveFilter] = useState('All');
-  const [searchQuery, setSearchQuery] = useState('');
+  // "Reports so far" on an audit request opens this page searched to its project.
+  const [searchParams] = useSearchParams();
+  const [searchQuery, setSearchQuery] = useState(() => searchParams.get('q') || '');
 
   const q = searchQuery.trim().toLowerCase();
   const list = reports.filter(r => {

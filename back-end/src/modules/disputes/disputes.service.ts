@@ -14,6 +14,7 @@ import { assertAllowed } from '../../common/guards/viewer.util';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SETTLED } from '../milestones/milestones.service';
 import { ROLES } from '../../common/constants/roles';
+import { AuditService } from '../audit/audit.service';
 
 const today = () => new Date().toISOString().slice(0, 10);
 const DAY_MS = 86_400_000;
@@ -51,6 +52,7 @@ export class DisputesService implements OnModuleInit, OnModuleDestroy {
     @Inject(forwardRef(() => UsersService)) private users: UsersService,
     private readonly log: AppLoggerService,
     @Inject(forwardRef(() => NotificationsService)) private notifications: NotificationsService,
+    private readonly audit: AuditService,
   ) {}
 
   onModuleInit() {
@@ -258,8 +260,13 @@ export class DisputesService implements OnModuleInit, OnModuleDestroy {
     for (const d of this.disputesRepository.findAll()) {
       if (d.status !== 'open' || !d.expiresAt || new Date(d.expiresAt).getTime() > now) continue;
       try {
-        this.endWithoutVerdict(d, 'expired', 'Dispute expired with no verdict — reviewer fee returned');
+        const result = this.endWithoutVerdict(d, 'expired', 'Dispute expired with no verdict — reviewer fee returned');
         ended.push(d.id);
+        // The expiry refunds the reviewer fee with no request behind it, so it is recorded here.
+        this.audit.record({
+          kind: 'money', actorId: null, actorRole: 'system', method: 'AUTO', path: `/api/disputes/${d.id}/expire`,
+          outcome: 'ok', detail: { reason: 'dispute-expired', taskId: d.taskId, milestoneId: d.milestoneId, refunds: result.refunds },
+        });
       } catch (e) {
         this.log.warn('disputes.expire', `could not expire dispute ${d.id}`, e);
       }

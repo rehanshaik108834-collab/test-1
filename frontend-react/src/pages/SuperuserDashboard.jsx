@@ -39,7 +39,8 @@ export default function SuperuserDashboard() {
   // What is held right now comes from the ledger; summing lock rows minus
   // net release rows over-counted it by every fee and refund.
   const escrowBalance = Store.getLedgerSummary().totalHeld || 0;
-  const released = transactions.filter(t => t.type === 'milestone-release').reduce((s, t) => s + (t.grossAmount != null ? t.grossAmount : t.amount), 0);
+  // What workers actually received: release rows record the net after the service fee.
+  const paidToWorkers = transactions.filter(t => t.type === 'milestone-release').reduce((s, t) => s + (t.netAmount != null ? t.netAmount : t.amount), 0);
 
   // Role breakdown
   const clients = users.filter(u => u.role === 'client').length;
@@ -49,6 +50,9 @@ export default function SuperuserDashboard() {
   const suspended = users.filter(u => u.status === 'suspended').length;
   const disputes = Store.getDisputes();
   const openDisputes = disputes.filter(d => d.status === 'open').length;
+  // Withdrawn and expired disputes ended without a verdict; they are not "resolved".
+  const resolvedDisputes = disputes.filter(d => d.status === 'resolved').length;
+  const endedWithoutVerdict = disputes.filter(d => ['withdrawn', 'expired'].includes(d.status)).length;
   const openTasks = tasks.filter(t => t.status === 'open').length;
   const money = n => '₹' + Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });
 
@@ -63,8 +67,8 @@ export default function SuperuserDashboard() {
                   change={`${clients} clients · ${workers} workers · ${experts} experts · ${staff} staff${suspended ? ` · ${suspended} suspended` : ''}`}
                   icon="users" iconBg="#eff6ff" iconColor="#3b82f6" />
         <StatCard value={tasks.length} label="Total Tasks" change={`${openTasks} open · ${activeTasks} in progress`} icon="folder-kanban" iconBg="#ecfdf5" iconColor="#10b981" />
-        <StatCard value={money(escrowBalance)} label="Held in Escrow" change={`${money(released)} paid to workers`} icon="wallet" iconBg="#faf5ff" iconColor="#a855f7" />
-        <StatCard value={openDisputes} label="Open Disputes" change={`${disputes.length - openDisputes} resolved`} icon="scale" iconBg="#fef2f2" iconColor="#ef4444" />
+        <StatCard value={money(escrowBalance)} label="Held in Escrow" change={`${money(paidToWorkers)} paid to workers`} icon="wallet" iconBg="#faf5ff" iconColor="#a855f7" />
+        <StatCard value={openDisputes} label="Open Disputes" change={`${resolvedDisputes} resolved${endedWithoutVerdict ? ` · ${endedWithoutVerdict} withdrawn or expired` : ''}`} icon="scale" iconBg="#fef2f2" iconColor="#ef4444" />
       </div>
 
       {/* Quick Actions */}

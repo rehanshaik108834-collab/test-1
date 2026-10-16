@@ -12,6 +12,7 @@ import { AppLoggerService } from '../../common/logging/app-logger.service';
 import { Actor } from '../../common/decorators/actor.decorator';
 import { assertAllowed, canViewAnyRecord, canViewTask } from '../../common/guards/viewer.util';
 import { round2 } from '../ledger/fee-config';
+import { AuditService } from '../audit/audit.service';
 
 /** Statuses a worker moves their own milestone between while working on it. */
 const WORKER_SETTABLE = ['pending', 'in-progress'];
@@ -47,6 +48,7 @@ export class MilestonesService implements OnModuleInit, OnModuleDestroy {
     @Inject(forwardRef(() => AuditRequestsService)) private auditRequestsService: AuditRequestsService,
     @Inject(forwardRef(() => NotificationsService)) private notificationsService: NotificationsService,
     private readonly log: AppLoggerService,
+    private readonly audit: AuditService,
   ) {}
 
   /** Checks for expired review windows once a minute (not under test — tests move the clock themselves). */
@@ -454,6 +456,12 @@ export class MilestonesService implements OnModuleInit, OnModuleDestroy {
         const task = this.tasksService.findById(ms.taskId);
         this.payOut(ms, task, `Payment for ${ms.title} (approved automatically after ${AUTO_APPROVE_DAYS} days)`, 'auto-approved');
         done.push(ms.id);
+        // No request caused this payout, so the money trail never saw it.
+        // The compliance desk still needs every release on record.
+        this.audit.record({
+          kind: 'money', actorId: null, actorRole: 'system', method: 'AUTO', path: `/api/milestones/${ms.id}/auto-approve`,
+          outcome: 'ok', detail: { reason: 'auto-approved', taskId: ms.taskId, milestoneId: ms.id, amount: ms.budget },
+        });
       } catch (e) {
         this.log.warn('milestones.autoApprove', `could not auto-approve ${ms.id}`, e);
       }

@@ -41,7 +41,13 @@ export default function SuperuserDisputes() {
   const rerender = useRerender();
 
   const allDisputes = Store.getDisputes();
-  const stats = { total: allDisputes.length, open: allDisputes.filter(d => d.status === 'open').length, resolved: allDisputes.filter(d => d.status === 'resolved').length };
+  const stats = {
+    total: allDisputes.length,
+    open: allDisputes.filter(d => d.status === 'open').length,
+    resolved: allDisputes.filter(d => d.status === 'resolved').length,
+    // Withdrawn by the client, or expired with no verdict — the reviewer fee went back.
+    noVerdict: allDisputes.filter(d => ['withdrawn', 'expired'].includes(d.status)).length,
+  };
   const [statusFilter, setStatusFilter] = useState('all');
 
   // Override dialog
@@ -52,7 +58,8 @@ export default function SuperuserDisputes() {
   const { errors, clearError, clearAllErrors, validateForm, errorStyle } = useFieldErrors();
 
 
-  const disputes = Store.getDisputes().filter(d => statusFilter === 'all' || d.status === statusFilter);
+  const disputes = Store.getDisputes().filter(d => statusFilter === 'all' || d.status === statusFilter
+    || (statusFilter === 'no-verdict' && ['withdrawn', 'expired'].includes(d.status)));
 
   function quickResolve(disputeId, verdict) {
     Validate.confirm(
@@ -96,10 +103,11 @@ export default function SuperuserDisputes() {
     <>
       <PageStyle css={pageCss} />
       <DashboardLayout role="superuser" activePath="/superuser-disputes" pageTitle="All Disputes" pageSubtitle="Review and override dispute verdicts across the platform">
-        <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(3,1fr)', marginBottom: 24 }}>
+        <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', marginBottom: 24 }}>
           <StatCard value={stats.total} label="Total Disputes" icon="scale" iconBg="#faf5ff" iconColor="#a855f7" />
           <StatCard value={stats.open} label="Open Disputes" icon="alert-circle" iconBg="#fff7ed" iconColor="#f97316" />
           <StatCard value={stats.resolved} label="Resolved" icon="check-circle" iconBg="#ecfdf5" iconColor="#10b981" />
+          <StatCard value={stats.noVerdict} label="Withdrawn or Expired" icon="x-circle" iconBg="#f1f5f9" iconColor="#64748b" />
         </div>
 
         <div className="su-toolbar">
@@ -107,6 +115,7 @@ export default function SuperuserDisputes() {
             <option value="all">All Disputes</option>
             <option value="open">Open Only</option>
             <option value="resolved">Resolved Only</option>
+            <option value="no-verdict">Withdrawn or Expired</option>
           </select>
         </div>
 
