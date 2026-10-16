@@ -31,8 +31,8 @@ export default function WorkerDashboard() {
   const completedProjects = myTasks.filter(t => t.status === 'completed').length;
   const earned = Store.getTransactions().filter(t => t.type === 'milestone-release' && t.toId === userId)
     .reduce((s, t) => s + (t.netAmount != null ? t.netAmount : t.amount || 0), 0);
-  const invitations = Store.getInvitationsByWorker(userId);
-  const pendingInvitations = invitations.filter(p => p.status === 'pending').length;
+  const applications = Store.getApplicationsByWorker(userId);
+  const pendingApplications = applications.filter(p => p.status === 'pending').length;
 
   const activeTasks = myTasks.filter(t => !['completed', 'cancelled'].includes(t.status)).slice(0, 3);
   const recommendedTasks = Store.getTasks().filter(t => t.status === 'open' && t.workerId !== userId && t.clientId !== userId).slice(0, 3);
@@ -43,7 +43,7 @@ export default function WorkerDashboard() {
       <div className="stats-grid">
         <StatCard value={activeProjects} label="Active Projects" change={`${myTasks.length} total`} icon="folder-kanban" iconBg="#eff6ff" iconColor="#3b82f6" />
         <StatCard value={`₹${(earned || 0).toLocaleString('en-IN')}`} label="Total Earned" change="Lifetime earnings" icon="wallet" iconBg="#ecfdf5" iconColor="#10b981" />
-        <StatCard value={pendingInvitations} label="Pending Invitations" change={`${invitations.length} received`} icon="mail" iconBg="#faf5ff" iconColor="#a855f7" />
+        <StatCard value={applications.length} label="Applications Sent" change={`${pendingApplications} awaiting the client`} icon="send" iconBg="#faf5ff" iconColor="#a855f7" />
         <StatCard value={completedProjects} label="Completed" change="projects done" icon="check-circle" iconBg="#fff7ed" iconColor="#f97316" />
       </div>
 

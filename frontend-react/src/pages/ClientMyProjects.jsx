@@ -155,9 +155,9 @@ function ProjectCard({ p, onEdit, onDelete, onCancel }) {
           <div style={{ ...CARD_BUTTON_STYLE, cursor: 'default', color: 'var(--muted-foreground)' }}>Cancelled — escrow returned</div>
         ) : p.category === 'open' ? (
           <>
-            <button onClick={e => go(e, '/hire-gig-workers')} style={CARD_BUTTON_STYLE}>
-              <Icon name="user-plus" style={{ width: 14, height: 14 }} />
-              Invite Workers
+            <button onClick={e => go(e, '/worker-applications')} style={CARD_BUTTON_STYLE}>
+              <Icon name="users" style={{ width: 14, height: 14 }} />
+              View Applications
             </button>
             {!p.hired ? (
               <button onClick={e => { e.stopPropagation(); onCancel(p.id); }} style={{ ...CARD_BUTTON_STYLE, color: '#b91c1c', borderColor: '#fecaca' }}>
@@ -273,7 +273,7 @@ export default function ClientMyProjects() {
     const q = quoteFor(id);
     if (!q) return;
     if (!q.cancellable) { Validate.toast(q.reason, 'error'); return; }
-    Validate.confirm(`Cancel "${task.title}"? ${quoteText(q)} Pending invitations are withdrawn. This cannot be undone.`, () => {
+    Validate.confirm(`Cancel "${task.title}"? ${quoteText(q)} Pending applications and invitations are closed. This cannot be undone.`, () => {
       let result;
       try {
         result = Store.cancelTask(id);

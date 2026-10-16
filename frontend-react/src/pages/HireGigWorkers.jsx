@@ -403,7 +403,7 @@ export default function HireGigWorkers() {
                 </select>
                 {(openTasks || []).some(t => t.id === projectId) && (
                   <div style={{ fontSize: 12, marginTop: 6, color: 'var(--muted-foreground)', lineHeight: 1.5 }}>
-                    {`The offer is the project's budget, ₹${Number(openTasks.find(t => t.id === projectId).budget).toLocaleString('en-IN')}. The worker accepts or declines it — and any worker who accepts the open project first is hired.`}
+                    {`The offer is the project's budget, ₹${Number(openTasks.find(t => t.id === projectId).budget).toLocaleString('en-IN')}. If the worker accepts, they are hired at that price and the project starts straight away.`}
                   </div>
                 )}
               </div>

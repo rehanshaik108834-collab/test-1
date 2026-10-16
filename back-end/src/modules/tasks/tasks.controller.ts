@@ -1,7 +1,6 @@
-import { Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards, Inject, forwardRef } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiHeader, ApiQuery } from '@nestjs/swagger';
 import { TasksService } from './tasks.service';
-import { ProposalsService } from '../proposals/proposals.service';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { RoleGuard } from '../../common/guards/role.guard';
@@ -13,10 +12,7 @@ import type { Actor } from '../../common/decorators/actor.decorator';
 @Controller('tasks')
 @UseGuards(RoleGuard)
 export class TasksController {
-  constructor(
-    private readonly tasksService: TasksService,
-    @Inject(forwardRef(() => ProposalsService)) private readonly proposals: ProposalsService,
-  ) {}
+  constructor(private readonly tasksService: TasksService) {}
 
   @Get()
   @ApiOperation({ summary: 'Get all tasks (supports filtering)' })
@@ -63,16 +59,6 @@ export class TasksController {
   })
   cancellationQuote(@Param('id') id: string, @CurrentActor() actor: Actor) {
     return this.tasksService.cancellationQuote(id, actor);
-  }
-
-  @Post(':id/accept')
-  @Roles('worker')
-  @ApiOperation({
-    summary: 'Accept an open project at its posted budget',
-    description: 'There is no bidding: the first worker to accept is hired on the spot. The milestones must add up to the budget.',
-  })
-  accept(@Param('id') id: string, @CurrentActor() actor: Actor) {
-    return this.proposals.acceptProject(id, actor);
   }
 
   @Get(':id/non-delivery')

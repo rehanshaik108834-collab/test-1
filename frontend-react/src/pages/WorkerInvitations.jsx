@@ -3,8 +3,8 @@
  * Converted from front-end/pages/worker-invitations.html.
  *
  * Invitations clients have sent the worker, at the project's posted budget.
- * Pending ones can be accepted (the worker is hired at that budget) or
- * rejected. There is no counter-offer.
+ * Accepting one hires the worker and starts the project straight away;
+ * rejecting tells the client. There is no counter-offer.
  */
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -71,7 +71,7 @@ export default function WorkerInvitations() {
   function acceptInvite(id) {
     Validate.confirm('Accept this invitation at the posted budget? You are hired straight away and the project moves to My Projects.', () => {
       try {
-        Store.acceptInvitation(id);
+        Store.acceptProposal(id);
       } catch (e) {
         Validate.toast((e.message), 'error');
         return;
@@ -84,7 +84,7 @@ export default function WorkerInvitations() {
   function declineInvite(id) {
     Validate.confirm('Reject this invitation? The client will be notified.', () => {
       try {
-        Store.declineInvitation(id);
+        Store.declineProposal(id);
       } catch (e) {
         Validate.toast((e.message), 'error');
         return;

@@ -31,8 +31,8 @@ export class ContactsService {
     if (!task) return people;
     add(task.clientId);
     add(task.workerId);
-    // Invited workers only while the project is open and the invitation is
-    // still unanswered — not for good, or a worker who was never hired could
+    // Applicants and invited workers only while the project is open and their
+    // application or invitation is still pending — not for good, or a worker who was never hired could
     // keep messaging the client and download the hired worker's deliverables.
     if (task.status === 'open') {
       for (const p of this.proposals.findAll({ taskId })) if (p.status === 'pending') add(p.workerId);

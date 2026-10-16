@@ -380,7 +380,7 @@ export default function ClientWallet() {
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16, marginBottom: 24 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: 16, marginBottom: 24 }}>
             {stats.map(s => (
               <div className="stat-card" key={s.label}>
                 <div><div className="stat-val" style={{ color: s.color }}>{s.val}</div><div className="stat-label">{s.label}</div></div>

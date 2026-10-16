@@ -28,7 +28,8 @@ const ClientDashboard = lazy(() => import('./pages/ClientDashboard'));
 const ClientMyProjects = lazy(() => import('./pages/ClientMyProjects'));
 const PostTask = lazy(() => import('./pages/PostTask'));
 const HireGigWorkers = lazy(() => import('./pages/HireGigWorkers'));
-const ClientInvitations = lazy(() => import('./pages/ClientInvitations'));
+const WorkerApplications = lazy(() => import('./pages/WorkerApplications'));
+const MyProposals = lazy(() => import('./pages/MyProposals'));
 const AuditOffers = lazy(() => import('./pages/ClientAuditOffers'));
 const ClientWallet = lazy(() => import('./pages/ClientWallet'));
 const ProfileSettings = lazy(() => import('./pages/ProfileSettings'));
@@ -162,9 +163,8 @@ export default function App() {
           <Route path="/client-my-projects" element={guard(['client'], <ClientMyProjects />)} />
           <Route path="/post-task" element={guard(['client'], <PostTask />)} />
           <Route path="/hire-gig-workers" element={guard(['client'], <HireGigWorkers />)} />
-          <Route path="/sent-invitations" element={guard(['client'], <ClientInvitations />)} />
-          {/* There is no bidding any more: the old proposal pages lead to their replacements. */}
-          <Route path="/worker-applications" element={<Navigate to="/sent-invitations" replace />} />
+          <Route path="/worker-applications" element={guard(['client'], <WorkerApplications />)} />
+          <Route path="/sent-invitations" element={<Navigate to="/worker-applications" replace />} />
           <Route path="/audit-offers" element={guard(['client'], <AuditOffers />)} />
           <Route path="/client-audit-offers" element={<Navigate to="/audit-offers" replace />} />
           <Route path="/client-wallet" element={guard(['client'], <ClientWallet />)} />
@@ -177,7 +177,8 @@ export default function App() {
           <Route path="/browse-tasks" element={guard(['worker'], <BrowseTasks />)} />
           <Route path="/worker-my-projects" element={guard(['worker'], <WorkerMyProjects />)} />
           <Route path="/worker-invitations" element={guard(['worker'], <WorkerInvitations />)} />
-          <Route path="/my-proposals" element={<Navigate to="/worker-invitations" replace />} />
+          <Route path="/my-proposals" element={guard(['worker'], <MyProposals />)} />
+          <Route path="/my-applications" element={<Navigate to="/my-proposals" replace />} />
           <Route path="/worker-wallet" element={guard(['worker'], <WorkerWallet />)} />
           <Route path="/worker-settings" element={guard(['worker'], <WorkerSettings />)} />
           <Route path="/worker-milestone-board" element={guard(['worker'], <WorkerMilestoneBoard />)} />

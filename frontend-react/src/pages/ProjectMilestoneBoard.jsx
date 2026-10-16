@@ -66,9 +66,10 @@ const sumAmounts = cards => cards.filter(m => !m.cancelled).reduce((s, m) => s +
 const money = n => '₹' + (Number(n) || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });
 
 /**
- * The milestone plan, editable until a worker accepts. A worker can only
- * accept while the milestones add up to exactly the budget (that is how they
- * are paid), so the client changes amounts and removes milestones here.
+ * The milestone plan, editable until someone is hired. Nobody can be hired
+ * (an application accepted, or an invitation accepted) unless the milestones
+ * add up to exactly the budget — that is how the worker is paid — so the
+ * client changes amounts and removes milestones here.
  */
 function PlanEditor({ task }) {
   const Store = useStore();
@@ -108,7 +109,7 @@ function PlanEditor({ task }) {
         </span>
       </div>
       <p style={{ fontSize: 12.5, color: 'var(--muted-foreground)', marginBottom: 14, lineHeight: 1.5 }}>
-        You can change this plan until a worker accepts the project. Workers can only accept while the milestones add up to exactly the budget — the first to accept is hired at that price.
+        You can change this plan until someone is hired. You can only accept an application — and an invited worker can only accept — while the milestones add up to exactly the budget.
       </p>
       {list.map(m => (
         <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderTop: '1px solid var(--border)', flexWrap: 'wrap' }}>

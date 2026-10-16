@@ -90,10 +90,10 @@ function buildPerformance(Store, workerId) {
     lateDeliveries,
   };
 
-  // Invitations from clients, at their posted budgets (there is no bidding).
-  const invitations = Store.getInvitationsByWorker(workerId);
+  // Applications the worker sent, at the clients' posted budgets (there is no bidding).
+  const invitations = Store.getApplicationsByWorker(workerId);
   const accepted = invitations.filter(p => p.status === 'hired').length;
-  const rejected = invitations.filter(p => ['declined', 'withdrawn', 'closed'].includes(p.status)).length;
+  const rejected = invitations.filter(p => ['rejected', 'withdrawn', 'closed'].includes(p.status)).length;
   const pending = invitations.filter(p => p.status === 'pending').length;
   const proposalStats = { sent: invitations.length, accepted, rejected, pending, successRate: invitations.length ? Math.round((accepted / invitations.length) * 100) : 0 };
 
@@ -172,7 +172,7 @@ const velocityChartConfig = velocityData => ({
 const proposalChartConfig = stats => ({
   type: 'doughnut',
   data: {
-    labels: ['Accepted', 'Declined or closed', 'Pending'],
+    labels: ['Hired', 'Not selected', 'Pending'],
     datasets: [{
       // An empty ring still needs a value to draw; grey it out.
       data: stats.sent ? [stats.accepted, stats.rejected, stats.pending] : [0, 0, 1],
@@ -316,21 +316,21 @@ export default function PerformanceAnalytics() {
             </div>
           </div>
 
-          {/* ── 6. Invitations (right sidebar) ── */}
+          {/* ── 6. Applications (right sidebar) ── */}
           <div>
             <div className="pa-card">
-              <div className="pa-card-title" style={{ marginBottom: 20 }}>Invitations</div>
+              <div className="pa-card-title" style={{ marginBottom: 20 }}>Application Success Rate</div>
               <div className="pa-proposal-row">
                 <div className="pa-proposal-icon-label">
-                  <Icon name="mail" style={{ width: 16, height: 16, color: '#2563eb' }} />
-                  Received
+                  <Icon name="send" style={{ width: 16, height: 16, color: '#2563eb' }} />
+                  Applications Sent
                 </div>
                 <div className="pa-proposal-val">{proposalStats.sent}</div>
               </div>
               <div className="pa-proposal-row">
                 <div className="pa-proposal-icon-label">
                   <Icon name="check-circle" style={{ width: 16, height: 16, color: '#16a34a' }} />
-                  Accepted
+                  Hired
                 </div>
                 <div className="pa-proposal-val" style={{ color: '#16a34a' }}>{proposalStats.accepted}</div>
               </div>
@@ -347,14 +347,14 @@ export default function PerformanceAnalytics() {
                 <div className="pa-legend-row">
                   <div className="pa-legend-dot-label">
                     <div className="pa-legend-dot" style={{ background: '#22c55e' }}></div>
-                    <span className="pa-legend-text">Accepted</span>
+                    <span className="pa-legend-text">Hired</span>
                   </div>
                   <span className="pa-legend-val">{`${proposalStats.accepted} (${share(proposalStats.accepted)}%)`}</span>
                 </div>
                 <div className="pa-legend-row">
                   <div className="pa-legend-dot-label">
                     <div className="pa-legend-dot" style={{ background: '#ef4444' }}></div>
-                    <span className="pa-legend-text">Declined or closed</span>
+                    <span className="pa-legend-text">Not selected</span>
                   </div>
                   <span className="pa-legend-val">{`${proposalStats.rejected} (${share(proposalStats.rejected)}%)`}</span>
                 </div>
@@ -370,11 +370,11 @@ export default function PerformanceAnalytics() {
                 <div className="pa-insight-inner">
                   <Icon name="trending-up" style={{ width: 16, height: 16, color: '#16a34a', flexShrink: 0, marginTop: 2 }} />
                   <div>
-                    <div className="pa-insight-title">{!data.hasProposals ? 'No invitations yet' : `${proposalStats.accepted} of ${proposalStats.sent} accepted`}</div>
+                    <div className="pa-insight-title">{!data.hasProposals ? 'No applications yet' : `${proposalStats.accepted} of ${proposalStats.sent} hired`}</div>
                     <div className="pa-insight-body">
                       {!data.hasProposals
-                        ? 'Clients can invite you to their projects. You can also accept any open project from Browse Tasks — the first worker to accept is hired.'
-                        : `You accepted ${proposalStats.successRate}% of the invitations you received. Invitations close when another worker accepts the project first.`}
+                        ? 'Apply to open projects from Browse Tasks. Clients can also invite you directly.'
+                        : `Clients hired you on ${proposalStats.successRate}% of your applications. An application closes when the client hires someone else.`}
                     </div>
                   </div>
                 </div>

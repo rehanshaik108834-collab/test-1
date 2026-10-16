@@ -35,7 +35,8 @@ const VERDICTS = {
 };
 
 const CARD_STYLE = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 16, padding: 24, marginBottom: 20 };
-const NOTES_STYLE = { background: 'var(--input-bg)', borderRadius: 12, padding: 16, fontSize: 14, color: '#374151', lineHeight: 1.7 };
+// Worker text keeps its line breaks, and long links wrap instead of widening the page.
+const NOTES_STYLE = { background: 'var(--input-bg)', borderRadius: 12, padding: 16, fontSize: 14, color: '#374151', lineHeight: 1.7, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' };
 const BUTTON_ICON_STYLE = { width: 16, height: 16, display: 'inline', verticalAlign: 'middle', marginRight: 6 };
 
 /** Finds the milestone to review: from the URL, the workroom's selection, or the first submitted one. */
@@ -109,7 +110,7 @@ function AuditPanel({ engagement, report, reviewer }) {
         {report.findings ? (
           <>
             <div style={{ fontSize: 11, letterSpacing: '.07em', textTransform: 'uppercase', color: 'var(--muted-foreground)', marginBottom: 6 }}>Findings</div>
-            <div style={{ fontSize: 13, lineHeight: 1.65, color: 'var(--muted-foreground)' }}>{report.findings}</div>
+            <div style={{ fontSize: 13, lineHeight: 1.65, color: 'var(--muted-foreground)', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{report.findings}</div>
           </>
         ) : ''}
       </div>
@@ -324,7 +325,7 @@ export default function ReviewDeliverable() {
         <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 16, padding: '20px 24px', marginBottom: 24, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
             <div style={{ width: 48, height: 48, borderRadius: '50%', background: deliverable.workerColor, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 14, fontWeight: 700 }}>{deliverable.workerAvatar}</div>
-            <div>
+            <div style={{ minWidth: 0 }}>
               <div style={{ fontWeight: 600, fontSize: 16 }}>{deliverable.worker}</div>
               <div style={{ fontSize: 13, color: 'var(--muted-foreground)' }}>{`Submitted ${deliverable.submittedDate}`}</div>
             </div>
@@ -347,7 +348,24 @@ export default function ReviewDeliverable() {
             <div style={CARD_STYLE}>
               <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Submitted Files</h3>
               <div style={{ fontSize: 13, color: 'var(--muted-foreground)', marginBottom: 16 }}>{`${deliverable.project} · ${deliverable.milestone}`}</div>
-              <SubmittedFiles files={deliverable.deliverable && deliverable.deliverable.files} />
+              {deliverable.deliverable && !(deliverable.deliverable.files || []).length && deliverable.deliverable.link ? null
+                : <SubmittedFiles files={deliverable.deliverable && deliverable.deliverable.files} />}
+              {/* The link (a repository, a drive folder) and branch the worker handed in. They were sent with the
+                  submission but never shown here, so a link-only submission looked empty. */}
+              {deliverable.deliverable && deliverable.deliverable.link ? (
+                <div className="file-row">
+                  <div className="file-icon-wrap" style={{ background: '#ecfdf5' }}>
+                    <Icon name="link" style={{ width: 18, height: 18, color: '#059669' }} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <a href={deliverable.deliverable.link} target="_blank" rel="noopener noreferrer"
+                       style={{ fontWeight: 500, fontSize: 14, color: '#4f46e5', overflowWrap: 'anywhere' }}>{deliverable.deliverable.link}</a>
+                    <div style={{ fontSize: 12, color: 'var(--muted-foreground)' }}>
+                      {deliverable.deliverable.branch ? `Branch: ${deliverable.deliverable.branch}` : 'Link to the work'}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
             </div>
 
             <div style={CARD_STYLE}>

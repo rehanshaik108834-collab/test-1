@@ -82,10 +82,15 @@ export const SEED_MILESTONES = [
   { id: 'm22', taskId: 't6', title: 'Documentation & Handoff', description: 'Complete design system documentation, usage guidelines, and developer handoff assets', budget: 500, status: 'pending', submittedAt: null, approvedAt: null, deliverable: null, workerId: 'u2', dueDate: null, priority: 'Medium', progress: 0 },
 ];
 
-/** Client invitations at the posted budget. There is no bidding: a worker accepts or declines. */
+/**
+ * Applications and invitations, always at the posted budget (there is no
+ * bidding). A worker applies and the client accepts; a client invites and
+ * the worker accepts.
+ */
 export const SEED_PROPOSALS = [
-  { id: 'p1', taskId: 't3', workerId: 'u2', workerName: 'Alex Worker', avatar: 'AW', avatarColor: 'linear-gradient(135deg,#10b981,#059669)', message: 'Your API work looks like a great fit — the milestones and budget are all set.', status: 'pending', type: 'invitation', createdAt: '2026-03-06' },
-  { id: 'p2', taskId: 't5', workerId: 'u5', workerName: 'Sarah Johnson', avatar: 'SJ', avatarColor: 'linear-gradient(135deg,#6366f1,#4f46e5)', message: 'We would love your help integrating the support chatbot.', status: 'pending', type: 'invitation', createdAt: '2026-03-11' },
+  { id: 'p1', taskId: 't3', workerId: 'u5', workerName: 'Sarah Johnson', avatar: 'SJ', avatarColor: 'linear-gradient(135deg,#6366f1,#4f46e5)', skills: ['Node.js', 'REST API', 'Testing'], message: 'Experienced in API integrations with Stripe, Twilio, and shipping providers. I can deliver clean, documented code with full test coverage.', status: 'pending', type: 'application', createdAt: '2026-03-06' },
+  { id: 'p2', taskId: 't3', workerId: 'u6', workerName: 'Michael Chen', avatar: 'MC', avatarColor: 'linear-gradient(135deg,#ec4899,#be185d)', skills: ['Node.js', 'Express', 'MongoDB'], message: 'Full-stack developer with deep API experience — payment integrations for Stripe, PayPal, and Square.', status: 'pending', type: 'application', createdAt: '2026-03-06' },
+  { id: 'p3', taskId: 't5', workerId: 'u2', workerName: 'Alex Worker', avatar: 'AW', avatarColor: 'linear-gradient(135deg,#10b981,#059669)', skills: ['React', 'Node.js', 'MongoDB'], message: 'We would love your help integrating the support chatbot.', status: 'pending', type: 'invitation', createdAt: '2026-03-11' },
 ];
 
 export const SEED_AUDIT_REQUESTS: any[] = [

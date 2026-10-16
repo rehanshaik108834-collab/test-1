@@ -74,7 +74,7 @@ export default function ClientDashboard() {
   const userId = session.userId;
   const myTasks = Store.getTasksByClient(userId);
   const activeTasks = myTasks.filter(t => t.status === 'in-progress').length;
-  const pendingInvites = Store.getInvitations().filter(p => myTasks.find(t => t.id === p.taskId) && p.status === 'pending').length;
+  const pendingApps = Store.getProposals().filter(p => p.type === 'application' && p.status === 'pending' && myTasks.some(t => t.id === p.taskId)).length;
   const user = Store.getUserById(userId);
   const walletBal = user?.walletBalance || 0;
   const completedTasks = myTasks.filter(t => t.status === 'completed').length;
@@ -85,7 +85,7 @@ export default function ClientDashboard() {
       {/* Stats */}
       <div className="stats-grid">
         <StatCard value={activeTasks} label="Active Projects" change={`${myTasks.length} total`} icon="folder-kanban" iconBg="#eff6ff" iconColor="#3b82f6" />
-        <StatCard value={pendingInvites} label="Invitations Awaiting Reply" change="sent to workers" icon="mail" iconBg="#faf5ff" iconColor="#a855f7" />
+        <StatCard value={pendingApps} label="Pending Applications" change="waiting for you" icon="users" iconBg="#faf5ff" iconColor="#a855f7" />
         <StatCard value={`₹${walletBal.toLocaleString('en-IN')}`} label="Wallet Balance" change="Available" icon="wallet" iconBg="#ecfdf5" iconColor="#10b981" />
         <StatCard value={completedTasks} label="Completed Tasks" change="all time" icon="check-circle" iconBg="#fff7ed" iconColor="#f97316" />
       </div>
@@ -114,13 +114,13 @@ export default function ClientDashboard() {
             </div>
           </Link>
           {' '}
-          <Link to="/sent-invitations" className="qa-v2-card" style={{ background: '#f0fdf4', borderColor: '#dcfce7' }}>
+          <Link to="/worker-applications" className="qa-v2-card" style={{ background: '#f0fdf4', borderColor: '#dcfce7' }}>
             <div className="qa-v2-icon" style={{ color: '#16a34a' }}>
-              <Icon name="mail" style={{ width: 20, height: 20 }} />
+              <Icon name="eye" style={{ width: 20, height: 20 }} />
             </div>
             <div className="qa-v2-content">
-              <div className="qa-v2-title">Sent Invitations</div>
-              <div className="qa-v2-desc">See which workers accepted or declined</div>
+              <div className="qa-v2-title">View Applications</div>
+              <div className="qa-v2-desc">Hire from workers who applied</div>
             </div>
           </Link>
           {' '}

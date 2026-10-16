@@ -46,8 +46,14 @@ describe('Lannent API (e2e)', () => {
   // Seed milestone m4 (t1, worked by Sarah) is pending; a dispute needs submitted work.
   const submitM4 = () => post('sarah', '/milestones/m4/submit', { deliverable: { title: 'v1', link: 'https://github.com/example/work' } });
   const FINDINGS = 'Reviewed the code, the tests and the deployment notes. Meets the brief.';
-  /** A worker accepts an open project at its posted budget — the first to accept is hired. */
-  const take = (who: string, taskId: string) => post(who, `/tasks/${taskId}/accept`);
+  const OWNER: Record<string, string> = { u1: 'client', u8: 'bob' };
+  /** The usual start of a contract: the worker applies at the posted budget and the project's client accepts. */
+  const take = async (who: string, taskId: string) => {
+    const app = await post(who, '/proposals', { taskId });
+    if (app.status !== 201) return app;
+    const owner = OWNER[(await get('super', `/tasks/${taskId}`)).body.data.clientId];
+    return post(owner, `/proposals/${app.body.data.id}/accept`);
+  };
   const engageReviewer = async (payer: string, reviewer: string, arId: string) => {
     const ar = (await get(reviewer, `/audit-requests/${arId}`)).body.data;
     const pending = ar.offers.find((o: any) => o.status === 'pending');
@@ -140,27 +146,40 @@ describe('Lannent API (e2e)', () => {
       expect((await del('client', '/tasks/t1')).status).toBe(403);
     });
 
-    it('has no bidding: workers cannot send proposals or name a price', async () => {
-      // A worker cannot create an invitation (or the old bid) at all.
-      expect((await post('worker', '/proposals', { taskId: 't3', workerId: 'u2', bidPrice: 1 })).status).toBe(403);
-      // The hire-a-bid route is gone.
+    it('has no bidding: nobody names a price, and the contract is the posted budget', async () => {
+      // The hire-a-bid route is gone, and a price or a different worker in the body is ignored.
       expect((await post('client', '/proposals/p1/hire')).status).toBe(404);
-      // Accepting ignores any price in the request: the contract is the posted budget.
-      expect((await post('sarah', '/tasks/t3/accept', { bidPrice: 1 })).status).toBe(201);
-      expect((await get('client', '/tasks/t3')).body.data).toMatchObject({ workerId: 'u5', budget: 1200, contractPrice: 1200 });
+      const app = await post('worker', '/proposals', { taskId: 't3', bidPrice: 1, workerId: 'u6' });
+      expect(app.status).toBe(201);
+      expect(app.body.data).toMatchObject({ type: 'application', workerId: 'u2', status: 'pending' });
+      expect(app.body.data.bidPrice).toBeUndefined();
+      expect((await post('client', `/proposals/${app.body.data.id}/accept`)).status).toBe(201);
+      expect((await get('client', '/tasks/t3')).body.data).toMatchObject({ workerId: 'u2', budget: 1200, contractPrice: 1200, status: 'in-progress' });
+      // Sarah's and Michael's applications close.
+      const rest = (await get('client', '/proposals?taskId=t3')).body.data.filter((p: any) => p.id !== app.body.data.id);
+      expect(rest.length).toBe(2);
+      expect(rest.every((p: any) => p.status === 'closed')).toBe(true);
     });
 
     it('takes an invitation\'s worker details from the record, not the request', async () => {
-      const res = await post('client', '/proposals', { taskId: 't3', workerId: 'u6', workerName: 'Someone Else', rating: 5 });
+      const res = await post('client', '/proposals', { taskId: 't3', workerId: 'u2', workerName: 'Someone Else', rating: 5 });
       expect(res.status).toBe(201);
-      expect(res.body.data).toMatchObject({ workerName: 'Michael Chen', type: 'invitation', status: 'pending' });
+      expect(res.body.data).toMatchObject({ workerName: 'Alex Worker', type: 'invitation', status: 'pending' });
       expect(res.body.data.rating).toBeUndefined();
     });
 
-    it("does not let one client invite workers to another client's project, or a worker accept another worker's invitation", async () => {
+    it('lets only the other side answer: the client answers applications, the invited worker answers invitations', async () => {
       expect((await post('bob', '/proposals', { taskId: 't3', workerId: 'u6' })).status).toBe(403);
+      // p1 is Sarah's application to James's t3.
       expect((await post('sarah', '/proposals/p1/accept')).status).toBe(403);
       expect((await post('sarah', '/proposals/p1/decline')).status).toBe(403);
+      expect((await post('bob', '/proposals/p1/accept')).status).toBe(403);
+      expect((await post('worker', '/proposals/p1/accept')).status).toBe(403);
+      // p3 is Bob's invitation to Alex on t5.
+      expect((await post('bob', '/proposals/p3/accept')).status).toBe(403);
+      expect((await post('sarah', '/proposals/p3/accept')).status).toBe(403);
+      // A client cannot apply to someone else's project.
+      expect((await post('client', '/proposals', { taskId: 't5' })).status).toBe(403);
     });
 
     it('does not let a worker repoint, submit or approve milestones that are not theirs', async () => {
@@ -324,29 +343,48 @@ describe('Lannent API (e2e)', () => {
       expect((await patch('worker', '/milestones/m6', {})).status).toBe(403);
     });
 
-    it('lets a client invite a worker and the worker accept', async () => {
-      const inv = await post('client', '/proposals', { taskId: 't3', workerId: 'u6', message: 'Interested?' });
+    it('lets a client invite a worker, who accepts and starts straight away', async () => {
+      const inv = await post('client', '/proposals', { taskId: 't3', workerId: 'u2', message: 'Interested?' });
       expect(inv.body.data.type).toBe('invitation');
-      expect((await post('michael', `/proposals/${inv.body.data.id}/accept`)).status).toBe(201);
-      expect((await get('client', '/tasks/t3')).body.data).toMatchObject({ workerId: 'u6', status: 'in-progress' });
-      // Alex's seeded invitation to t3 closes.
-      expect((await get('worker', '/proposals')).body.data.find((p: any) => p.id === 'p1')).toMatchObject({ status: 'closed' });
-      expect((await post('worker', '/proposals/p1/accept')).status).toBe(400);
+      expect((await post('worker', `/proposals/${inv.body.data.id}/accept`)).status).toBe(201);
+      expect((await get('client', '/tasks/t3')).body.data).toMatchObject({ workerId: 'u2', status: 'in-progress' });
+      // The pending applications on t3 close, and can no longer be accepted.
+      expect((await get('client', '/proposals?taskId=t3')).body.data.find((p: any) => p.id === 'p1').status).toBe('closed');
+      expect((await post('client', '/proposals/p1/accept')).status).toBe(400);
+      expect((await get('client', '/notifications')).body.data.some((n: any) => n.type === 'hire' && n.link === '/project-milestone-board?id=t3')).toBe(true);
+    });
+
+    it('does not let a client invite a worker who already applied, or a worker apply when invited', async () => {
+      expect((await post('client', '/proposals', { taskId: 't3', workerId: 'u5' })).status).toBe(400);
+      expect((await post('worker', '/proposals', { taskId: 't5' })).status).toBe(400); // Alex is invited to t5
     });
 
     it('lets a worker decline an invitation, after which they are not invited again', async () => {
-      expect((await post('worker', '/proposals/p1/decline')).status).toBe(201);
-      expect((await get('client', '/proposals?taskId=t3')).body.data.find((p: any) => p.id === 'p1').status).toBe('declined');
-      expect((await post('client', '/proposals', { taskId: 't3', workerId: 'u2' })).status).toBe(400);
-      // Declining an invitation does not stop the worker accepting the open project later.
-      expect((await take('worker', 't3')).status).toBe(201);
+      expect((await post('worker', '/proposals/p3/decline')).status).toBe(201);
+      expect((await get('bob', '/proposals?taskId=t5')).body.data.find((p: any) => p.id === 'p3').status).toBe('declined');
+      expect((await post('bob', '/proposals', { taskId: 't5', workerId: 'u2' })).status).toBe(400);
+      // Declining an invitation does not stop the worker applying later.
+      expect((await take('worker', 't5')).status).toBe(201);
     });
 
-    it('lets a client withdraw an unanswered invitation', async () => {
-      expect((await patch('worker', '/proposals/p1', { status: 'withdrawn' })).status).toBe(403);
-      expect((await patch('client', '/proposals/p1', { status: 'rejected' })).status).toBe(400);
-      expect((await patch('client', '/proposals/p1', { status: 'withdrawn' })).status).toBe(200);
-      expect((await post('worker', '/proposals/p1/accept')).status).toBe(400);
+    it('lets whoever sent one withdraw it, and nobody else', async () => {
+      expect((await patch('worker', '/proposals/p3', { status: 'withdrawn' })).status).toBe(403);
+      expect((await patch('bob', '/proposals/p3', { status: 'rejected' })).status).toBe(400);
+      expect((await patch('bob', '/proposals/p3', { status: 'withdrawn' })).status).toBe(200);
+      expect((await post('worker', '/proposals/p3/accept')).status).toBe(400);
+
+      expect((await patch('client', '/proposals/p2', { status: 'withdrawn' })).status).toBe(403);
+      expect((await patch('michael', '/proposals/p2', { status: 'withdrawn' })).status).toBe(200);
+      expect((await post('client', '/proposals/p2/accept')).status).toBe(400);
+      // A withdrawn application can be sent again, up to three in all.
+      expect((await post('michael', '/proposals', { taskId: 't3' })).status).toBe(201);
+    });
+
+    it('lets a client reject an application for good', async () => {
+      expect((await post('client', '/proposals/p1/decline')).status).toBe(201);
+      expect((await get('sarah', '/proposals')).body.data.find((p: any) => p.id === 'p1').status).toBe('rejected');
+      expect((await post('sarah', '/proposals', { taskId: 't3' })).status).toBe(400);
+      expect((await get('sarah', '/notifications')).body.data.some((n: any) => n.link === '/my-proposals')).toBe(true);
     });
 
     it('lets a client delete an open project and returns its budget exactly', async () => {
@@ -682,7 +720,7 @@ describe('Lannent API (e2e)', () => {
       expect((await post('expert', '/audit-reports', { auditRequestId: ar.id, milestoneId: ms.id, verdict: 'pass', findings: 'ok' })).status).toBe(400);
     });
 
-    it('refuses to let a worker accept a project with no milestones', async () => {
+    it('refuses to hire on a project with no milestones', async () => {
       const task = (await post('client', '/tasks', { title: 'Empty', description: 'Project details', category: 'Web Development', budget: 300 })).body.data;
       expect((await take('worker', task.id)).status).toBe(400);
       expect((await get('client', `/tasks/${task.id}`)).body.data).toMatchObject({ workerId: null, status: 'open' });
@@ -737,10 +775,10 @@ describe('Lannent API (e2e)', () => {
       expect((await login({ email: 'worker@gmail.com', password: 'Another1pass!' })).status).toBe(201);
     });
 
-    it('notifies the client when a worker accepts their project', async () => {
-      expect((await take('sarah', 't3')).status).toBe(201);
-      const notes = (await get('client', '/notifications')).body.data;
-      expect(notes.some((n: any) => n.type === 'hire' && n.link === '/project-milestone-board?id=t3')).toBe(true);
+    it('notifies the worker when their application is accepted', async () => {
+      expect((await post('client', '/proposals/p1/accept')).status).toBe(201);
+      const notes = (await get('sarah', '/notifications')).body.data;
+      expect(notes.some((n: any) => n.type === 'hire' && n.link === '/worker-milestone-board?id=t3')).toBe(true);
     });
 
     it('lets the intake desk open an applicant résumé', async () => {
@@ -885,46 +923,53 @@ describe('Lannent API (e2e)', () => {
       expect((await patch('client', '/tasks/t3', { title: 'API Integration Project v2' })).status).toBe(200);
     });
 
-    it('hires the first worker to accept, at the posted budget, once the plan matches it', async () => {
-      const task = (await post('bob', '/tasks', { title: 'First come', description: 'Project details', category: 'Web Development', budget: 1000 })).body.data;
+    it('hires one applicant at the posted budget, once the plan matches it', async () => {
+      const task = (await post('bob', '/tasks', { title: 'Applicants', description: 'Project details', category: 'Web Development', budget: 1000 })).body.data;
       const ms = (await post('bob', '/milestones', { taskId: task.id, title: 'Most of it', budget: 600 })).body.data;
-      // The plan is $400 short of the budget, so nobody can take it yet.
-      const refused = await take('worker', task.id);
+      const a = (await post('worker', '/proposals', { taskId: task.id })).body.data;
+      const b = (await post('sarah', '/proposals', { taskId: task.id })).body.data;
+      // The plan is ₹400 short of the budget, so nobody can be hired yet.
+      const refused = await post('bob', `/proposals/${a.id}/accept`);
       expect(refused.status).toBe(400);
       expect(refused.body.message).toMatch(/₹600 of the ₹1000/);
       await patch('bob', `/milestones/${ms.id}`, { budget: 1000 });
       const before = await balance('u8');
-      expect((await take('worker', task.id)).status).toBe(201);
+      expect((await post('bob', `/proposals/${a.id}/accept`)).status).toBe(201);
       expect(await balance('u8')).toBe(Math.round((before - 50 - 4.99) * 100) / 100);
       expect((await get('bob', `/ledger/escrow/${task.id}`)).body.data.projectHeld).toBe(1000);
-      // Second come: the project is taken.
-      expect((await take('sarah', task.id)).status).toBe(400);
+      // The other applicant is closed out.
+      expect((await post('bob', `/proposals/${b.id}/accept`)).status).toBe(400);
       expect((await get('bob', `/tasks/${task.id}`)).body.data.workerId).toBe('u2');
-      // Clients cannot accept projects.
-      expect((await take('client', 't5')).status).toBe(403);
+      // An applicant cannot hire themselves.
+      expect((await post('worker', `/proposals/${a.id}/accept`)).status).toBe(403);
     });
 
-    it('lets nobody accept when the client cannot cover the contract fees, and tells the client', async () => {
+    it('starts nothing when the client cannot cover the contract fees', async () => {
       const task = (await post('bob', '/tasks', { title: 'Broke', description: 'Project details', category: 'Web Development', budget: 300 })).body.data;
       await post('bob', '/milestones', { taskId: task.id, title: 'All of it', budget: 300 });
+      const inv = (await post('bob', '/proposals', { taskId: task.id, workerId: 'u2' })).body.data;
+      const app = (await post('sarah', '/proposals', { taskId: task.id })).body.data;
       // Bob spends the rest of his wallet on another project.
       const rest = await balance('u8');
       expect((await post('bob', '/tasks', { title: 'Everything', description: 'Project details', category: 'Web Development', budget: rest })).status).toBe(201);
-      const res = await take('worker', task.id);
+      // The invited worker is told the client cannot pay; the client is pointed at their wallet.
+      const res = await post('worker', `/proposals/${inv.id}/accept`);
       expect(res.status).toBe(400);
       expect(res.body.message).toMatch(/client cannot fund/);
-      expect((await get('bob', `/tasks/${task.id}`)).body.data.workerId).toBeNull();
       expect((await get('bob', '/notifications')).body.data.some((n: any) => n.link === '/client-wallet')).toBe(true);
+      // The client accepting an application is refused for the same reason.
+      expect((await post('bob', `/proposals/${app.id}/accept`)).status).toBe(400);
+      expect((await get('bob', `/tasks/${task.id}`)).body.data.workerId).toBeNull();
     });
 
-    it("closes a suspended worker's invitations and stops them accepting", async () => {
+    it("closes a suspended worker's applications and invitations", async () => {
       await patch('super', '/users/u2', { status: 'suspended' });
-      expect((await get('client', '/proposals?taskId=t3')).body.data.find((p: any) => p.id === 'p1').status).toBe('closed');
+      expect((await get('bob', '/proposals?taskId=t5')).body.data.find((p: any) => p.id === 'p3').status).toBe('closed');
       await patch('super', '/users/u2', { status: 'active' });
-      expect((await post('worker', '/proposals/p1/accept')).status).toBe(400);
+      expect((await post('worker', '/proposals/p3/accept')).status).toBe(400);
     });
 
-    it('drops an invited worker from the project once someone else accepts: no files, no messages', async () => {
+    it('drops an invited worker from the project once someone else is hired: no files, no messages', async () => {
       const task = (await post('client', '/tasks', { title: 'Files test', description: 'Project details', category: 'Web Development', budget: 300 })).body.data;
       const ms = (await post('client', '/milestones', { taskId: task.id, title: 'All of it', budget: 300 })).body.data;
       await post('client', '/proposals', { taskId: task.id, workerId: 'u2' });

@@ -4,8 +4,9 @@ import { SEED_PROPOSALS } from '../seed/seed.data';
 /**
  * ProposalsRepository — In-Memory Data Access Layer
  *
- * Manages the PROPOSALS array (client invitations) and provides low-level
- * CRUD operations. Business logic (accepting, hiring) belongs in ProposalsService.
+ * Manages the PROPOSALS array (worker applications and client invitations)
+ * and provides low-level CRUD operations. Business logic (accepting, hiring)
+ * belongs in ProposalsService.
  */
 @Injectable()
 export class ProposalsRepository {
@@ -16,10 +17,11 @@ export class ProposalsRepository {
     return 'p_' + Date.now() + '_' + (this.counter++);
   }
 
-  findAll(query?: { taskId?: string; workerId?: string }): any[] {
+  findAll(query?: { taskId?: string; workerId?: string; type?: string }): any[] {
     let result = this.proposals;
     if (query?.taskId) result = result.filter(p => p.taskId === query.taskId);
     if (query?.workerId) result = result.filter(p => p.workerId === query.workerId);
+    if (query?.type) result = result.filter(p => p.type === query.type);
     return result;
   }
 

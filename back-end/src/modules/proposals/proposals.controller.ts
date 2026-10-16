@@ -15,48 +15,50 @@ export class ProposalsController {
   constructor(private readonly proposalsService: ProposalsService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Invitations you sent or received (supports ?taskId=&workerId= filters)' })
+  @ApiOperation({ summary: 'Applications and invitations you sent or received (supports ?taskId=&workerId=&type= filters)' })
   @ApiQuery({ name: 'taskId', required: false })
   @ApiQuery({ name: 'workerId', required: false })
+  @ApiQuery({ name: 'type', required: false, enum: ['application', 'invitation'] })
   findAll(
     @Query('taskId') taskId?: string,
     @Query('workerId') workerId?: string,
+    @Query('type') type?: string,
     @CurrentActor() actor?: Actor,
   ) {
-    return this.proposalsService.findAll({ taskId, workerId }, actor);
+    return this.proposalsService.findAll({ taskId, workerId, type }, actor);
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Get an invitation by ID' })
+  @ApiOperation({ summary: 'Get an application or invitation by ID' })
   findOne(@Param('id') id: string, @CurrentActor() actor: Actor) {
     return this.proposalsService.findById(id, actor);
   }
 
   @Post()
-  @Roles('client')
-  @ApiOperation({ summary: 'Invite a worker to your open project at its posted budget' })
+  @Roles('worker', 'client')
+  @ApiOperation({ summary: 'A worker applies to an open project, or a client invites a worker — always at the posted budget' })
   create(@Body() dto: CreateProposalDto, @CurrentActor() actor: Actor) {
     return this.proposalsService.create(dto, actor);
   }
 
   @Patch(':id')
-  @Roles('client')
-  @ApiOperation({ summary: 'Withdraw an invitation the worker has not answered' })
+  @Roles('worker', 'client')
+  @ApiOperation({ summary: 'Withdraw your own pending application or invitation' })
   update(@Param('id') id: string, @Body() dto: UpdateProposalDto, @CurrentActor() actor: Actor) {
     return this.proposalsService.update(id, dto, actor);
   }
 
   @Post(':id/accept')
-  @Roles('worker')
-  @ApiOperation({ summary: 'Accept an invitation — you are hired at the posted budget' })
+  @Roles('worker', 'client')
+  @ApiOperation({ summary: 'The client accepts an application, or the invited worker accepts an invitation — the worker is hired at the posted budget' })
   accept(@Param('id') id: string, @CurrentActor() actor: Actor) {
-    return this.proposalsService.acceptInvitation(id, actor);
+    return this.proposalsService.accept(id, actor);
   }
 
   @Post(':id/decline')
-  @Roles('worker')
-  @ApiOperation({ summary: 'Decline an invitation' })
+  @Roles('worker', 'client')
+  @ApiOperation({ summary: 'The client rejects an application, or the invited worker declines an invitation' })
   decline(@Param('id') id: string, @CurrentActor() actor: Actor) {
-    return this.proposalsService.declineInvitation(id, actor);
+    return this.proposalsService.decline(id, actor);
   }
 }

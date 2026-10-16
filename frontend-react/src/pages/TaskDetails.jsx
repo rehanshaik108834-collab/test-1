@@ -3,12 +3,12 @@
  * Converted from front-end/pages/task-details.html.
  *
  * Full details of one task (?id=<taskId>): description, milestones, skills,
- * budget and client. There is no bidding: the client's budget is the price,
- * and while the task is open a worker can accept it — the first to accept is
- * hired on the spot.
+ * budget and client. There is no bidding: the client's budget is the price.
+ * While the task is open a worker can apply at that price; the client then
+ * accepts one application, which hires that worker and starts the project.
  */
 import { useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import EmptyState from '../components/EmptyState';
 import Icon from '../components/Icon';
@@ -18,6 +18,7 @@ import { useStore } from '../context/StoreContext';
 import { useValidation } from '../context/ValidationContext';
 import { getSavedTaskIds, toggleSavedTask } from '../utils/helpers';
 import usePageTitle from '../hooks/usePageTitle';
+import useRerender from '../hooks/useRerender';
 import pageCss from './TaskDetails.css?raw';
 
 const MILESTONE_STATUS_TEXT = {
@@ -44,7 +45,6 @@ export default function TaskDetails() {
   const Store = useStore();
   const Auth = useAuth();
   const Validate = useValidation();
-  const navigate = useNavigate();
   usePageTitle('Task Details — Lannent');
   const [searchParams] = useSearchParams();
   const urlId = searchParams.get('id');
@@ -53,6 +53,10 @@ export default function TaskDetails() {
   // "Save Task" bookmark — the button had no handler at all.
   const userId = Auth.getCurrentUser()?.userId;
   const [saved, setSaved] = useState(() => !!urlId && getSavedTaskIds(userId).includes(urlId));
+  // Apply dialog: an optional note to the client. There is no price to name.
+  const [applyOpen, setApplyOpen] = useState(false);
+  const [note, setNote] = useState('');
+  const rerender = useRerender();
   function toggleSave() {
     if (!userId || !urlId) { Validate.toast('Please log in to save tasks.', 'error'); return; }
     const nowSaved = toggleSavedTask(userId, urlId);
@@ -96,25 +100,33 @@ export default function TaskDetails() {
   const statusLabel = taskStatus.charAt(0).toUpperCase() + taskStatus.slice(1).replace('-', ' ');
   const statusBadgeClass = taskStatus === 'open' ? 'badge-green' : taskStatus === 'in-progress' ? 'badge-blue' : taskStatus === 'completed' ? 'badge-purple' : taskStatus === 'cancelled' ? 'badge-red' : 'badge-orange';
 
-  const acceptable = Store.canBeAccepted(task);
-  const plannedTotal = taskMilestones.reduce((a, m) => a + (Number(m.budget) || 0), 0);
+  // This worker's most recent application or invitation here, if any.
+  const mine = role === 'worker'
+    ? Store.getProposalsByTask(task.id).filter(p => p.workerId === userId).slice(-1)[0] || null
+    : null;
+  const pendingApplication = mine && mine.type === 'application' && mine.status === 'pending' ? mine : null;
+  const pendingInvitation = mine && mine.type === 'invitation' && mine.status === 'pending' ? mine : null;
+  const rejected = Store.getProposalsByTask(task.id).some(p => p.workerId === userId && p.type === 'application' && p.status === 'rejected');
 
-  function acceptTask() {
-    Validate.confirm(
-      `Accept "${task.title}" for ${budgetDisplay}? You are hired straight away and the project moves to My Projects. ` +
-        'You are paid milestone by milestone as the client approves your work, less the service fee.',
-      () => {
-        try {
-          Store.acceptTask(task.id);
-        } catch (e) {
-          Validate.toast(e.message, 'error');
-          Store.refresh('tasks', 'milestones');
-          return;
-        }
-        Validate.toast('✓ You accepted the project — it is now in progress.', 'success');
-        navigate(`/worker-milestone-board?id=${task.id}`);
-      },
-    );
+  function apply() {
+    try {
+      Store.applyToTask(task.id, note.trim());
+    } catch (e) {
+      Validate.toast(e.message, 'error');
+      return;
+    }
+    setApplyOpen(false);
+    setNote('');
+    rerender();
+    Validate.toast('✓ Application sent. The client will accept or decline it.', 'success');
+  }
+
+  function withdraw() {
+    Validate.confirm('Withdraw your application? You can apply again later.', () => {
+      try { Store.withdrawProposal(pendingApplication.id); } catch (e) { Validate.toast(e.message, 'error'); return; }
+      rerender();
+      Validate.toast('Application withdrawn.', 'success');
+    });
   }
 
   return (
@@ -213,18 +225,23 @@ export default function TaskDetails() {
               {taskStatus === 'open' ? (
                 <>
                 {role !== 'worker' ? (
-                  <div style={{ width: '100%', padding: 12, borderRadius: 12, fontSize: 14, fontWeight: 600, textAlign: 'center', marginBottom: 12, background: '#eef2ff', color: '#3730a3' }}>Open — the first worker to accept is hired</div>
-                ) : acceptable ? (
+                  <div style={{ width: '100%', padding: 12, borderRadius: 12, fontSize: 14, fontWeight: 600, textAlign: 'center', marginBottom: 12, background: '#eef2ff', color: '#3730a3' }}>Open for applications</div>
+                ) : pendingInvitation ? (
+                  <Link to="/worker-invitations" className="btn-primary" style={{ display: 'block', width: '100%', padding: 12, borderRadius: 12, fontSize: 15, marginBottom: 12, textAlign: 'center', textDecoration: 'none' }}>You&apos;re invited — answer it</Link>
+                ) : pendingApplication ? (
                   <>
-                    <button className="btn-primary" style={{ width: '100%', padding: 12, borderRadius: 12, fontSize: 15, marginBottom: 8 }} onClick={acceptTask}>{`Accept for ${budgetDisplay}`}</button>
+                    <div style={{ width: '100%', padding: 12, borderRadius: 12, fontSize: 14, fontWeight: 600, textAlign: 'center', marginBottom: 8, background: '#ecfdf5', color: '#047857' }}>✓ Applied — waiting for the client</div>
+                    <button className="btn-outline" style={{ width: '100%', padding: 10, borderRadius: 12, fontSize: 14, marginBottom: 12 }} onClick={withdraw}>Withdraw application</button>
+                  </>
+                ) : rejected ? (
+                  <div style={{ width: '100%', padding: 12, borderRadius: 12, fontSize: 13, textAlign: 'center', marginBottom: 12, ...STATUS_BOX_COLORS.other }}>The client declined your application to this project.</div>
+                ) : (
+                  <>
+                    <button className="btn-primary" style={{ width: '100%', padding: 12, borderRadius: 12, fontSize: 15, marginBottom: 8 }} onClick={() => setApplyOpen(true)}>{`Apply for ${budgetDisplay}`}</button>
                     <p style={{ fontSize: 12, color: 'var(--muted-foreground)', textAlign: 'center', marginBottom: 12, lineHeight: 1.5 }}>
-                      The price is fixed by the client. The first worker to accept is hired.
+                      The price is fixed by the client. If they accept your application, you are hired and the project starts.
                     </p>
                   </>
-                ) : (
-                  <div style={{ width: '100%', padding: 12, borderRadius: 12, fontSize: 13, textAlign: 'center', marginBottom: 12, ...STATUS_BOX_COLORS.other }}>
-                    {`The client is still finishing the milestone plan (₹${plannedTotal.toLocaleString('en-IN')} of ${budgetDisplay} planned). You can accept once it adds up.`}
-                  </div>
                 )}
                 {' '}
                 {role === 'worker' && <button className="btn-outline" style={{ width: '100%', padding: 12, borderRadius: 12, fontSize: 15, ...(saved ? { borderColor: '#6366f1', color: '#4f46e5', background: '#eef2ff' } : {}) }}
@@ -234,7 +251,7 @@ export default function TaskDetails() {
                 </button>}
                 </>
               ) : (
-                <div style={{ width: '100%', padding: 12, borderRadius: 12, fontSize: 14, fontWeight: 600, textAlign: 'center', marginBottom: 12, ...STATUS_BOX_COLORS[taskStatus === 'in-progress' || taskStatus === 'completed' ? taskStatus : 'other'] }}>{taskStatus === 'in-progress' ? '🔄 In Progress — a worker has accepted it' : taskStatus === 'completed' ? '✅ Completed' : '⚠️ ' + statusLabel}</div>
+                <div style={{ width: '100%', padding: 12, borderRadius: 12, fontSize: 14, fontWeight: 600, textAlign: 'center', marginBottom: 12, ...STATUS_BOX_COLORS[taskStatus === 'in-progress' || taskStatus === 'completed' ? taskStatus : 'other'] }}>{taskStatus === 'in-progress' ? '🔄 In Progress — a worker has been hired' : taskStatus === 'completed' ? '✅ Completed' : '⚠️ ' + statusLabel}</div>
               )}
               <div style={{ marginTop: 20, paddingTop: 20, borderTop: '1px solid var(--border)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
@@ -284,6 +301,24 @@ export default function TaskDetails() {
             </div>
           </div>
         </div>
+        {applyOpen && (
+          <div style={{ display: 'flex', position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 200, alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}
+               onClick={e => { if (e.target === e.currentTarget) setApplyOpen(false); }}>
+            <div style={{ background: 'var(--card)', borderRadius: 24, padding: 28, width: '100%', maxWidth: 460, margin: '0 16px', boxShadow: '0 32px 80px rgba(0,0,0,0.15)' }}>
+              <h2 style={{ fontSize: 20, fontWeight: 600, marginBottom: 6 }}>{`Apply for ${budgetDisplay}`}</h2>
+              <p style={{ fontSize: 13, color: 'var(--muted-foreground)', marginBottom: 16, lineHeight: 1.5 }}>
+                The budget is set by the client and is not negotiable. If they accept, you are hired at that price and paid milestone by milestone, less the service fee.
+              </p>
+              <label className="form-label" htmlFor="applyNote">Note to the client (optional)</label>
+              <textarea id="applyNote" className="form-input" rows="4" maxLength={2000} placeholder="Relevant experience, links to similar work…"
+                        value={note} onChange={e => setNote(e.target.value)} />
+              <div style={{ display: 'flex', gap: 12, marginTop: 16 }}>
+                <button onClick={() => setApplyOpen(false)} className="btn-outline" style={{ flex: 1, padding: 12, borderRadius: 12 }}>Cancel</button>
+                <button onClick={apply} className="btn-primary" style={{ flex: 1, padding: 12, borderRadius: 12 }}>Send application</button>
+              </div>
+            </div>
+          </div>
+        )}
       </DashboardLayout>
     </>
   );

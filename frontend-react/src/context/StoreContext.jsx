@@ -825,59 +825,60 @@ const Store = (() => {
     return result;
   }
 
-  // ─── ACCEPTING PROJECTS & INVITATIONS ────────────────────────────────────
-  // There is no bidding. The client's budget is the price; a worker accepts an
-  // open project (the first to accept is hired) or answers an invitation.
-  function getInvitations() { return _cache.proposals; }
-  function getInvitationsByTask(taskId) { return _cache.proposals.filter(p => p.taskId === taskId); }
-  function getInvitationsByWorker(workerId) { return _cache.proposals.filter(p => p.workerId === workerId); }
+  // ─── APPLICATIONS & INVITATIONS ───────────────────────────────────────────
+  // There is no bidding: the client's budget is the price. A worker applies
+  // and the client accepts; a client invites and the worker accepts. Either
+  // acceptance hires the worker and starts the project.
+  function getProposals() { return _cache.proposals; }
+  function getProposalsByTask(taskId) { return _cache.proposals.filter(p => p.taskId === taskId); }
+  function getApplicationsByWorker(workerId) { return _cache.proposals.filter(p => p.workerId === workerId && p.type === 'application'); }
+  function getInvitationsByWorker(workerId) { return _cache.proposals.filter(p => p.workerId === workerId && p.type === 'invitation'); }
 
-  /** Whether a worker could accept this project right now: open, with milestones adding up to the budget. */
-  function canBeAccepted(task) {
+  /** Whether someone could be hired onto this project now: open, with milestones adding up to the budget. */
+  function isReadyToHire(task) {
     if (!task || task.status !== 'open' || task.workerId) return false;
     const list = _cache.milestones.filter(m => m.taskId === task.id);
     const total = list.reduce((a, m) => a + (Number(m.budget) || 0), 0);
     return list.length > 0 && Math.abs(total - Number(task.budget)) < 0.005;
   }
 
-  /** Accepting starts the contract and moves money, so everything it touches is re-read. */
-  function _afterHire() {
+  function _putProposal(result) {
+    const idx = _cache.proposals.findIndex(p => p.id === result.id);
+    if (idx >= 0) _cache.proposals[idx] = result; else _cache.proposals.push(result);
+    return result;
+  }
+
+  /** A worker applies to an open project at its posted budget. */
+  function applyToTask(taskId, message) {
+    return _putProposal(_write('POST', `${API}/proposals`, { taskId, message }));
+  }
+
+  /** A client invites a worker to their open project at its posted budget. */
+  function sendInvitation({ taskId, workerId, message }) {
+    return _putProposal(_write('POST', `${API}/proposals`, { taskId, workerId, message }));
+  }
+
+  /** Whoever sent a pending application or invitation takes it back. */
+  function withdrawProposal(id) {
+    return _putProposal(_write('PATCH', `${API}/proposals/${id}`, { status: 'withdrawn' }));
+  }
+
+  /**
+   * The client accepts an application, or the invited worker accepts an
+   * invitation. Either hires the worker and moves money, so everything it
+   * touches is re-read.
+   */
+  function acceptProposal(id) {
+    const result = _write('POST', `${API}/proposals/${id}/accept`, {});
     refresh('proposals', 'tasks', 'milestones');
     _refreshTransactions();
     _refreshUser(_sessionUserId());
-  }
-
-  /** The worker takes an open project at its posted budget. */
-  function acceptTask(taskId) {
-    const result = _write('POST', `${API}/tasks/${taskId}/accept`, {});
-    _afterHire();
     return result;
   }
 
-  function sendInvitation({ taskId, workerId, message }) {
-    const result = _write('POST', `${API}/proposals`, { taskId, workerId, message });
-    _cache.proposals.push(result);
-    return result;
-  }
-
-  function withdrawInvitation(id) {
-    const result = _write('PATCH', `${API}/proposals/${id}`, { status: 'withdrawn' });
-    const idx = _cache.proposals.findIndex(p => p.id === id);
-    if (idx >= 0) _cache.proposals[idx] = result;
-    return result;
-  }
-
-  function acceptInvitation(id) {
-    const result = _write('POST', `${API}/proposals/${id}/accept`, {});
-    _afterHire();
-    return result;
-  }
-
-  function declineInvitation(id) {
-    const result = _write('POST', `${API}/proposals/${id}/decline`, {});
-    const idx = _cache.proposals.findIndex(p => p.id === id);
-    if (idx >= 0) _cache.proposals[idx] = result;
-    return result;
+  /** The client rejects an application, or the invited worker declines an invitation. */
+  function declineProposal(id) {
+    return _putProposal(_write('POST', `${API}/proposals/${id}/decline`, {}));
   }
 
   // ─── AUDIT REQUESTS ──────────────────────────────────────────────────────
@@ -1038,7 +1039,8 @@ const Store = (() => {
     getCancellationQuote, cancelTask,
     getMilestones, getMilestonesByTask, getMilestoneById, createMilestone, updateMilestone, deleteMilestone, submitDeliverable, approveDeliverable,
     getNonDeliveryStatus, endForNonDelivery,
-    getInvitations, getInvitationsByTask, getInvitationsByWorker, canBeAccepted, acceptTask, sendInvitation, withdrawInvitation, acceptInvitation, declineInvitation,
+    getProposals, getProposalsByTask, getApplicationsByWorker, getInvitationsByWorker, isReadyToHire,
+    applyToTask, sendInvitation, withdrawProposal, acceptProposal, declineProposal,
     getAuditRequests, getAuditRequestById, createAuditRequest, updateAuditRequest,
     getAuditPreview, getAuditRequestsByTask, makeAuditOffer, acceptAuditOffer, fundAuditEscrow,
     acceptAuditEngagement, declineAuditEngagement, cancelDraftTask, cancelAuditRequest, getExperts,

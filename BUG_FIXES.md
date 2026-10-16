@@ -9,7 +9,7 @@ Each entry says what was wrong, what changed, and where (paths are relative to t
 |---|---|
 | Backend typecheck — `cd back-end && npx tsc --noEmit -p tsconfig.json` | clean |
 | Backend unit tests — `npm test` | 17 / 17 pass |
-| Backend end-to-end tests — `npm run test:e2e` | 90 / 90 pass (24 new in round 4; bidding tests replaced in round 5; 1 new in round 6) |
+| Backend end-to-end tests — `npm run test:e2e` | 92 / 92 pass (24 new in round 4; bidding tests replaced in rounds 5 and 7; 1 new in round 6) |
 | Frontend production build — `cd frontend-react && npx vite build` | builds |
 | ESLint on `frontend-react/src` | no undefined variables or parse errors (2 reports are only a missing `react-hooks` plugin definition in the lint config) |
 
@@ -400,4 +400,37 @@ Requested by the project owner.
 - **No currency dropdown.** Post Task showed a disabled dropdown with a single option. It is now a fixed "₹ INR — Indian Rupee" field.
 - **The budget cannot change after posting.** `PATCH /tasks/:id` refuses any budget change, with a message saying to delete the project and post it again. The edit dialog in My Projects shows the budget read-only. `ledger.adjustProjectBudget` (which topped up or refunded escrow on a budget edit) is removed. Deleting an open, draft or cancelled project with nobody hired was already available.
 - **Disputes:** unchanged. Any matching reviewer can still be chosen, as decided in round 4.
+
+## 10. Round 7 — applications need the client's yes, and pages that scrolled sideways
+
+Requested by the project owner. This replaces round 5's "first worker to accept is hired".
+
+### Hiring
+
+- **A worker applies; the client accepts.** On Task Details a worker presses *Apply for ₹X* and can add an optional note. There is no price field: the posted budget is the price. The client accepts the application, which hires that worker and starts the project, or rejects it. A worker can withdraw a pending application. After a rejection they cannot apply to that project again, and they can apply at most 3 times per project.
+- **A client invites; the worker accepts.** Accepting hires the worker and starts the project straight away. Declining is final for that project. The client can withdraw a pending invitation.
+- When someone is hired, every other pending application and invitation on the project closes, and those workers are told.
+- Nobody can be hired until the milestones add up to exactly the budget, and the client must be able to cover the contract fees.
+- **API.**
+  - `POST /proposals`: a worker sending it applies; a client sending it with `workerId` invites.
+  - `POST /proposals/:id/accept` and `/decline`: the other side answers — the client for an application, the invited worker for an invitation.
+  - `PATCH /proposals/:id` `{ status: 'withdrawn' }`: the sender withdraws.
+  - `POST /tasks/:id/accept` is gone.
+- **Pages.** The original pages are back, with the bid price removed:
+  - The client's **Worker Applications** page (`/worker-applications`): the project switcher, the application list and detail, and Hire or Reject. The hire dialog quotes the contract fees on the posted budget.
+  - The worker's **My Proposals** page (`/my-proposals`).
+  - Requests that clients send stay on the worker's **Invitations** page.
+- **Seed.** Sarah and Michael have pending applications on t3; Alex has a pending invitation from Bob on t5.
+
+### Horizontal scrolling
+
+- **Review Deliverable.** The layout column was `1fr`, which cannot shrink below its widest unbreakable content. One long link in the worker's notes, such as a Google Drive URL, pushed the page 215–631px sideways. The column is now `minmax(0,1fr)`.
+- **Same fix on ten other layouts:** Post Task, Task Details, both workrooms, Submit Deliverable, Resolve Dispute, both expert report pages, Expert Settings and Worker Applications.
+- **App-wide text wrapping.** Text people type now wraps inside the main area. Buttons, badges, status pills, form controls and tables are exempt and stay whole; wide tables scroll inside their own box. With long unbroken links in project titles, descriptions, notes, chat and applications, the same overflow had shown on Browse Tasks, Task Details, the milestone board, My Projects, Wallet, Analytics, Worker Applications and the chat windows. None of them scroll sideways now at 1440, 1280 or 1024px. This was checked in headless Chrome across every page and role.
+- Smaller fixes:
+  - The Wallet stat cards were 10px too wide at 1024px.
+  - The Profile Settings panel was 4px too wide.
+  - Sidebar labels were cut off mid-word ("Worker Applicatior"); they now end in an ellipsis and show the full name on hover.
+- **Review Deliverable showed generic placeholder text.** It never showed the link or branch the worker submitted, so a link-only submission looked empty. Both are now shown.
+- **Not done:** phone-width layouts (390px). Most pages still overflow there, mainly because the sidebar stays open. That needs a mobile layout of its own.
 

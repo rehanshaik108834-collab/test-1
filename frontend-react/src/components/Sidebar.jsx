@@ -13,7 +13,7 @@ const clientItems = [
   { icon: 'folder-kanban', label: 'My Projects', path: '/client-my-projects' },
   { icon: 'plus-circle', label: 'Post Task', path: '/post-task' },
   { icon: 'user-plus', label: 'Hire Workers', path: '/hire-gig-workers' },
-  { icon: 'mail', label: 'Sent Invitations', path: '/sent-invitations' },
+  { icon: 'users', label: 'Worker Applications', path: '/worker-applications' },
   { icon: 'shield-check', label: 'Audit & Dispute Fees', path: '/audit-offers' },
   { icon: 'wallet', label: 'Wallet', path: '/client-wallet' },
   { icon: 'message-square', label: 'Messages', path: '/messages' },
@@ -26,6 +26,7 @@ const workerItems = [
   { icon: 'search', label: 'Browse Tasks', path: '/browse-tasks' },
   { icon: 'folder-kanban', label: 'My Projects', path: '/worker-my-projects' },
   { icon: 'mail', label: 'Invitations', path: '/worker-invitations' },
+  { icon: 'file-text', label: 'My Proposals', path: '/my-proposals' },
   { icon: 'wallet', label: 'Wallet', path: '/worker-wallet' },
   { icon: 'message-square', label: 'Messages', path: '/messages' },
   { icon: 'file-text', label: 'Reports', path: '/milestone-reports' },
@@ -105,7 +106,7 @@ export default function Sidebar({ role, activePath, collapsed, onToggle }) {
         {menuItems.map(item => {
           const isActive = activePath ? activePath === item.path : location.pathname === item.path;
           return (
-            <Link key={item.label} to={item.path} className={'sidebar-item' + (isActive ? ' active' : '')}>
+            <Link key={item.label} to={item.path} title={item.label} className={'sidebar-item' + (isActive ? ' active' : '')}>
               <span className="sidebar-item-icon">
                 <Icon name={item.icon} style={{ width: 20, height: 20 }} />
               </span>

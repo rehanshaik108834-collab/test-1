@@ -29,7 +29,6 @@ function getAllBrowseTasks(Store) {
     budget: '₹' + (Number(t.budget) || 0).toLocaleString('en-IN'),
     tags: t.skills || [],
     milestones: Store.getMilestonesByTask(t.id).length,
-    ready: Store.canBeAccepted(t),
     deadline: t.deadline || 'TBD',
     audit: !!t.auditEnabled,
     badge: t.auditEnabled ? 'Audit' : 'New',
@@ -63,10 +62,6 @@ function TaskCard({ task: t }) {
         <div className="task-meta-item">
           <Icon name="bar-chart-2" style={{ width: 13, height: 13 }} />
           {`${t.milestones} milestone${t.milestones === 1 ? '' : 's'}`}
-        </div>
-        <div className="task-meta-item">
-          <Icon name={t.ready ? 'check-circle' : 'clock'} style={{ width: 13, height: 13 }} />
-          {t.ready ? 'Ready to accept' : 'Plan in progress'}
         </div>
         <div className="task-meta-item">
           <Icon name="clock" style={{ width: 13, height: 13 }} />
@@ -127,7 +122,7 @@ export default function BrowseTasks() {
 
   return (
     <DashboardLayout role={session?.role || 'worker'} activePath="/browse-tasks" pageTitle="Browse Tasks" pageSubtitle="Find the perfect project that matches your skills">
-      <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: 32, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '280px minmax(0,1fr)', gap: 32, alignItems: 'start' }}>
         {/* Left Filter Sidebar */}
         <div style={{ background: 'white', border: '1px solid #E8EAFF', borderRadius: 16, padding: 28, position: 'sticky', top: 104 }}>
           <h3 style={{ fontFamily: 'serif', fontSize: 20, fontWeight: 500, marginBottom: 24, color: '#000' }}>Filters</h3>
