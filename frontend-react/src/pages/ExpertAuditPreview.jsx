@@ -18,7 +18,7 @@ import useRerender from '../hooks/useRerender';
 import usePageTitle from '../hooks/usePageTitle';
 import pageCss from './ExpertAuditPreview.css?raw';
 
-const money = n => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const money = n => '₹' + Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 // Style of the small "View report" / "Audit this milestone" buttons
 const MS_BUTTON_STYLE = { textDecoration: 'none', padding: '6px 12px', borderRadius: 8, fontSize: 12.5, whiteSpace: 'nowrap' };
@@ -147,7 +147,7 @@ export default function ExpertAuditPreview() {
     if (!amount || amount < 1) { Validate.toast('Enter a price greater than zero.', 'error'); return; }
     const r = attempt(Validate, () => Store.makeAuditOffer(arId, { amount, note: 'Quote from reviewer' }));
     if (!r) return;
-    Validate.toast(`Quote of $${amount.toLocaleString()} sent to the client.`, 'success');
+    Validate.toast(`Quote of ₹${amount.toLocaleString('en-IN')} sent to the client.`, 'success');
     setQuoteValue('');
     reload();
   }
@@ -269,7 +269,7 @@ export default function ExpertAuditPreview() {
               {negotiating ? (
                 <>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 14 }}>
-                    <span style={{ fontWeight: 700, color: 'var(--muted-foreground)' }}>$</span>
+                    <span style={{ fontWeight: 700, color: 'var(--muted-foreground)' }}>₹</span>
                     <input className="form-input" type="number" min="1" step="1" id="quoteInput" placeholder="Your price" style={{ maxWidth: 130 }}
                            value={quoteValue} onChange={e => setQuoteValue(e.target.value)} />
                     <button className="btn-outline" onClick={quote}>Send</button>

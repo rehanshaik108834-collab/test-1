@@ -54,8 +54,8 @@ function getProjects(Store, userId) {
       progress: calculatedProgress,
       status: t.status,
       milestones: `${done}/${milestones.length}`,
-      earned: `$${earned.toLocaleString()}`,
-      total: `$${(t.budget || 0).toLocaleString()}`,
+      earned: `₹${earned.toLocaleString('en-IN')}`,
+      total: `₹${(t.budget || 0).toLocaleString('en-IN')}`,
       deadline: fmtDate(t.deadline),
       category: t.status === 'completed' ? 'completed' : t.status === 'cancelled' ? 'cancelled' : 'active',
     };

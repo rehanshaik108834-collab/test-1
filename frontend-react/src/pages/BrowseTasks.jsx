@@ -26,10 +26,10 @@ function getAllBrowseTasks(Store) {
     title: t.title,
     desc: t.description || '',
     budgetValue: Number(t.budget) || 0,
-    budget: '$' + (Number(t.budget) || 0).toLocaleString(),
+    budget: '₹' + (Number(t.budget) || 0).toLocaleString('en-IN'),
     tags: t.skills || [],
     milestones: Store.getMilestonesByTask(t.id).length,
-    proposals: Store.getProposalsByTask(t.id).filter(p => p.type !== 'invitation').length,
+    ready: Store.canBeAccepted(t),
     deadline: t.deadline || 'TBD',
     audit: !!t.auditEnabled,
     badge: t.auditEnabled ? 'Audit' : 'New',
@@ -65,8 +65,8 @@ function TaskCard({ task: t }) {
           {`${t.milestones} milestone${t.milestones === 1 ? '' : 's'}`}
         </div>
         <div className="task-meta-item">
-          <Icon name="users" style={{ width: 13, height: 13 }} />
-          {`${t.proposals} proposal${t.proposals === 1 ? '' : 's'}`}
+          <Icon name={t.ready ? 'check-circle' : 'clock'} style={{ width: 13, height: 13 }} />
+          {t.ready ? 'Ready to accept' : 'Plan in progress'}
         </div>
         <div className="task-meta-item">
           <Icon name="clock" style={{ width: 13, height: 13 }} />

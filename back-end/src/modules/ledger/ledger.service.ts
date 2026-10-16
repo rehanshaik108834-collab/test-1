@@ -44,7 +44,7 @@ export class LedgerService {
     const balance = this.balanceOf(userId);
     if (balance < amount) {
       throw new BadRequestException(
-        `Insufficient wallet balance for ${what}. Required $${round2(amount)}, available $${round2(balance)}.`,
+        `Insufficient wallet balance for ${what}. Required ₹${round2(amount)}, available ₹${round2(balance)}.`,
       );
     }
   }
@@ -57,7 +57,7 @@ export class LedgerService {
     const fee = depositFee(gross);
     if (fee >= gross) {
       throw new BadRequestException(
-        `Deposit of $${round2(gross)} does not cover the $${fee} processing fee.`,
+        `Deposit of ₹${round2(gross)} does not cover the ₹${fee} processing fee.`,
       );
     }
     const net = round2(gross - fee);
@@ -81,7 +81,7 @@ export class LedgerService {
       feeType: 'deposit-processing',
       fromId: 'external',
       toId: userId,
-      description: `Wallet top-up ($${gross} less $${fee} processing fee)`,
+      description: `Wallet top-up (₹${gross} less ₹${fee} processing fee)`,
       status: 'completed',
     });
 
@@ -97,7 +97,7 @@ export class LedgerService {
     const fee = withdrawalFee(gross);
     if (fee >= gross) {
       throw new BadRequestException(
-        `Withdrawal of $${round2(gross)} does not cover the $${fee} payout fee.`,
+        `Withdrawal of ₹${round2(gross)} does not cover the ₹${fee} payout fee.`,
       );
     }
     this.requireFunds(userId, gross, 'this withdrawal');
@@ -122,7 +122,7 @@ export class LedgerService {
       feeType: 'withdrawal-processing',
       fromId: userId,
       toId: 'external',
-      description: `Withdrawal ($${gross} less $${fee} payout fee)`,
+      description: `Withdrawal (₹${gross} less ₹${fee} payout fee)`,
       status: 'completed',
     });
 
@@ -214,7 +214,7 @@ export class LedgerService {
       fromId: clientId,
       toId: 'platform',
       taskId,
-      description: `Marketplace fee $${marketplace} + contract initiation $${initiation} — ${taskTitle}`,
+      description: `Marketplace fee ₹${marketplace} + contract initiation ₹${initiation} — ${taskTitle}`,
       status: 'completed',
     });
 
@@ -297,28 +297,11 @@ export class LedgerService {
       fromId: clientId,
       toId: 'platform',
       taskId,
-      description: `Cancellation fee (${rate}% of $${base}) — ${title}`,
+      description: `Cancellation fee (${rate}% of ₹${base}) — ${title}`,
       status: 'completed',
     });
     this.log.money('cancellation.fee', { task: taskId, client: clientId, rate: `${rate}%`, base, fee });
     return { fee, rate, base };
-  }
-
-  /**
-   * Brings project escrow in line with a changed budget before anyone is
-   * hired: a higher budget is topped up from the wallet, a lower one refunds
-   * the difference.
-   */
-  adjustProjectBudget(taskId: string, clientId: string, newBudget: number, taskTitle = 'project') {
-    const held = this.ledger.getEscrow(taskId).projectHeld;
-    const delta = round2(newBudget - held);
-    if (delta > 0) return this.fundProjectBudget(taskId, clientId, delta, taskTitle);
-    if (delta < 0) {
-      return this.refundToClient({
-        taskId, clientId, amount: -delta, reason: `Budget lowered — difference returned (${taskTitle})`,
-      });
-    }
-    return null;
   }
 
   /**
@@ -391,7 +374,7 @@ export class LedgerService {
     const held = this.ledger.getEscrow(taskId).projectHeld;
     if (held < amount) {
       throw new BadRequestException(
-        `Escrow for this project holds $${round2(held)}, which does not cover the $${round2(amount)} milestone.`,
+        `Escrow for this project holds ₹${round2(held)}, which does not cover the ₹${round2(amount)} milestone.`,
       );
     }
 
@@ -427,7 +410,7 @@ export class LedgerService {
       toId: workerId,
       taskId,
       milestoneId,
-      description: params.description || `Payment released ($${amount} less ${rate}% service fee)`,
+      description: params.description || `Payment released (₹${amount} less ${rate}% service fee)`,
       status: 'completed',
     });
 
@@ -471,7 +454,7 @@ export class LedgerService {
     const held = this.ledger.held(taskId, bucket);
     if (held < amount) {
       throw new BadRequestException(
-        `${bucket === 'dispute' ? 'Dispute' : 'Audit'} escrow holds $${round2(held)}, which does not cover the agreed fee of $${round2(amount)}.`,
+        `${bucket === 'dispute' ? 'Dispute' : 'Audit'} escrow holds ₹${round2(held)}, which does not cover the agreed fee of ₹${round2(amount)}.`,
       );
     }
 
@@ -505,7 +488,7 @@ export class LedgerService {
       auditRequestId,
       description:
         params.description ||
-        `${bucket === 'dispute' ? 'Dispute review' : 'Audit'} fee released ($${amount} less ${commission}% commission)`,
+        `${bucket === 'dispute' ? 'Dispute review' : 'Audit'} fee released (₹${amount} less ${commission}% commission)`,
       status: 'completed',
     });
 
@@ -558,7 +541,7 @@ export class LedgerService {
     const held = this.ledger.held(taskId, bucket);
     if (held < amount) {
       throw new BadRequestException(
-        `Escrow for this ${bucket === 'project' ? 'project' : bucket + ' fee'} holds $${round2(held)}, which does not cover a $${round2(amount)} refund.`,
+        `Escrow for this ${bucket === 'project' ? 'project' : bucket + ' fee'} holds ₹${round2(held)}, which does not cover a ₹${round2(amount)} refund.`,
       );
     }
 

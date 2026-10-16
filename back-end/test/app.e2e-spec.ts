@@ -24,6 +24,7 @@ describe('Lannent API (e2e)', () => {
     bob: ['bob@gmail.com', 'Password@123'], // u8
     worker: ['worker@gmail.com', 'Password@123'], // u2
     sarah: ['sarah@gmail.com', 'Password@123'], // u5, worker on t1
+    michael: ['michael@gmail.com', 'Password@123'], // u6
     expert: ['expert@gmail.com', 'Password@123'], // u3
     priya: ['priya@gmail.com', 'Password@123'], // u9
     super: ['super@gmail.com', 'Superadmin@123'], // u4
@@ -45,9 +46,8 @@ describe('Lannent API (e2e)', () => {
   // Seed milestone m4 (t1, worked by Sarah) is pending; a dispute needs submitted work.
   const submitM4 = () => post('sarah', '/milestones/m4/submit', { deliverable: { title: 'v1', link: 'https://github.com/example/work' } });
   const FINDINGS = 'Reviewed the code, the tests and the deployment notes. Meets the brief.';
-  const COVER = 'I have built this kind of project several times and can start today.';
-  /** A worker's bid at a price (the price is binding: hiring makes it the contract). */
-  const bid = (who: string, taskId: string, bidPrice: number) => post(who, '/proposals', { taskId, coverLetter: COVER, bidPrice });
+  /** A worker accepts an open project at its posted budget — the first to accept is hired. */
+  const take = (who: string, taskId: string) => post(who, `/tasks/${taskId}/accept`);
   const engageReviewer = async (payer: string, reviewer: string, arId: string) => {
     const ar = (await get(reviewer, `/audit-requests/${arId}`)).body.data;
     const pending = ar.offers.find((o: any) => o.status === 'pending');
@@ -121,7 +121,7 @@ describe('Lannent API (e2e)', () => {
     it('keeps defaults when a create omits optional fields, and owns the task as the caller', async () => {
       const res = await post('client', '/tasks', { title: 'xyz', description: 'yyy', category: 'Web Development', budget: 100, clientId: 'u8' });
       expect(res.status).toBe(201);
-      expect(res.body.data).toMatchObject({ currency: 'USD', skills: [], auditEnabled: false, clientId: 'u1', status: 'open' });
+      expect(res.body.data).toMatchObject({ currency: 'INR', skills: [], auditEnabled: false, clientId: 'u1', status: 'open' });
     });
 
     it("does not let a client edit, delete or cancel another client's task", async () => {
@@ -140,25 +140,27 @@ describe('Lannent API (e2e)', () => {
       expect((await del('client', '/tasks/t1')).status).toBe(403);
     });
 
-    it("does not let a worker invite themselves onto someone else's project", async () => {
-      const before = await balance('u1');
-      const prop = await post('worker', '/proposals', { taskId: 't3', workerId: 'u2', type: 'invitation', bidPrice: 1200, coverLetter: COVER });
-      expect(prop.status).toBe(201);
-      expect(prop.body.data.type).toBe('proposal'); // forced: a worker can only bid
-      expect((await post('worker', `/proposals/${prop.body.data.id}/accept`)).status).toBe(400);
-      expect((await post('worker', `/proposals/${prop.body.data.id}/hire`)).status).toBe(403);
-      expect(await balance('u1')).toBe(before);
+    it('has no bidding: workers cannot send proposals or name a price', async () => {
+      // A worker cannot create an invitation (or the old bid) at all.
+      expect((await post('worker', '/proposals', { taskId: 't3', workerId: 'u2', bidPrice: 1 })).status).toBe(403);
+      // The hire-a-bid route is gone.
+      expect((await post('client', '/proposals/p1/hire')).status).toBe(404);
+      // Accepting ignores any price in the request: the contract is the posted budget.
+      expect((await post('sarah', '/tasks/t3/accept', { bidPrice: 1 })).status).toBe(201);
+      expect((await get('client', '/tasks/t3')).body.data).toMatchObject({ workerId: 'u5', budget: 1200, contractPrice: 1200 });
     });
 
-    it('takes a bid\'s profile figures from the record, not the request', async () => {
-      const res = await post('worker', '/proposals', { taskId: 't3', workerId: 'u2', rating: 5, completedProjects: 999, bidPrice: 1200, coverLetter: COVER, workerName: 'Someone Else' });
-      expect(res.body.data.workerName).toBe('Alex Worker');
+    it('takes an invitation\'s worker details from the record, not the request', async () => {
+      const res = await post('client', '/proposals', { taskId: 't3', workerId: 'u6', workerName: 'Someone Else', rating: 5 });
+      expect(res.status).toBe(201);
+      expect(res.body.data).toMatchObject({ workerName: 'Michael Chen', type: 'invitation', status: 'pending' });
       expect(res.body.data.rating).toBeUndefined();
-      expect(res.body.data.completedProjects).toBeUndefined();
     });
 
-    it("does not let one client hire on another client's project", async () => {
-      expect((await post('bob', '/proposals/p1/hire')).status).toBe(403);
+    it("does not let one client invite workers to another client's project, or a worker accept another worker's invitation", async () => {
+      expect((await post('bob', '/proposals', { taskId: 't3', workerId: 'u6' })).status).toBe(403);
+      expect((await post('sarah', '/proposals/p1/accept')).status).toBe(403);
+      expect((await post('sarah', '/proposals/p1/decline')).status).toBe(403);
     });
 
     it('does not let a worker repoint, submit or approve milestones that are not theirs', async () => {
@@ -235,7 +237,7 @@ describe('Lannent API (e2e)', () => {
       // m6 is t2's submitted deliverable; bob has nothing to do with t2.
       expect((await get('bob', '/milestones/m6')).status).toBe(404);
       expect((await get('bob', '/milestones?taskId=t2')).body.data).toHaveLength(0);
-      // An open project's plan is visible to a worker deciding whether to bid.
+      // An open project's plan is visible to a worker deciding whether to accept it.
       expect((await get('worker', '/milestones?taskId=t3')).body.data.length).toBe(3);
     });
 
@@ -302,9 +304,7 @@ describe('Lannent API (e2e)', () => {
     it('runs a project from posting to payout', async () => {
       const task = (await post('bob', '/tasks', { title: 'Landing page', description: 'Project details', category: 'Web Development', budget: 600 })).body.data;
       const ms = (await post('bob', '/milestones', { taskId: task.id, title: 'Build it', budget: 600 })).body.data;
-      const offer = (await bid('worker', task.id, 600)).body.data;
-
-      const hire = await post('bob', `/proposals/${offer.id}/hire`);
+      const hire = await take('worker', task.id);
       expect(hire.status).toBe(201);
       expect((await get('bob', `/tasks/${task.id}`)).body.data).toMatchObject({ workerId: 'u2', status: 'in-progress' });
 
@@ -325,10 +325,28 @@ describe('Lannent API (e2e)', () => {
     });
 
     it('lets a client invite a worker and the worker accept', async () => {
-      const inv = await post('client', '/proposals', { taskId: 't3', workerId: 'u2', type: 'invitation' });
+      const inv = await post('client', '/proposals', { taskId: 't3', workerId: 'u6', message: 'Interested?' });
       expect(inv.body.data.type).toBe('invitation');
-      expect((await post('worker', `/proposals/${inv.body.data.id}/accept`)).status).toBe(201);
-      expect((await get('client', '/tasks/t3')).body.data.workerId).toBe('u2');
+      expect((await post('michael', `/proposals/${inv.body.data.id}/accept`)).status).toBe(201);
+      expect((await get('client', '/tasks/t3')).body.data).toMatchObject({ workerId: 'u6', status: 'in-progress' });
+      // Alex's seeded invitation to t3 closes.
+      expect((await get('worker', '/proposals')).body.data.find((p: any) => p.id === 'p1')).toMatchObject({ status: 'closed' });
+      expect((await post('worker', '/proposals/p1/accept')).status).toBe(400);
+    });
+
+    it('lets a worker decline an invitation, after which they are not invited again', async () => {
+      expect((await post('worker', '/proposals/p1/decline')).status).toBe(201);
+      expect((await get('client', '/proposals?taskId=t3')).body.data.find((p: any) => p.id === 'p1').status).toBe('declined');
+      expect((await post('client', '/proposals', { taskId: 't3', workerId: 'u2' })).status).toBe(400);
+      // Declining an invitation does not stop the worker accepting the open project later.
+      expect((await take('worker', 't3')).status).toBe(201);
+    });
+
+    it('lets a client withdraw an unanswered invitation', async () => {
+      expect((await patch('worker', '/proposals/p1', { status: 'withdrawn' })).status).toBe(403);
+      expect((await patch('client', '/proposals/p1', { status: 'rejected' })).status).toBe(400);
+      expect((await patch('client', '/proposals/p1', { status: 'withdrawn' })).status).toBe(200);
+      expect((await post('worker', '/proposals/p1/accept')).status).toBe(400);
     });
 
     it('lets a client delete an open project and returns its budget exactly', async () => {
@@ -351,19 +369,17 @@ describe('Lannent API (e2e)', () => {
       expect(await balance('u8')).toBe(start - 1000);
       expect((await get('bob', `/ledger/escrow/${task.id}`)).body.data.projectHeld).toBe(1000);
 
-      // The worker bids $900; the plan matches the bid.
-      const ms = (await post('bob', '/milestones', { taskId: task.id, title: 'Only part', budget: 900 })).body.data;
-      const offer = (await bid('worker', task.id, 900)).body.data;
-      expect((await post('bob', `/proposals/${offer.id}/hire`)).status).toBe(201);
-      // Hiring at $900 returned $100 of escrow and charged fees on $900.
-      expect(await balance('u8')).toBe(Math.round((start - 900 - 45 - 4.99) * 100) / 100);
-      expect((await get('bob', `/tasks/${task.id}`)).body.data.budget).toBe(900);
+      const ms = (await post('bob', '/milestones', { taskId: task.id, title: 'All of it', budget: 1000 })).body.data;
+      expect((await take('worker', task.id)).status).toBe(201);
+      // Accepting charged the fees on the posted budget (5% + $4.99); the budget stays in escrow.
+      expect(await balance('u8')).toBe(Math.round((start - 1000 - 50 - 4.99) * 100) / 100);
+      expect((await get('bob', `/tasks/${task.id}`)).body.data).toMatchObject({ budget: 1000, contractPrice: 1000 });
 
       await post('worker', `/milestones/${ms.id}/submit`, { deliverable: { title: 'Done', link: 'https://github.com/example/work' } });
       expect((await post('bob', `/milestones/${ms.id}/approve`)).status).toBe(201);
       expect((await get('bob', `/tasks/${task.id}`)).body.data.status).toBe('completed');
       expect((await get('bob', `/ledger/escrow/${task.id}`)).body.data).toMatchObject({ projectHeld: 0, auditHeld: 0, disputeHeld: 0 });
-      expect(await balance('u8')).toBe(Math.round((start - 900 - 49.99) * 100) / 100);
+      expect(await balance('u8')).toBe(Math.round((start - 1000 - 54.99) * 100) / 100);
     });
 
     it('charges a cancellation fee by how long a project was live, and refunds reviewer escrow in full', async () => {
@@ -570,8 +586,7 @@ describe('Lannent API (e2e)', () => {
       expect(held).toMatchObject({ projectHeld: 500, auditHeld: 300, disputeHeld: 0 });
 
       // Hire: only the contract fees are charged now.
-      const offer = (await bid('worker', task.id, 500)).body.data;
-      expect((await post('client', `/proposals/${offer.id}/hire`)).status).toBe(201);
+      expect((await take('worker', task.id)).status).toBe(201);
       await post('worker', `/milestones/${ms.id}/submit`, { deliverable: { title: 'v1', link: 'https://github.com/example/work' } });
 
       // The client disputes it and offers the reviewer 1200 — funded into DISPUTE escrow.
@@ -606,8 +621,7 @@ describe('Lannent API (e2e)', () => {
       const m2 = (await post('client', '/milestones', { taskId: task.id, title: 'Two', budget: 500 })).body.data;
       const ar = (await get('expert', `/audit-requests?taskId=${task.id}`)).body.data[0];
       await engageReviewer('client', 'expert', ar.id);
-      const offer = (await bid('worker', task.id, 1000)).body.data;
-      await post('client', `/proposals/${offer.id}/hire`);
+      await take('worker', task.id);
       for (const m of [m1, m2]) await post('worker', `/milestones/${m.id}/submit`, { deliverable: { title: 'v1', link: 'https://github.com/example/work' } });
 
       // A report pays that milestone's share straight away: half of 400, less 10%.
@@ -637,8 +651,7 @@ describe('Lannent API (e2e)', () => {
       const m2 = (await post('client', '/milestones', { taskId: task.id, title: 'Two', budget: 500 })).body.data;
       const ar = (await get('expert', `/audit-requests?taskId=${task.id}`)).body.data[0];
       await engageReviewer('client', 'expert', ar.id);
-      const offer = (await bid('worker', task.id, 1000)).body.data;
-      await post('client', `/proposals/${offer.id}/hire`);
+      await take('worker', task.id);
       for (const m of [m1, m2]) await post('worker', `/milestones/${m.id}/submit`, { deliverable: { title: 'v1', link: 'https://github.com/example/work' } });
       // Six days pass on m1 with no report.
       milestones().systemUpdate(m1.id, { submittedAt: new Date(Date.now() - 6 * DAY).toISOString() });
@@ -663,16 +676,16 @@ describe('Lannent API (e2e)', () => {
       const ms = (await post('client', '/milestones', { taskId: task.id, title: 'Only', budget: 600 })).body.data;
       const ar = (await get('expert', `/audit-requests?taskId=${task.id}`)).body.data[0];
       await engageReviewer('client', 'expert', ar.id);
-      await post('client', `/proposals/${(await bid('worker', task.id, 600)).body.data.id}/hire`);
+      await take('worker', task.id);
       await post('worker', `/milestones/${ms.id}/submit`, { deliverable: { title: 'v1', link: 'https://github.com/example/work' } });
       expect((await post('expert', '/audit-reports', { auditRequestId: ar.id, milestoneId: ms.id })).status).toBe(400);
       expect((await post('expert', '/audit-reports', { auditRequestId: ar.id, milestoneId: ms.id, verdict: 'pass', findings: 'ok' })).status).toBe(400);
     });
 
-    it('refuses to hire on a project with no milestones', async () => {
+    it('refuses to let a worker accept a project with no milestones', async () => {
       const task = (await post('client', '/tasks', { title: 'Empty', description: 'Project details', category: 'Web Development', budget: 300 })).body.data;
-      const offer = (await bid('worker', task.id, 300)).body.data;
-      expect((await post('client', `/proposals/${offer.id}/hire`)).status).toBe(400);
+      expect((await take('worker', task.id)).status).toBe(400);
+      expect((await get('client', `/tasks/${task.id}`)).body.data).toMatchObject({ workerId: null, status: 'open' });
     });
 
     it('names an audit report after the real project, milestone and worker', async () => {
@@ -683,8 +696,7 @@ describe('Lannent API (e2e)', () => {
       const ms = (await post('client', '/milestones', { taskId: task.id, title: 'Only', budget: 600 })).body.data;
       const ar = (await get('expert', `/audit-requests?taskId=${task.id}`)).body.data[0];
       await engageReviewer('client', 'expert', ar.id);
-      const offer = (await bid('worker', task.id, 600)).body.data;
-      await post('client', `/proposals/${offer.id}/hire`);
+      await take('worker', task.id);
       await post('worker', `/milestones/${ms.id}/submit`, { deliverable: { title: 'v1', link: 'https://github.com/example/work' } });
       const report = (await post('expert', '/audit-reports', {
         auditRequestId: ar.id, milestoneId: ms.id, verdict: 'pass', findings: FINDINGS,
@@ -725,14 +737,10 @@ describe('Lannent API (e2e)', () => {
       expect((await login({ email: 'worker@gmail.com', password: 'Another1pass!' })).status).toBe(201);
     });
 
-    it('notifies the worker when they are hired', async () => {
-      // Sarah bid $1,100 on the $1,200 project, so the plan is cut to match first.
-      expect((await post('client', '/proposals/p1/hire')).status).toBe(400);
-      expect((await patch('client', '/milestones/m15', { budget: 200 })).status).toBe(200);
-      expect((await post('client', '/proposals/p1/hire')).status).toBe(201);
-      expect((await get('client', '/tasks/t3')).body.data).toMatchObject({ budget: 1100, contractPrice: 1100, workerId: 'u5' });
-      const notes = (await get('sarah', '/notifications')).body.data;
-      expect(notes.some((n: any) => n.type === 'hire' && n.link)).toBe(true);
+    it('notifies the client when a worker accepts their project', async () => {
+      expect((await take('sarah', 't3')).status).toBe(201);
+      const notes = (await get('client', '/notifications')).body.data;
+      expect(notes.some((n: any) => n.type === 'hire' && n.link === '/project-milestone-board?id=t3')).toBe(true);
     });
 
     it('lets the intake desk open an applicant résumé', async () => {
@@ -838,6 +846,7 @@ describe('Lannent API (e2e)', () => {
       expect((await post('client', '/tasks', { ...base, deadline: '2020-01-01' })).status).toBe(400);
       expect((await post('client', '/tasks', { ...base, deadline: 'yesterday-ish' })).status).toBe(400);
       expect((await post('client', '/tasks', { ...base, currency: 'EUR' })).status).toBe(400);
+      expect((await post('client', '/tasks', { ...base, currency: 'USD' })).status).toBe(400);
       expect((await post('client', '/users/u1/wallet/add', { amount: 1e20 })).status).toBe(400);
       expect((await post('client', '/users/u1/wallet/add', { amount: 10.555 })).status).toBe(400);
     });
@@ -863,48 +872,63 @@ describe('Lannent API (e2e)', () => {
       expect((await del('client', '/milestones/m4')).status).toBe(400); // t1 has a worker
     });
 
-    it('hires at the bid and needs the plan to match it', async () => {
-      const task = (await post('bob', '/tasks', { title: 'Bid test', description: 'Project details', category: 'Web Development', budget: 1000 })).body.data;
-      const ms = (await post('bob', '/milestones', { taskId: task.id, title: 'All of it', budget: 1000 })).body.data;
-      const offer = (await bid('worker', task.id, 600)).body.data;
-      expect((await post('worker', '/proposals', { taskId: task.id, coverLetter: COVER })).status).toBe(400); // no price
-      const refused = await post('bob', `/proposals/${offer.id}/hire`);
+    it('never lets a budget change after posting, and keeps escrow as posted', async () => {
+      const before = await balance('u1');
+      const res = await patch('client', '/tasks/t3', { budget: 2000 });
+      expect(res.status).toBe(400);
+      expect(res.body.message).toMatch(/cannot be changed after a project is posted/);
+      expect((await patch('client', '/tasks/t3', { budget: 600 })).status).toBe(400);
+      expect((await get('client', '/tasks/t3')).body.data.budget).toBe(1200);
+      expect((await get('client', '/ledger/escrow/t3')).body.data.projectHeld).toBe(1200);
+      expect(await balance('u1')).toBe(before);
+      // Other fields still edit.
+      expect((await patch('client', '/tasks/t3', { title: 'API Integration Project v2' })).status).toBe(200);
+    });
+
+    it('hires the first worker to accept, at the posted budget, once the plan matches it', async () => {
+      const task = (await post('bob', '/tasks', { title: 'First come', description: 'Project details', category: 'Web Development', budget: 1000 })).body.data;
+      const ms = (await post('bob', '/milestones', { taskId: task.id, title: 'Most of it', budget: 600 })).body.data;
+      // The plan is $400 short of the budget, so nobody can take it yet.
+      const refused = await take('worker', task.id);
       expect(refused.status).toBe(400);
-      expect(refused.body.message).toMatch(/\$600/);
-      await patch('bob', `/milestones/${ms.id}`, { budget: 600 });
+      expect(refused.body.message).toMatch(/₹600 of the ₹1000/);
+      await patch('bob', `/milestones/${ms.id}`, { budget: 1000 });
       const before = await balance('u8');
-      expect((await post('bob', `/proposals/${offer.id}/hire`)).status).toBe(201);
-      // $400 of escrow came back; fees were charged on $600 (5% + $4.99).
-      expect(await balance('u8')).toBe(Math.round((before + 400 - 30 - 4.99) * 100) / 100);
-      expect((await get('bob', `/ledger/escrow/${task.id}`)).body.data.projectHeld).toBe(600);
+      expect((await take('worker', task.id)).status).toBe(201);
+      expect(await balance('u8')).toBe(Math.round((before - 50 - 4.99) * 100) / 100);
+      expect((await get('bob', `/ledger/escrow/${task.id}`)).body.data.projectHeld).toBe(1000);
+      // Second come: the project is taken.
+      expect((await take('sarah', task.id)).status).toBe(400);
+      expect((await get('bob', `/tasks/${task.id}`)).body.data.workerId).toBe('u2');
+      // Clients cannot accept projects.
+      expect((await take('client', 't5')).status).toBe(403);
     });
 
-    it('limits re-bidding and closes a suspended worker\'s bids', async () => {
-      const task = (await post('bob', '/tasks', { title: 'Rebid test', description: 'Project details', category: 'Web Development', budget: 300 })).body.data;
+    it('lets nobody accept when the client cannot cover the contract fees, and tells the client', async () => {
+      const task = (await post('bob', '/tasks', { title: 'Broke', description: 'Project details', category: 'Web Development', budget: 300 })).body.data;
       await post('bob', '/milestones', { taskId: task.id, title: 'All of it', budget: 300 });
-      for (let i = 0; i < 3; i++) {
-        const p = (await bid('worker', task.id, 300)).body.data;
-        await patch('worker', `/proposals/${p.id}`, { status: 'withdrawn' });
-      }
-      expect((await bid('worker', task.id, 300)).status).toBe(400);
-      const sarahs = (await bid('sarah', task.id, 300)).body.data;
-      await patch('bob', `/proposals/${sarahs.id}`, { status: 'rejected' });
-      expect((await bid('sarah', task.id, 300)).status).toBe(400);
-
-      const priyasBid = await bid('worker', 't5', 6000); // u2 already bid p3 on t5
-      expect(priyasBid.status).toBe(400);
-      await patch('super', '/users/u2', { status: 'suspended' });
-      expect((await get('bob', '/proposals?taskId=t5')).body.data.find((p: any) => p.id === 'p3').status).toBe('closed');
-      expect((await post('bob', '/proposals/p3/hire')).status).toBe(400);
-      await patch('super', '/users/u2', { status: 'active' });
+      // Bob spends the rest of his wallet on another project.
+      const rest = await balance('u8');
+      expect((await post('bob', '/tasks', { title: 'Everything', description: 'Project details', category: 'Web Development', budget: rest })).status).toBe(201);
+      const res = await take('worker', task.id);
+      expect(res.status).toBe(400);
+      expect(res.body.message).toMatch(/client cannot fund/);
+      expect((await get('bob', `/tasks/${task.id}`)).body.data.workerId).toBeNull();
+      expect((await get('bob', '/notifications')).body.data.some((n: any) => n.link === '/client-wallet')).toBe(true);
     });
 
-    it('drops a turned-down bidder from the project: no files, no messages', async () => {
+    it("closes a suspended worker's invitations and stops them accepting", async () => {
+      await patch('super', '/users/u2', { status: 'suspended' });
+      expect((await get('client', '/proposals?taskId=t3')).body.data.find((p: any) => p.id === 'p1').status).toBe('closed');
+      await patch('super', '/users/u2', { status: 'active' });
+      expect((await post('worker', '/proposals/p1/accept')).status).toBe(400);
+    });
+
+    it('drops an invited worker from the project once someone else accepts: no files, no messages', async () => {
       const task = (await post('client', '/tasks', { title: 'Files test', description: 'Project details', category: 'Web Development', budget: 300 })).body.data;
       const ms = (await post('client', '/milestones', { taskId: task.id, title: 'All of it', budget: 300 })).body.data;
-      await bid('worker', task.id, 300);
-      const s = (await bid('sarah', task.id, 300)).body.data;
-      await post('client', `/proposals/${s.id}/hire`);
+      await post('client', '/proposals', { taskId: task.id, workerId: 'u2' });
+      await take('sarah', task.id);
       const up = await api().post('/api/files').set(as('sarah'))
         .field('taskId', task.id).field('milestoneId', ms.id).field('purpose', 'deliverable')
         .attach('file', Buffer.from('secret deliverable'), { filename: 'work.txt', contentType: 'text/plain' });
@@ -960,7 +984,7 @@ describe('Lannent API (e2e)', () => {
       // t1's m3 is disputed in the seed; a new dispute elsewhere expires if the reviewer never acts.
       const task = (await post('bob', '/tasks', { title: 'Expiry', description: 'Project details', category: 'Web Development', budget: 300 })).body.data;
       const ms = (await post('bob', '/milestones', { taskId: task.id, title: 'All of it', budget: 300 })).body.data;
-      await post('bob', `/proposals/${(await bid('worker', task.id, 300)).body.data.id}/hire`);
+      await take('worker', task.id);
       await post('worker', `/milestones/${ms.id}/submit`, { deliverable: DELIV });
       const d2 = (await post('bob', '/disputes', { taskId: task.id, milestoneId: ms.id, reason: 'r', expertId: 'u3', reviewerFee: 50 })).body.data;
       await engageReviewer('bob', 'expert', d2.auditRequestId);
@@ -1005,7 +1029,7 @@ describe('Lannent API (e2e)', () => {
     it('pays a worker at the fee rate in force when they were hired', async () => {
       const task = (await post('bob', '/tasks', { title: 'Rate lock', description: 'Project details', category: 'Web Development', budget: 400 })).body.data;
       const ms = (await post('bob', '/milestones', { taskId: task.id, title: 'All of it', budget: 400 })).body.data;
-      await post('bob', `/proposals/${(await bid('worker', task.id, 400)).body.data.id}/hire`);
+      await take('worker', task.id);
       expect((await patch('revenue', '/revenue/fee-config', { workerServicePercents: [90, 90, 90] })).status).toBe(200);
       await post('worker', `/milestones/${ms.id}/submit`, { deliverable: DELIV });
       const res = await post('bob', `/milestones/${ms.id}/approve`);

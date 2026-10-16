@@ -136,7 +136,7 @@ export class DisputesService implements OnModuleInit, OnModuleDestroy {
     // stored with a reviewer who could not take the case.
     if (!dto.expertId) throw new BadRequestException('Choose the Expert Reviewer who will arbitrate this dispute.');
     if (!dto.reviewerFee || dto.reviewerFee < 1) {
-      throw new BadRequestException('Enter the fee you will pay the reviewer (at least $1).');
+      throw new BadRequestException('Enter the fee you will pay the reviewer (at least ₹1).');
     }
     this.auditRequests.assertAssignableExpert(dto.expertId, task.category);
 
@@ -150,7 +150,7 @@ export class DisputesService implements OnModuleInit, OnModuleDestroy {
       project: task.title,
       milestone: ms.title,
       // What is actually at stake is the milestone's escrow, not a typed string.
-      amount: `$${ms.budget}`,
+      amount: `₹${ms.budget}`,
       raisedBy: actor.id,
       raisedByName: nameOf(actor.id),
       againstId,

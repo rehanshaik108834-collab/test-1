@@ -62,4 +62,4 @@ export const TONE_STYLE = {
   other: { icon: 'circle', color: '#64748b', badge: 'badge-gray', text: '' },
 };
 
-export const money = n => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+export const money = n => '₹' + Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });

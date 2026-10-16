@@ -62,7 +62,7 @@ export default function Profile() {
   }
 
   const settingsPath = SETTINGS[session.role] || '/staff-settings';
-  const money = n => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const money = n => '₹' + Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   // Projects this client posted (for the client stats).
   const tasks = Store.getTasks();
@@ -97,12 +97,12 @@ export default function Profile() {
           {user.role === 'worker' && <>
             <Stat value={user.completedProjects || 0} label="Completed on Lannent" />
             <Stat value={user.activeProjects || 0} label="In progress" />
-            <Stat value={user.hourlyRate ? '$' + user.hourlyRate + '/hr' : '—'} label="Stated hourly rate" />
+            <Stat value={user.hourlyRate ? '₹' + user.hourlyRate + '/hr' : '—'} label="Stated hourly rate" />
           </>}
           {user.role === 'expert' && <>
             <Stat value={user.reviewsDone || 0} label="Reviews completed" />
             <Stat value={(user.domains || []).length} label="Domains covered" />
-            <Stat value={user.hourlyRate ? '$' + user.hourlyRate + '/hr' : '—'} label="Hourly rate" />
+            <Stat value={user.hourlyRate ? '₹' + user.hourlyRate + '/hr' : '—'} label="Hourly rate" />
           </>}
           {user.role === 'client' && <>
             <Stat value={asClient.length} label="Projects posted" />

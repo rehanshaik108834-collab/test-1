@@ -15,9 +15,9 @@ import { useValidation } from '../context/ValidationContext';
 import usePageTitle from '../hooks/usePageTitle';
 import pageCss from './AdminFeeConfig.css?raw';
 
-const money = n => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const money = n => '₹' + Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const r2 = n => Math.round((n + Number.EPSILON) * 100) / 100;
-const band = n => n === Infinity || n === null || n > 1e9 ? 'above' : '$' + Number(n).toLocaleString();
+const band = n => n === Infinity || n === null || n > 1e9 ? 'above' : '₹' + Number(n).toLocaleString('en-IN');
 const TIER_LABELS = ['first band', 'middle band', 'top band'];
 
 /** The server's config in the same shape the form edits. */
@@ -54,7 +54,7 @@ function formValuesFrom(c) {
   return values;
 }
 
-/** One labelled rate input ("$ [ 0.30 ]" or "[ 2.9 ] %"). */
+/** One labelled rate input ("₹ [ 0.30 ]" or "[ 2.9 ] %"). */
 function NumRow({ id, label, note, unit, value, onChange, step = '0.01' }) {
   return (
     <div className="fc-row">
@@ -62,9 +62,9 @@ function NumRow({ id, label, note, unit, value, onChange, step = '0.01' }) {
         {label}
         <span className="fc-note">{note}</span>
       </label>
-      <span className="fc-unit">{unit === '$' ? '$' : ''}</span>
+      <span className="fc-unit">{unit === '₹' ? '₹' : ''}</span>
       <input className="fc-input" id={id} type="number" min="0" step={step} value={value} onChange={e => onChange(id, e.target.value)} />
-      <span className="fc-unit">{unit === '$' ? '' : unit}</span>
+      <span className="fc-unit">{unit === '₹' ? '' : unit}</span>
     </div>
   );
 }
@@ -73,7 +73,7 @@ function NumRow({ id, label, note, unit, value, onChange, step = '0.01' }) {
 function WorkedExample({ draft }) {
   const depFee = r2(1000 * (draft.depositPercent / 100) + draft.depositFixed);
   const mkt = r2(2500 * (draft.clientMarketplacePercent / 100));
-  const init = draft.contractInitiationFees[2];                    // the $2k–$10k band
+  const init = draft.contractInitiationFees[2];                    // the ₹2k–₹10k band
   const wFee = r2(800 * (draft.workerServicePercents[1] / 100));   // the mid tier
   const eFee = r2(300 * (draft.expertServicePercent / 100));
   const wd = r2(Math.max(500 * (draft.withdrawalPercent / 100) + draft.withdrawalFixed, 0.25));
@@ -87,12 +87,12 @@ function WorkedExample({ draft }) {
 
   return (
     <>
-      <div className="fc-ex-title">Client tops up $1,000</div>
+      <div className="fc-ex-title">Client tops up ₹1,000</div>
       {row('Charged', money(1000))}
       {row('Processing fee', `−${money(depFee)}`, 'fee')}
       {row('Credited to wallet', money(1000 - depFee), 'net')}
 
-      <div className="fc-ex-title">A $2,500 project</div>
+      <div className="fc-ex-title">A ₹2,500 project</div>
       {row('Held in escrow when posted', money(2500))}
       {row('Marketplace fee (at hire)', `+${money(mkt)}`, 'fee')}
       {row('Contract initiation (at hire)', `+${money(init)}`, 'fee')}
@@ -104,16 +104,16 @@ function WorkedExample({ draft }) {
       {row(`After that (${draft.cancellationLatePercent}%)`, `−${money(r2(2500 * draft.cancellationLatePercent / 100))}`, 'fee')}
       {row('Audit / dispute escrow', 'refunded in full', 'net')}
 
-      <div className="fc-ex-title">Releasing an $800 milestone</div>
+      <div className="fc-ex-title">Releasing an ₹800 milestone</div>
       {row('From escrow', money(800))}
       {row('Service fee (mid tier)', `−${money(wFee)}`, 'fee')}
       {row('Worker receives', money(800 - wFee), 'net')}
 
-      <div className="fc-ex-title">Paying a $300 audit</div>
+      <div className="fc-ex-title">Paying a ₹300 audit</div>
       {row('Commission', `−${money(eFee)}`, 'fee')}
       {row('Reviewer receives', money(300 - eFee), 'net')}
 
-      <div className="fc-ex-title">Worker withdraws $500</div>
+      <div className="fc-ex-title">Worker withdraws ₹500</div>
       {row('Payout fee', `−${money(wd)}`, 'fee')}
       {row('Reaches their bank', money(500 - wd), 'net')}
     </>
@@ -201,9 +201,9 @@ export default function AdminFeeConfig() {
               <h2>Money entering and leaving</h2>
               <p className="hint">Charged when a client tops up a wallet, and when anyone withdraws to an external account.</p>
               <NumRow {...rowProps('depositPercent')} label="Deposit processing rate" note="Percentage of the amount deposited" unit="%" />
-              <NumRow {...rowProps('depositFixed')} label="Deposit fixed fee" note="Flat amount added to every deposit" unit="$" />
+              <NumRow {...rowProps('depositFixed')} label="Deposit fixed fee" note="Flat amount added to every deposit" unit="₹" />
               <NumRow {...rowProps('withdrawalPercent')} label="Withdrawal payout rate" note="Percentage of the amount withdrawn" unit="%" />
-              <NumRow {...rowProps('withdrawalFixed')} label="Withdrawal fixed fee" note={`Flat amount, with a ${money(cfg.withdrawal.min)} minimum`} unit="$" />
+              <NumRow {...rowProps('withdrawalFixed')} label="Withdrawal fixed fee" note={`Flat amount, with a ${money(cfg.withdrawal.min)} minimum`} unit="₹" />
             </div>
 
             <div className="fc-card">
@@ -216,7 +216,7 @@ export default function AdminFeeConfig() {
                   {...rowProps('initBand' + i)}
                   label={`Contract initiation — up to ${band(t.upTo)}`}
                   note={i === cfg.contractInitiation.length - 1 ? 'Budgets above the previous band' : 'One-time fee per contract'}
-                  unit="$"
+                  unit="₹"
                 />
               ))}
             </div>

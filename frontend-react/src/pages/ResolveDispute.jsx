@@ -50,7 +50,7 @@ function buildCase(Store, raw) {
     outcome: raw.outcome || '',
     status: raw.status === 'open' ? 'Open' : raw.status === 'resolved' ? 'Resolved' : raw.status === 'withdrawn' ? 'Withdrawn' : raw.status === 'expired' ? 'Expired' : 'Under Investigation',
     severity: raw.severity || 'medium',
-    escrow: raw.amount || '$0',
+    escrow: raw.amount || '₹0',
     raisedDate: raised || 'Recently',
     raisedBy: raiser ? raiser.role.charAt(0).toUpperCase() + raiser.role.slice(1) : 'User',
     raisedByName: raiser ? raiser.name : (raw.raisedByName || 'Unknown'),
@@ -62,7 +62,7 @@ function buildCase(Store, raw) {
     respondentColor: respondent ? respondent.avatarColor : '#10b981',
     // Built from the records themselves — every step that actually happened.
     timeline: [
-      task && task.createdAt ? { dot: 'blue', time: fmtDate(task.createdAt), text: 'Project posted', sub: `Budget $${Number(task.budget || 0).toLocaleString()} held in escrow.` } : null,
+      task && task.createdAt ? { dot: 'blue', time: fmtDate(task.createdAt), text: 'Project posted', sub: `Budget ₹${Number(task.budget || 0).toLocaleString('en-IN')} held in escrow.` } : null,
       disputedMilestone && disputedMilestone.submittedAt ? { dot: 'green', time: fmtDate(disputedMilestone.submittedAt), text: 'Work submitted', sub: `${disputedMilestone.title} was handed in for review.` } : null,
       { dot: 'orange', time: raised || '—', text: 'Dispute raised', sub: `${raiser ? raiser.name : raw.raisedByName || 'A party'} raised it; the milestone's escrow is frozen.` },
     ].filter(Boolean),
@@ -153,7 +153,7 @@ function DeliverableBody({ milestone, work }) {
           })}
         </div>
       ) : <p style={MUTED_P}>No files were attached to this submission.</p>}
-      {milestone.submittedAt ? <div style={{ marginTop: 14, fontSize: 12.5, color: 'var(--muted-foreground)' }}>{`Submitted ${milestone.submittedAt} · milestone value $${milestone.budget}`}</div> : ''}
+      {milestone.submittedAt ? <div style={{ marginTop: 14, fontSize: 12.5, color: 'var(--muted-foreground)' }}>{`Submitted ${milestone.submittedAt} · milestone value ₹${milestone.budget}`}</div> : ''}
     </>
   );
 }
@@ -228,7 +228,7 @@ export default function ResolveDispute() {
     }
 
     const fee = result && result.reviewerPayout && result.reviewerPayout.net
-      ? ` Your fee of $${Number(result.reviewerPayout.net).toFixed(2)} has been paid to your wallet.` : '';
+      ? ` Your fee of ₹${Number(result.reviewerPayout.net).toFixed(2)} has been paid to your wallet.` : '';
     const workerName = d.raw.raisedBy === disputedMilestone?.workerId ? d.raisedByName : d.respondentName;
     const msgs = {
       favour_worker: `Verdict recorded. ${d.escrow} released to ${workerName}.`,

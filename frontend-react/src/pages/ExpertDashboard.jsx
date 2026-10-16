@@ -47,7 +47,7 @@ export default function ExpertDashboard() {
         <div className="stats-grid">
           <StatCard value={liveAudits.length} label="Active Audits" change={`${liveAudits.filter(a => ['preview-sent', 'negotiating'].includes(a.status)).length} awaiting your quote`} icon="clipboard-check" iconBg="#faf5ff" iconColor="#a855f7" />
           <StatCard value={openDisputes.length} label="Open Disputes" change={`${myDisputeList.filter(d => d.status === 'resolved').length} resolved`} icon="scale" iconBg="#eff6ff" iconColor="#6366f1" />
-          <StatCard value={`$${earned.toLocaleString(undefined, { maximumFractionDigits: 2 })}`} valueStyle={{ color: '#10b981' }} label="Total Earned" change="After platform commission" icon="wallet" iconBg="#ecfdf5" iconColor="#10b981" />
+          <StatCard value={`₹${earned.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`} valueStyle={{ color: '#10b981' }} label="Total Earned" change="After platform commission" icon="wallet" iconBg="#ecfdf5" iconColor="#10b981" />
           <StatCard value={expert?.reviewsDone || 0} label="Reviews Completed" change={`${(expert?.domains || []).length} domains covered`} icon="award" iconBg="#fffbeb" iconColor="#f59e0b" />
         </div>
 
@@ -64,7 +64,7 @@ export default function ExpertDashboard() {
               const clName = cl ? cl.name : 'Client';
               const pTitle = task ? task.title : a.project || 'Audit Request';
               const fee = feeOf(a);
-              const pay = fee ? '$' + Number(fee).toLocaleString() : 'No fee yet';
+              const pay = fee ? '₹' + Number(fee).toLocaleString('en-IN') : 'No fee yet';
               const urgency = a.status === 'preview-sent' ? 'urgent' : 'normal';
               const tags = task ? task.skills || [] : ['Review', 'Audit'];
               return (
@@ -110,7 +110,7 @@ export default function ExpertDashboard() {
               const wName = wkr ? wkr.name.split(' ')[0] : 'Worker';
               const pTitle = ms ? ms.title : 'Dispute Case';
               const fee = eng ? feeOf(eng) : null;
-              const pay = fee ? '$' + Number(fee).toLocaleString() : 'No fee yet';
+              const pay = fee ? '₹' + Number(fee).toLocaleString('en-IN') : 'No fee yet';
               return (
                 <div key={d.id} className="audit-card-item" onClick={() => navigate(eng && eng.status === 'in-progress' ? `/resolve-dispute?id=${d.id}` : eng ? `/expert-audit-preview?id=${eng.id}` : '/expert-dispute-cases')}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>

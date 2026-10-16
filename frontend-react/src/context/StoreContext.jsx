@@ -825,47 +825,57 @@ const Store = (() => {
     return result;
   }
 
-  // ─── PROPOSALS ────────────────────────────────────────────────────────────
-  function getProposals() { return _cache.proposals; }
-  function getProposalsByTask(taskId) { return _cache.proposals.filter(p => p.taskId === taskId); }
-  function getProposalsByWorker(workerId) { return _cache.proposals.filter(p => p.workerId === workerId && p.type !== 'invitation'); }
-  function getInvitationsByWorker(workerId) { return _cache.proposals.filter(p => p.workerId === workerId && p.type === 'invitation'); }
+  // ─── ACCEPTING PROJECTS & INVITATIONS ────────────────────────────────────
+  // There is no bidding. The client's budget is the price; a worker accepts an
+  // open project (the first to accept is hired) or answers an invitation.
+  function getInvitations() { return _cache.proposals; }
+  function getInvitationsByTask(taskId) { return _cache.proposals.filter(p => p.taskId === taskId); }
+  function getInvitationsByWorker(workerId) { return _cache.proposals.filter(p => p.workerId === workerId); }
 
-  function createProposal(data) {
-    const result = _write('POST', `${API}/proposals`, data);
+  /** Whether a worker could accept this project right now: open, with milestones adding up to the budget. */
+  function canBeAccepted(task) {
+    if (!task || task.status !== 'open' || task.workerId) return false;
+    const list = _cache.milestones.filter(m => m.taskId === task.id);
+    const total = list.reduce((a, m) => a + (Number(m.budget) || 0), 0);
+    return list.length > 0 && Math.abs(total - Number(task.budget)) < 0.005;
+  }
+
+  /** Accepting starts the contract and moves money, so everything it touches is re-read. */
+  function _afterHire() {
+    refresh('proposals', 'tasks', 'milestones');
+    _refreshTransactions();
+    _refreshUser(_sessionUserId());
+  }
+
+  /** The worker takes an open project at its posted budget. */
+  function acceptTask(taskId) {
+    const result = _write('POST', `${API}/tasks/${taskId}/accept`, {});
+    _afterHire();
+    return result;
+  }
+
+  function sendInvitation({ taskId, workerId, message }) {
+    const result = _write('POST', `${API}/proposals`, { taskId, workerId, message });
     _cache.proposals.push(result);
     return result;
   }
 
-  function updateProposal(id, updates) {
-    const result = _write('PATCH', `${API}/proposals/${id}`, updates);
+  function withdrawInvitation(id) {
+    const result = _write('PATCH', `${API}/proposals/${id}`, { status: 'withdrawn' });
     const idx = _cache.proposals.findIndex(p => p.id === id);
     if (idx >= 0) _cache.proposals[idx] = result;
     return result;
   }
 
-  function hireWorker(proposalId) {
-    // No fallback: a hire the server refused (usually insufficient funds for
-    // escrow) used to be marked hired in the cache anyway.
-    const result = _write('POST', `${API}/proposals/${proposalId}/hire`, {});
-    const proposals = _syncFetch(`${API}/proposals`);
-    const tasks = _syncFetch(`${API}/tasks`);
-    if (proposals) _cache.proposals = proposals;
-    if (tasks) _cache.tasks = tasks;
-    _refreshTransactions();
-    _refreshUser(_sessionUserId());
+  function acceptInvitation(id) {
+    const result = _write('POST', `${API}/proposals/${id}/accept`, {});
+    _afterHire();
     return result;
   }
 
-  function acceptInvitation(proposalId) {
-    const result = _write('POST', `${API}/proposals/${proposalId}/accept`, {});
-    refresh('proposals', 'tasks', 'milestones');
-    return result;
-  }
-
-  function declineInvitation(proposalId) {
-    const result = _write('POST', `${API}/proposals/${proposalId}/decline`, {});
-    const idx = _cache.proposals.findIndex(p => p.id === proposalId);
+  function declineInvitation(id) {
+    const result = _write('POST', `${API}/proposals/${id}/decline`, {});
+    const idx = _cache.proposals.findIndex(p => p.id === id);
     if (idx >= 0) _cache.proposals[idx] = result;
     return result;
   }
@@ -1028,7 +1038,7 @@ const Store = (() => {
     getCancellationQuote, cancelTask,
     getMilestones, getMilestonesByTask, getMilestoneById, createMilestone, updateMilestone, deleteMilestone, submitDeliverable, approveDeliverable,
     getNonDeliveryStatus, endForNonDelivery,
-    getProposals, getProposalsByTask, getProposalsByWorker, getInvitationsByWorker, createProposal, updateProposal, hireWorker, acceptInvitation, declineInvitation,
+    getInvitations, getInvitationsByTask, getInvitationsByWorker, canBeAccepted, acceptTask, sendInvitation, withdrawInvitation, acceptInvitation, declineInvitation,
     getAuditRequests, getAuditRequestById, createAuditRequest, updateAuditRequest,
     getAuditPreview, getAuditRequestsByTask, makeAuditOffer, acceptAuditOffer, fundAuditEscrow,
     acceptAuditEngagement, declineAuditEngagement, cancelDraftTask, cancelAuditRequest, getExperts,

@@ -31,7 +31,7 @@ const TYPE_CONFIG = {
 
 /** "escrow" and "platform" are ledger accounts, not users. */
 const ACCOUNT_NAMES = { escrow: 'Escrow', platform: 'Platform', external: 'Bank / card' };
-const money = n => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const money = n => '₹' + Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 /** One finance summary tile. */
 function FinanceCard({ label, value, color, sub }) {

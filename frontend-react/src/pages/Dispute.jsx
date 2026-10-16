@@ -57,7 +57,7 @@ function loadTarget(Store, milestoneId) {
     taskId: ms.taskId,
     task,
     title: ms.title || 'Untitled milestone',
-    amount: '$' + (ms.budget || 0).toLocaleString(),
+    amount: '₹' + (ms.budget || 0).toLocaleString('en-IN'),
     status: ms.status,
   };
 }
@@ -108,7 +108,7 @@ export default function Dispute() {
     // The client raises the dispute and pays the reviewer to arbitrate it.
     const fee = parseFloat(reviewerFee);
     if (!(fee >= 1)) {
-      showToast('Enter the fee you will pay the reviewer (at least $1).', 'warn');
+      showToast('Enter the fee you will pay the reviewer (at least ₹1).', 'warn');
       return;
     }
 
@@ -184,7 +184,7 @@ export default function Dispute() {
               </div>
               <div className="field-group">
                 <label>Amount</label>
-                <div id="disputeAmountField" style={READONLY_FIELD_STYLE}>{target.amount || '$0'}</div>
+                <div id="disputeAmountField" style={READONLY_FIELD_STYLE}>{target.amount || '₹0'}</div>
               </div>
               <div className="field-group">
                 <label htmlFor="disputeReason">Reason</label>
@@ -233,7 +233,7 @@ export default function Dispute() {
                   {` ${Store.Fees.rates().expertService.percent}%`} of the reviewer&apos;s fee.
                 </div>
                 <div style={{ position: 'relative', maxWidth: 220 }}>
-                  <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', fontWeight: 700, color: 'var(--muted-foreground)' }}>$</span>
+                  <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', fontWeight: 700, color: 'var(--muted-foreground)' }}>₹</span>
                   <input id="disputeReviewerFee" className="field-input" type="number" min="1" step="1" placeholder="150" style={{ paddingLeft: 26 }}
                          value={reviewerFee} onChange={e => setReviewerFee(e.target.value)} />
                 </div>

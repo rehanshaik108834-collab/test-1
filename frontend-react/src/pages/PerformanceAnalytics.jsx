@@ -3,7 +3,7 @@
  * Converted from front-end/pages/performance-analytics.html.
  *
  * The worker's performance, derived from real data: earnings, project
- * performance, milestone velocity, client feedback and proposal success,
+ * performance, milestone velocity, client feedback and invitations,
  * with three Chart.js charts.
  */
 import { useState } from 'react';
@@ -18,7 +18,7 @@ import pageCss from './PerformanceAnalytics.css?raw';
 
 const DONE_MS = ['completed', 'approved'];
 const isDone = m => DONE_MS.indexOf(m.status) !== -1;
-const fmtMoney = n => '$' + (Math.round((Number(n) || 0) * 100) / 100).toLocaleString();
+const fmtMoney = n => '₹' + (Math.round((Number(n) || 0) * 100) / 100).toLocaleString('en-IN');
 
 /** Year and month, so last year's March is not counted as this year's. */
 function monthKey(d) {
@@ -90,18 +90,16 @@ function buildPerformance(Store, workerId) {
     lateDeliveries,
   };
 
-  const myProposals = Store.getProposalsByWorker(workerId);
-  const accepted = myProposals.filter(p => p.status === 'hired').length;
-  const rejected = myProposals.filter(p => ['rejected', 'closed', 'declined'].includes(p.status)).length;
-  const pending = myProposals.filter(p => p.status === 'pending').length;
-  const proposalStats = { sent: myProposals.length, accepted, rejected, pending, successRate: myProposals.length ? Math.round((accepted / myProposals.length) * 100) : 0 };
-  const allProposals = Store.getProposals();
-  const platformHired = allProposals.filter(p => p.status === 'hired').length;
-  const platformRate = allProposals.length ? Math.round((platformHired / allProposals.length) * 100) : 0;
+  // Invitations from clients, at their posted budgets (there is no bidding).
+  const invitations = Store.getInvitationsByWorker(workerId);
+  const accepted = invitations.filter(p => p.status === 'hired').length;
+  const rejected = invitations.filter(p => ['declined', 'withdrawn', 'closed'].includes(p.status)).length;
+  const pending = invitations.filter(p => p.status === 'pending').length;
+  const proposalStats = { sent: invitations.length, accepted, rejected, pending, successRate: invitations.length ? Math.round((accepted / invitations.length) * 100) : 0 };
 
   return {
     overviewStats, earningsData, projectPerformance, milestoneVelocityData, velocityStats,
-    proposalStats, platformRate, rateDelta: proposalStats.successRate - platformRate, hasProposals: myProposals.length > 0,
+    proposalStats, hasProposals: invitations.length > 0,
   };
 }
 
@@ -142,11 +140,11 @@ const earningsChartConfig = earningsData => ({
     maintainAspectRatio: false,
     plugins: {
       legend: { display: false },
-      tooltip: { ...TOOLTIP, callbacks: { label: ctx => ' $' + ctx.parsed.y.toLocaleString() } },
+      tooltip: { ...TOOLTIP, callbacks: { label: ctx => ' ₹' + ctx.parsed.y.toLocaleString('en-IN') } },
     },
     scales: {
       x: { grid: GRID, ticks: TICKS },
-      y: { grid: GRID, beginAtZero: true, ticks: { ...TICKS, callback: v => (v >= 1000 ? '$' + (v / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : '$' + v) } },
+      y: { grid: GRID, beginAtZero: true, ticks: { ...TICKS, callback: v => (v >= 1000 ? '₹' + (v / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : '₹' + v) } },
     },
   },
 });
@@ -174,7 +172,7 @@ const velocityChartConfig = velocityData => ({
 const proposalChartConfig = stats => ({
   type: 'doughnut',
   data: {
-    labels: ['Accepted', 'Not selected', 'Pending'],
+    labels: ['Accepted', 'Declined or closed', 'Pending'],
     datasets: [{
       // An empty ring still needs a value to draw; grey it out.
       data: stats.sent ? [stats.accepted, stats.rejected, stats.pending] : [0, 0, 1],
@@ -271,7 +269,7 @@ export default function PerformanceAnalytics() {
       <DashboardLayout role="worker" activePath="/performance-analytics" pageTitle="Performance Analytics" pageSubtitle="Track your earnings, project performance, and success rate.">
         {/* ── 1. Stat Cards ── */}
         <div className="pa-grid-4" style={{ marginBottom: 24 }}>
-          <PaStat icon="dollar-sign" iconColor="#16a34a" bg="#f0fdf4" border="#bbf7d0" trendIcon="trending-up" value={fmtMoney(overviewStats.totalEarnings)} label="Total Earnings" />
+          <PaStat icon="indian-rupee" iconColor="#16a34a" bg="#f0fdf4" border="#bbf7d0" trendIcon="trending-up" value={fmtMoney(overviewStats.totalEarnings)} label="Total Earnings" />
           <PaStat icon="check-circle" iconColor="#2563eb" bg="#eff6ff" border="#bfdbfe" trendIcon="award" value={overviewStats.projectsCompleted} label="Projects Completed" />
           <PaStat icon="activity" iconColor="#ea580c" bg="#fff7ed" border="#fed7aa" trendIcon="trending-up" value={overviewStats.activeProjects} label="Active Projects" />
           <PaStat icon="target" iconColor="#7c3aed" bg="#faf5ff" border="#ddd6fe" trendIcon="star" value={`${overviewStats.successRate}%`} label="Success Rate" />
@@ -318,14 +316,14 @@ export default function PerformanceAnalytics() {
             </div>
           </div>
 
-          {/* ── 6. Proposal Success Rate (right sidebar) ── */}
+          {/* ── 6. Invitations (right sidebar) ── */}
           <div>
             <div className="pa-card">
-              <div className="pa-card-title" style={{ marginBottom: 20 }}>Proposal Success Rate</div>
+              <div className="pa-card-title" style={{ marginBottom: 20 }}>Invitations</div>
               <div className="pa-proposal-row">
                 <div className="pa-proposal-icon-label">
-                  <Icon name="send" style={{ width: 16, height: 16, color: '#2563eb' }} />
-                  Proposals Sent
+                  <Icon name="mail" style={{ width: 16, height: 16, color: '#2563eb' }} />
+                  Received
                 </div>
                 <div className="pa-proposal-val">{proposalStats.sent}</div>
               </div>
@@ -340,7 +338,7 @@ export default function PerformanceAnalytics() {
               <div className="pa-proposal-row">
                 <div className="pa-proposal-icon-label" style={{ fontWeight: 500, color: 'var(--foreground)' }}>
                   <Icon name="target" style={{ width: 16, height: 16, color: '#7c3aed' }} />
-                  Success Rate
+                  Acceptance Rate
                 </div>
                 <div className="pa-proposal-val" style={{ fontSize: 24, color: '#7c3aed' }}>{`${proposalStats.successRate}%`}</div>
               </div>
@@ -356,7 +354,7 @@ export default function PerformanceAnalytics() {
                 <div className="pa-legend-row">
                   <div className="pa-legend-dot-label">
                     <div className="pa-legend-dot" style={{ background: '#ef4444' }}></div>
-                    <span className="pa-legend-text">Not selected</span>
+                    <span className="pa-legend-text">Declined or closed</span>
                   </div>
                   <span className="pa-legend-val">{`${proposalStats.rejected} (${share(proposalStats.rejected)}%)`}</span>
                 </div>
@@ -372,11 +370,11 @@ export default function PerformanceAnalytics() {
                 <div className="pa-insight-inner">
                   <Icon name="trending-up" style={{ width: 16, height: 16, color: '#16a34a', flexShrink: 0, marginTop: 2 }} />
                   <div>
-                    <div className="pa-insight-title">{!data.hasProposals ? 'No proposals yet' : data.rateDelta > 0 ? 'Above average' : data.rateDelta < 0 ? 'Below average' : 'On par'}</div>
+                    <div className="pa-insight-title">{!data.hasProposals ? 'No invitations yet' : `${proposalStats.accepted} of ${proposalStats.sent} accepted`}</div>
                     <div className="pa-insight-body">
                       {!data.hasProposals
-                        ? 'Submit proposals to see how your acceptance rate compares with the platform.'
-                        : `Your acceptance rate is ${proposalStats.successRate}% against a platform average of ${data.platformRate}%.`}
+                        ? 'Clients can invite you to their projects. You can also accept any open project from Browse Tasks — the first worker to accept is hired.'
+                        : `You accepted ${proposalStats.successRate}% of the invitations you received. Invitations close when another worker accepts the project first.`}
                     </div>
                   </div>
                 </div>

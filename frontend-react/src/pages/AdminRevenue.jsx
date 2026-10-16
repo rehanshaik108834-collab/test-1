@@ -14,11 +14,11 @@ import { useStore } from '../context/StoreContext';
 import usePageTitle from '../hooks/usePageTitle';
 import pageCss from './AdminRevenue.css?raw';
 
-const money = n => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const money = n => '₹' + Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const compact = n => {
   const v = Number(n || 0);
-  if (Math.abs(v) >= 1000) return '$' + (v / 1000).toFixed(v % 1000 === 0 ? 0 : 1) + 'k';
-  return '$' + v.toFixed(0);
+  if (Math.abs(v) >= 1000) return '₹' + (v / 1000).toFixed(v % 1000 === 0 ? 0 : 1) + 'k';
+  return '₹' + v.toFixed(0);
 };
 const prettyFee = t => ({
   'deposit-processing': 'Deposit processing',

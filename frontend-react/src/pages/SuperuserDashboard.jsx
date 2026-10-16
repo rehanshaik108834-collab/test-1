@@ -50,7 +50,7 @@ export default function SuperuserDashboard() {
   const disputes = Store.getDisputes();
   const openDisputes = disputes.filter(d => d.status === 'open').length;
   const openTasks = tasks.filter(t => t.status === 'open').length;
-  const money = n => '$' + Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 2 });
+  const money = n => '₹' + Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });
 
   // Most recent five of each
   const recentUsers = [...users].slice(-5).reverse();

@@ -273,7 +273,7 @@ export class UsersService {
     return { deleted: true };
   }
 
-  // Balances are rounded to cents on every write. Without this, repeated
+  // Balances are rounded to paise on every write. Without this, repeated
   // float arithmetic drifts (24500 - 2634.99 lands on 21865.010000000002)
   // and balances stop comparing equal to the amounts that produced them.
   deductFromWallet(id: string, amount: number) {

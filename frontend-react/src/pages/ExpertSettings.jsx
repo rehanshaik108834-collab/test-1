@@ -195,7 +195,7 @@ export default function ExpertSettings() {
                            placeholder="e.g. Full-Stack & Security" onChange={e => setSpecialization(e.target.value)} />
                   </div>
                   <div className="form-group">
-                    <label className="form-label">Hourly rate ($)</label>
+                    <label className="form-label">Hourly rate (₹)</label>
                     {' '}
                     <input type="number" min="0" className="form-input" id="es-rate" value={hourlyRate} onChange={e => setHourlyRate(e.target.value)} />
                   </div>

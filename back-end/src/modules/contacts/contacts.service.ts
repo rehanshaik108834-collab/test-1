@@ -31,12 +31,10 @@ export class ContactsService {
     if (!task) return people;
     add(task.clientId);
     add(task.workerId);
-    // Bidders and invitees only while the project is open and their proposal
-    // is still on the table. Every worker who had ever bid used to stay a
-    // participant for good — a turned-down bidder could keep messaging the
-    // client and download the hired worker's deliverables.
+    // Invited workers only while the project is open and the invitation is
+    // still unanswered — not for good, or a worker who was never hired could
+    // keep messaging the client and download the hired worker's deliverables.
     if (task.status === 'open') {
-      // findAll({ taskId }) returns bids and invitations alike.
       for (const p of this.proposals.findAll({ taskId })) if (p.status === 'pending') add(p.workerId);
     }
     // Reviewers who are (or were) actually engaged — not one who declined or

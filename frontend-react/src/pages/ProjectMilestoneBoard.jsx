@@ -39,7 +39,7 @@ function loadMilestonesFromStore(Store, Auth, taskId) {
       id: m.id,
       title: m.title,
       desc: m.description || '',
-      amount: '$' + (m.budget || 0).toLocaleString(),
+      amount: '₹' + (m.budget || 0).toLocaleString('en-IN'),
       due: m.dueDate ? new Date(m.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'No date',
       assignee: worker ? worker.avatar : '?',
       assigneeColor: worker ? worker.avatarColor : '#94a3b8',
@@ -60,15 +60,15 @@ function loadMilestonesFromStore(Store, Auth, taskId) {
   return colMap;
 }
 
-/** Sum of "$1,234"-style amounts. */
-const sumAmounts = cards => cards.filter(m => !m.cancelled).reduce((s, m) => s + parseFloat((m.amount || '$0').replace(/[^0-9.]/g, '') || 0), 0);
+/** Sum of "₹1,234"-style amounts. */
+const sumAmounts = cards => cards.filter(m => !m.cancelled).reduce((s, m) => s + parseFloat((m.amount || '₹0').replace(/[^0-9.]/g, '') || 0), 0);
 
-const money = n => '$' + (Number(n) || 0).toLocaleString('en-US', { maximumFractionDigits: 2 });
+const money = n => '₹' + (Number(n) || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });
 
 /**
- * The milestone plan, editable until someone is hired. Hiring needs the
- * milestones to add up to exactly the agreed price (the worker's bid), so the
- * client has to be able to change amounts and remove milestones here.
+ * The milestone plan, editable until a worker accepts. A worker can only
+ * accept while the milestones add up to exactly the budget (that is how they
+ * are paid), so the client changes amounts and removes milestones here.
  */
 function PlanEditor({ task }) {
   const Store = useStore();
@@ -78,7 +78,6 @@ function PlanEditor({ task }) {
   const [adding, setAdding] = useState({ title: '', budget: '' });
   const list = Store.getMilestonesByTask(task.id);
   const total = list.reduce((a, m) => a + (Number(m.budget) || 0), 0);
-  const pendingBids = Store.getProposalsByTask(task.id).filter(p => p.status === 'pending' && p.type !== 'invitation');
 
   const attempt = (fn, ok) => {
     try { fn(); } catch (e) { Validate.toast(e.message, 'error'); return; }
@@ -109,8 +108,7 @@ function PlanEditor({ task }) {
         </span>
       </div>
       <p style={{ fontSize: 12.5, color: 'var(--muted-foreground)', marginBottom: 14, lineHeight: 1.5 }}>
-        You can change this plan until you hire. When you hire, the worker&apos;s bid becomes the contract price and the milestones must add up to exactly that amount.
-        {pendingBids.length ? ` Bids so far: ${pendingBids.map(p => money(typeof p.bidPrice === 'number' ? p.bidPrice : parseFloat(String(p.bidPrice || '').replace(/[$,]/g, '')))).join(', ')}.` : ''}
+        You can change this plan until a worker accepts the project. Workers can only accept while the milestones add up to exactly the budget — the first to accept is hired at that price.
       </p>
       {list.map(m => (
         <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderTop: '1px solid var(--border)', flexWrap: 'wrap' }}>
@@ -233,9 +231,9 @@ export default function ProjectMilestoneBoard() {
   const boardTaskId = taskId || Store.getTasksByClient(Auth.getCurrentUser()?.userId)[0]?.id;
   const boardTask = boardTaskId ? Store.getTaskById(boardTaskId) : null;
   const releasedAmt = sumAmounts(milestones.done);
-  const released = '$' + releasedAmt.toLocaleString();
+  const released = '₹' + releasedAmt.toLocaleString('en-IN');
   const heldNow = boardTaskId ? (Store.getMyEscrow().projects.find(p => p.taskId === boardTaskId)?.projectHeld || 0) : 0;
-  const pending = '$' + heldNow.toLocaleString();
+  const pending = '₹' + heldNow.toLocaleString('en-IN');
   const daysLeft = boardTask && boardTask.deadline ? Math.ceil((new Date(boardTask.deadline) - new Date()) / 86400000) : null;
   const statusLabel = boardTask ? boardTask.status.replace(/-/g, ' ') : '';
   const taskTitle = boardTask ? boardTask.title : 'Milestone Board';

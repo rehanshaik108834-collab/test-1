@@ -85,7 +85,7 @@ function WorkerCard({ w, onProfile, onInvite }) {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 14 }}>
         <CardStat value={w.projectsCompleted} label="Completed" color="#10b981" />
         <CardStat value={w.activeProjects} label="In progress" color="#f59e0b" />
-        <CardStat value={w.hourlyRate ? `$${w.hourlyRate}/h` : '—'} label="Stated rate" />
+        <CardStat value={w.hourlyRate ? `₹${w.hourlyRate}/h` : '—'} label="Stated rate" />
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
         <Icon name="map-pin" style={{ width: 14, height: 14, color: 'var(--muted-foreground)' }} />
@@ -156,7 +156,7 @@ function WorkerProfile({ worker, onClose, onInvite }) {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 20 }}>
           <ProfileStat value={worker.projectsCompleted} label="Completed on Lannent" bg="#ecfdf5" border="#a7f3d0" valueColor="#059669" labelColor="#065f46" />
           <ProfileStat value={worker.activeProjects} label="In progress now" bg="#eef2ff" border="#c7d2fe" valueColor="#4f46e5" labelColor="#3730a3" />
-          <ProfileStat value={worker.hourlyRate ? <>{`$${worker.hourlyRate}`}<span style={{ fontSize: 10 }}>/hr</span></> : '—'} label="Stated hourly rate" bg="#faf5ff" border="#ddd6fe" valueColor="#7c3aed" labelColor="#5b21b6" valueSize={15} />
+          <ProfileStat value={worker.hourlyRate ? <>{`₹${worker.hourlyRate}`}<span style={{ fontSize: 10 }}>/hr</span></> : '—'} label="Stated hourly rate" bg="#faf5ff" border="#ddd6fe" valueColor="#7c3aed" labelColor="#5b21b6" valueSize={15} />
         </div>
 
         {/* Skills */}
@@ -285,23 +285,10 @@ export default function HireGigWorkers() {
       Validate.toast('This project is no longer open — cannot send invitations.', 'error');
       return;
     }
-    // Save proposal/invitation to Store
+    // The invitation is at the project's posted budget; the worker accepts or declines it.
     if (selectedWorker) {
       try {
-        Store.createProposal({
-          taskId: projectId,
-          workerId: selectedWorker.id,
-          workerName: selectedWorker.name,
-          avatar: selectedWorker.avatar,
-          avatarColor: selectedWorker.avatarColor,
-          bidPrice: (openTasks || []).find(t => t.id === projectId) ? '$' + (openTasks || []).find(t => t.id === projectId).budget.toLocaleString() : undefined,
-          timeline: 'To be agreed',
-          coverLetter: inviteMessage,
-          skills: selectedWorker.skills || [],
-          status: 'pending',
-          type: 'invitation',
-          createdAt: new Date().toISOString().slice(0, 10),
-        });
+        Store.sendInvitation({ taskId: projectId, workerId: selectedWorker.id, message: inviteMessage });
       } catch (e) {
         Validate.toast((e.message), 'error');
         return;
@@ -340,7 +327,7 @@ export default function HireGigWorkers() {
                 <label className="form-label" style={{ fontSize: 12 }}>Hourly Rate (max)</label>
                 <input id="rateRange" type="range" min="0" max={MAX_RATE} step="5" value={filters.maxRate} onChange={e => setFilter('maxRate', e.target.value)} style={{ width: '100%' }} />
                 <p style={{ fontSize: 12, color: 'var(--muted-foreground)', marginTop: 4 }}>
-                  {Number(filters.maxRate) >= MAX_RATE ? 'Any rate' : <>Up to $<span id="rateValue">{filters.maxRate}</span>/hr</>}
+                  {Number(filters.maxRate) >= MAX_RATE ? 'Any rate' : <>Up to ₹<span id="rateValue">{filters.maxRate}</span>/hr</>}
                 </p>
               </div>
               <div className="form-group">
@@ -414,6 +401,11 @@ export default function HireGigWorkers() {
                     : !openTasks.length ? <option value="">No open projects — only open projects accept invitations</option>
                     : openTasks.map(t => <option key={t.id} value={t.id}>{t.title}</option>)}
                 </select>
+                {(openTasks || []).some(t => t.id === projectId) && (
+                  <div style={{ fontSize: 12, marginTop: 6, color: 'var(--muted-foreground)', lineHeight: 1.5 }}>
+                    {`The offer is the project's budget, ₹${Number(openTasks.find(t => t.id === projectId).budget).toLocaleString('en-IN')}. The worker accepts or declines it — and any worker who accepts the open project first is hired.`}
+                  </div>
+                )}
               </div>
               <div className="form-group">
                 <label className="form-label">Personal Message</label>

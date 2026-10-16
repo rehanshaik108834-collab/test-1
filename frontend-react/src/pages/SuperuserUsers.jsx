@@ -219,7 +219,7 @@ export default function SuperuserUsers() {
                   <td><span className={`badge ${ROLE_BADGES[u.role] || 'badge-blue'}`}>{u.role}</span></td>
                   <td><span className={`badge ${u.status === 'active' ? 'badge-green' : 'badge-red'}`}>{u.status}</span></td>
                   <td style={{ color: 'var(--muted-foreground)', fontSize: 13 }}>{u.joinDate}</td>
-                  <td style={{ fontWeight: 600 }}>{`$${(u.walletBalance || 0).toLocaleString()}`}</td>
+                  <td style={{ fontWeight: 600 }}>{`₹${(u.walletBalance || 0).toLocaleString('en-IN')}`}</td>
                   <td>
                     <div className="action-btns">
                       <button className="btn-edit" onClick={() => openEditModal(u.id)}>Edit</button>

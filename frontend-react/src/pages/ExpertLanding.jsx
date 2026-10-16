@@ -380,7 +380,7 @@ export default function ExpertLanding() {
                   </div>
                   <div className="dash-stat">
                     <div className="dash-stat-label">Total Earnings</div>
-                    <div className="dash-stat-val" style={{ color: '#8b5cf6' }}>$3,200</div>
+                    <div className="dash-stat-val" style={{ color: '#8b5cf6' }}>₹3,200</div>
                   </div>
                 </div>
                 <div className="dash-audits">
@@ -456,7 +456,7 @@ export default function ExpertLanding() {
               <div className="benefits-list">
                 <div className="benefit-item">
                   <div className="benefit-ico" style={{ background: 'rgba(168,85,247,.12)', border: '1.5px solid rgba(168,85,247,.25)' }}>
-                    <Icon name="dollar-sign" style={{ width: 18, height: 18, color: '#a855f7' }} />
+                    <Icon name="indian-rupee" style={{ width: 18, height: 18, color: '#a855f7' }} />
                   </div>
                   <div>
                     <div className="benefit-title">Set your own fee for every case</div>
@@ -490,7 +490,7 @@ export default function ExpertLanding() {
                 <div className="earnings-card">
                   <div className="earnings-header">
                     <div className="earnings-ico">
-                      <Icon name="dollar-sign" style={{ width: 22, height: 22, color: 'white' }} />
+                      <Icon name="indian-rupee" style={{ width: 22, height: 22, color: 'white' }} />
                     </div>
                     <div style={{ flex: 1 }}>
                       <div style={{ fontWeight: 700, fontSize: 14, color: '#1e293b' }}>Earnings Summary</div>
@@ -504,7 +504,7 @@ export default function ExpertLanding() {
                           <div className="earnings-row-label">Technical Audits</div>
                           <div className="earnings-row-count">18 reviews</div>
                         </div>
-                        <div className="earnings-row-amount" style={{ color: '#6366f1' }}>$2,340</div>
+                        <div className="earnings-row-amount" style={{ color: '#6366f1' }}>₹2,340</div>
                       </div>
                       <div className="earnings-bar-bg" style={{ background: 'rgba(99,102,241,.15)' }}>
                         <div className="earnings-bar-fill" style={{ width: '75%', background: 'linear-gradient(90deg,#6366f1,#818cf8)', boxShadow: '0 0 8px rgba(99,102,241,.5)' }}></div>
@@ -516,7 +516,7 @@ export default function ExpertLanding() {
                           <div className="earnings-row-label">Dispute Resolutions</div>
                           <div className="earnings-row-count">6 reviews</div>
                         </div>
-                        <div className="earnings-row-amount" style={{ color: '#a855f7' }}>$860</div>
+                        <div className="earnings-row-amount" style={{ color: '#a855f7' }}>₹860</div>
                       </div>
                       <div className="earnings-bar-bg" style={{ background: 'rgba(168,85,247,.15)' }}>
                         <div className="earnings-bar-fill" style={{ width: '28%', background: 'linear-gradient(90deg,#a855f7,#c084fc)', boxShadow: '0 0 8px rgba(168,85,247,.5)' }}></div>
@@ -528,7 +528,7 @@ export default function ExpertLanding() {
                           <div className="earnings-row-label">Quality Verifications</div>
                           <div className="earnings-row-count">12 reviews</div>
                         </div>
-                        <div className="earnings-row-amount" style={{ color: '#10b981' }}>$720</div>
+                        <div className="earnings-row-amount" style={{ color: '#10b981' }}>₹720</div>
                       </div>
                       <div className="earnings-bar-bg" style={{ background: 'rgba(16,185,129,.15)' }}>
                         <div className="earnings-bar-fill" style={{ width: '23%', background: 'linear-gradient(90deg,#10b981,#34d399)', boxShadow: '0 0 8px rgba(16,185,129,.5)' }}></div>
@@ -538,7 +538,7 @@ export default function ExpertLanding() {
                   <div className="earnings-total">
                     <span className="earnings-total-label">Total Earned</span>
                     {' '}
-                    <span className="earnings-total-val">$3,920</span>
+                    <span className="earnings-total-val">₹3,920</span>
                   </div>
                 </div>
               </div>
@@ -561,21 +561,21 @@ export default function ExpertLanding() {
               <div className="metric-ico" style={{ background: 'linear-gradient(135deg,#6366f1,#4f46e5)' }}>
                 <Icon name="users" style={{ width: 24, height: 24, color: 'white' }} />
               </div>
-              <div className="metric-val gt-in">{stats ? stats.experts.toLocaleString() : '—'}</div>
+              <div className="metric-val gt-in">{stats ? stats.experts.toLocaleString('en-IN') : '—'}</div>
               <div className="metric-label">Expert Reviewers</div>
             </div>
             <div className="metric-card reveal reveal-delay-1" style={{ background: '#ecfdf5', borderColor: '#a7f3d0' }}>
               <div className="metric-ico" style={{ background: 'linear-gradient(135deg,#10b981,#059669)' }}>
                 <Icon name="file-check" style={{ width: 24, height: 24, color: 'white' }} />
               </div>
-              <div className="metric-val" style={{ background: 'linear-gradient(135deg,#10b981,#059669)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>{stats ? stats.auditsCompleted.toLocaleString() : '—'}</div>
+              <div className="metric-val" style={{ background: 'linear-gradient(135deg,#10b981,#059669)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>{stats ? stats.auditsCompleted.toLocaleString('en-IN') : '—'}</div>
               <div className="metric-label">Audits completed</div>
             </div>
             <div className="metric-card reveal reveal-delay-2" style={{ background: '#faf5ff', borderColor: '#e9d5ff' }}>
               <div className="metric-ico" style={{ background: 'linear-gradient(135deg,#a855f7,#9333ea)' }}>
                 <Icon name="scale" style={{ width: 24, height: 24, color: 'white' }} />
               </div>
-              <div className="metric-val gt-pu">{stats ? stats.disputesResolved.toLocaleString() : '—'}</div>
+              <div className="metric-val gt-pu">{stats ? stats.disputesResolved.toLocaleString('en-IN') : '—'}</div>
               <div className="metric-label">Disputes resolved</div>
             </div>
             <div className="metric-card reveal reveal-delay-3" style={{ background: '#fffbeb', borderColor: '#fde68a' }}>

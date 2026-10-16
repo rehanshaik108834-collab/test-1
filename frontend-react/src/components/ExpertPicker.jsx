@@ -125,7 +125,7 @@ function ExpertProfileModal({ expert: e, open, onClose, onSelect }) {
             <div className="xp-stat-k">Reviews completed</div>
           </div>
           <div>
-            <div className="xp-stat-v">{e.hourlyRate ? '$' + e.hourlyRate : '—'}</div>
+            <div className="xp-stat-v">{e.hourlyRate ? '₹' + e.hourlyRate : '—'}</div>
             <div className="xp-stat-k">Hourly rate</div>
           </div>
           <div>

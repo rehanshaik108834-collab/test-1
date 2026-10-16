@@ -21,8 +21,8 @@ import pageCss from './ClientWallet.css?raw';
 import { newestFirst } from '../utils/helpers';
 import { describeTx, TONE_STYLE, money } from '../utils/transactions';
 
-const ADD_AMOUNTS = ['$500', '$1,000', '$2,000', '$5,000', '$10,000', 'Custom'];
-const WITHDRAW_AMOUNTS = ['$100', '$500', '$1000', '$2500'];
+const ADD_AMOUNTS = ['₹500', '₹1,000', '₹2,000', '₹5,000', '₹10,000', 'Custom'];
+const WITHDRAW_AMOUNTS = ['₹100', '₹500', '₹1000', '₹2500'];
 // Every deposit carries the same card-processing fee on the server, whatever
 // the method, so the methods differ only in how they are described.
 const PAYMENT_METHODS = [
@@ -216,7 +216,7 @@ export default function ClientWallet() {
 
   // ── Add Funds dialog ──
   const [addOpen, setAddOpen] = useState(false);
-  const [currentBalanceText, setCurrentBalanceText] = useState('$4,875');  // filled in when the dialog opens
+  const [currentBalanceText, setCurrentBalanceText] = useState('₹4,875');  // filled in when the dialog opens
   const [selectedAmount, setSelectedAmount] = useState(null);
   const [customAmount, setCustomAmount] = useState('');
   const [selectedMethod, setSelectedMethod] = useState(null);
@@ -225,7 +225,7 @@ export default function ClientWallet() {
 
   // ── Withdraw dialog ──
   const [withdrawOpen, setWithdrawOpen] = useState(false);
-  const [withdrawBalanceText, setWithdrawBalanceText] = useState('$4,875'); // filled in when the dialog opens
+  const [withdrawBalanceText, setWithdrawBalanceText] = useState('₹4,875'); // filled in when the dialog opens
   const [withdrawAmount, setWithdrawAmountValue] = useState('');
 
   // ── All Transactions dialog (list captured when it opens) ──
@@ -235,7 +235,7 @@ export default function ClientWallet() {
   // Amount chosen in the Add Funds dialog
   const addAmount = selectedAmount === null ? 0
     : selectedAmount === 'Custom' ? (parseFloat(customAmount) || 0)
-    : (parseFloat(selectedAmount.replace(/[$,]/g, '')) || 0);
+    : (parseFloat(selectedAmount.replace(/[₹,]/g, '')) || 0);
   // Matches the server: one processing fee, and the wallet is credited the net.
   const depositQuote = Store.Fees.deposit(addAmount);
 
@@ -296,7 +296,7 @@ export default function ClientWallet() {
     // Close modal and refresh all wallet data
     setAddOpen(false);
     refreshWallet();
-    Validate.toast('✓ $' + deposit.net.toFixed(2) + ' credited to your wallet ($'
+    Validate.toast('✓ ₹' + deposit.net.toFixed(2) + ' credited to your wallet (₹'
       + deposit.fee.toFixed(2) + ' processing fee).', 'success');
   }
 
@@ -314,14 +314,14 @@ export default function ClientWallet() {
   }
 
   function setWithdrawAmount(amt) {
-    const amount = parseFloat(amt.replace('$', ''));
+    const amount = parseFloat(amt.replace(/[₹,]/g, ''));
     if (amount <= availableBalance) setWithdrawAmountValue(String(amount));
   }
 
   function processWithdraw() {
     const amount = withdrawValue;
     if (amount <= 0) { showNotification('Please enter a valid amount', 'error'); return; }
-    if (amount < 50) { showNotification('Minimum withdrawal amount is $50', 'error'); return; }
+    if (amount < 50) { showNotification('Minimum withdrawal amount is ₹50', 'error'); return; }
     if (amount > availableBalance) { showNotification('Insufficient balance for this withdrawal', 'error'); return; }
 
     // One call: the server debits the gross, keeps the payout fee and writes
@@ -459,7 +459,7 @@ export default function ClientWallet() {
               {/* Custom Amount Input */}
               <div id="customAmountSection" style={{ display: selectedAmount === 'Custom' ? 'block' : 'none', marginTop: 16 }}>
                 <div style={{ position: 'relative' }}>
-                  <span style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', fontSize: 18, fontWeight: 600, color: '#6366f1' }}>$</span>
+                  <span style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', fontSize: 18, fontWeight: 600, color: '#6366f1' }}>₹</span>
                   {' '}
                   <input ref={customInputRef} type="number" id="customAmountInput" placeholder="Enter custom amount" style={MONEY_INPUT_STYLE}
                          value={customAmount} onChange={e => setCustomAmount(e.target.value)} {...purpleFocus} />
@@ -482,7 +482,7 @@ export default function ClientWallet() {
                       </div>
                       <div style={{ flex: 1 }}>
                         <div style={{ fontSize: 15, fontWeight: 600, color: '#111827' }}>{method.name}</div>
-                        <div style={{ fontSize: 13, color: '#6b7280', marginTop: 2 }}>{`Processing fee ${Store.Fees.rates().deposit.percent}% + $${Store.Fees.rates().deposit.fixed}`}</div>
+                        <div style={{ fontSize: 13, color: '#6b7280', marginTop: 2 }}>{`Processing fee ${Store.Fees.rates().deposit.percent}% + ₹${Store.Fees.rates().deposit.fixed}`}</div>
                       </div>
                       <div style={{ width: 20, height: 20, border: '2px solid #d1d5db', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }} className="method-radio">
                         <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#6366f1', opacity: selectedMethod === method.id ? 1 : 0, transition: 'opacity 0.2s' }} className="method-radio-dot"></div>
@@ -496,9 +496,9 @@ export default function ClientWallet() {
             {/* Amount Preview */}
             <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 16, padding: 20, margin: '0 32px', marginBottom: 24 }}>
               <PreviewRow label="You pay" labelStyle={{ fontSize: 14, color: '#6b7280' }} valueStyle={{ fontWeight: 700, color: '#111827', fontSize: 15 }} id="previewAddAmount" value={money(depositQuote.gross)} marginBottom={12} />
-              <PreviewRow label={`Processing fee (${Store.Fees.rates().deposit.percent}% + $${Store.Fees.rates().deposit.fixed})`} labelStyle={{ fontSize: 14, color: '#6b7280' }} valueStyle={{ fontWeight: 600, color: '#ef4444', fontSize: 14 }} id="previewFee" value={addAmount > 0 ? money(depositQuote.fee) : '$0.00'} marginBottom={12} />
+              <PreviewRow label={`Processing fee (${Store.Fees.rates().deposit.percent}% + ₹${Store.Fees.rates().deposit.fixed})`} labelStyle={{ fontSize: 14, color: '#6b7280' }} valueStyle={{ fontWeight: 600, color: '#ef4444', fontSize: 14 }} id="previewFee" value={addAmount > 0 ? money(depositQuote.fee) : '₹0.00'} marginBottom={12} />
               <div style={{ height: 1, background: '#e5e7eb', margin: '12px 0' }}></div>
-              <PreviewRow label="Credited to your wallet" labelStyle={{ fontSize: 16, fontWeight: 700, color: '#111827' }} valueStyle={{ fontSize: 20, fontWeight: 900, background: 'linear-gradient(135deg,#6366f1,#a855f7)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }} id="previewTotal" value={addAmount > 0 ? money(depositQuote.net) : '$0.00'} />
+              <PreviewRow label="Credited to your wallet" labelStyle={{ fontSize: 16, fontWeight: 700, color: '#111827' }} valueStyle={{ fontSize: 20, fontWeight: 900, background: 'linear-gradient(135deg,#6366f1,#a855f7)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }} id="previewTotal" value={addAmount > 0 ? money(depositQuote.net) : '₹0.00'} />
             </div>
 
             {/* Action Buttons */}
@@ -537,12 +537,12 @@ export default function ClientWallet() {
             <div className="form-group" style={{ marginBottom: 24 }}>
               <label className="form-label" style={{ fontWeight: 600, marginBottom: 12 }}>How much would you like to withdraw?</label>
               <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                <span style={{ position: 'absolute', left: 16, fontSize: 18, fontWeight: 600, color: '#7c3aed' }}>$</span>
+                <span style={{ position: 'absolute', left: 16, fontSize: 18, fontWeight: 600, color: '#7c3aed' }}>₹</span>
                 <input type="number" id="withdrawAmount" placeholder="0.00" style={MONEY_INPUT_STYLE}
                        value={withdrawAmount} onChange={e => setWithdrawAmountValue(e.target.value)} {...purpleFocus} />
               </div>
               <div style={{ fontSize: 12, color: '#6b7280', marginTop: 8 }}>
-                Minimum: <strong>$50</strong> | Maximum: <strong id="maxWithdrawAmt">{withdrawBalanceText}</strong>
+                Minimum: <strong>₹50</strong> | Maximum: <strong id="maxWithdrawAmt">{withdrawBalanceText}</strong>
               </div>
             </div>
 
@@ -562,9 +562,9 @@ export default function ClientWallet() {
             {/* Withdrawal Preview */}
             <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 14, padding: 18, marginBottom: 24 }}>
               <PreviewRow label="Amount to Withdraw" labelStyle={{ fontSize: 13, color: '#6b7280' }} valueStyle={{ fontWeight: 600, color: '#111827', fontSize: 13 }} id="previewAmount" value={money(withdrawValue)} marginBottom={10} />
-              <PreviewRow label={`Payout fee (${Store.Fees.rates().withdrawal.percent}% + $${Store.Fees.rates().withdrawal.fixed})`} labelStyle={{ fontSize: 13, color: '#6b7280' }} valueStyle={{ fontWeight: 600, color: '#ef4444', fontSize: 13 }} id="withdrawPreviewFee" value={withdrawValue > 0 ? money(withdrawQuote.fee) : '$0.00'} marginBottom={10} />
+              <PreviewRow label={`Payout fee (${Store.Fees.rates().withdrawal.percent}% + ₹${Store.Fees.rates().withdrawal.fixed})`} labelStyle={{ fontSize: 13, color: '#6b7280' }} valueStyle={{ fontWeight: 600, color: '#ef4444', fontSize: 13 }} id="withdrawPreviewFee" value={withdrawValue > 0 ? money(withdrawQuote.fee) : '₹0.00'} marginBottom={10} />
               <div style={{ height: 1, background: '#e5e7eb', margin: '10px 0' }}></div>
-              <PreviewRow label="You'll Receive" labelStyle={{ fontSize: 14, fontWeight: 700, color: '#111827' }} valueStyle={{ fontSize: 18, fontWeight: 900, background: 'linear-gradient(135deg,#10b981,#059669)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }} id="previewReceive" value={withdrawValue > 0 ? money(withdrawQuote.net) : '$0.00'} />
+              <PreviewRow label="You'll Receive" labelStyle={{ fontSize: 14, fontWeight: 700, color: '#111827' }} valueStyle={{ fontSize: 18, fontWeight: 900, background: 'linear-gradient(135deg,#10b981,#059669)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }} id="previewReceive" value={withdrawValue > 0 ? money(withdrawQuote.net) : '₹0.00'} />
             </div>
 
             {/* Action Buttons */}

@@ -59,9 +59,9 @@ const CLIENT_COLOR = 'linear-gradient(135deg,#6366f1,#4f46e5)';
 const WORKER_COLOR = 'linear-gradient(135deg,#10b981,#059669)';
 
 function formatAmount(amount) {
-  if (typeof amount === 'number') return '$' + amount.toLocaleString();
-  if (typeof amount === 'string') return amount.startsWith('$') ? amount : '$' + amount;
-  return '$0';
+  if (typeof amount === 'number') return '₹' + amount.toLocaleString('en-IN');
+  if (typeof amount === 'string') return amount.startsWith('₹') ? amount : '₹' + amount;
+  return '₹0';
 }
 
 function normalizeStatus(status) {
@@ -157,13 +157,13 @@ function SentMessage({ m }) {
  */
 function buildView(Store, task, noWorker) {
   // Real escrow for this project. The card previously hardcoded
-  // $4,500 released / $3,500 remaining / 56% for every project.
+  // ₹4,500 released / ₹3,500 remaining / 56% for every project.
   const esc = Store.getEscrowForTask(task.id) || { projectHeld: 0 };
   const released = (Store.getTransactions() || [])
     .filter(t => t.type === 'milestone-release' && t.taskId === task.id)
     .reduce((sum, t) => sum + (t.grossAmount != null ? t.grossAmount : (t.amount || 0)), 0);
   const fundedTotal = released + (esc.projectHeld || 0);
-  const money = n => '$' + Number(n || 0).toLocaleString();
+  const money = n => '₹' + Number(n || 0).toLocaleString('en-IN');
   const escrowView = { released: money(released), held: money(esc.projectHeld), pct: fundedTotal > 0 ? Math.round((released / fundedTotal) * 100) : 0 };
 
   const client = Store.getUserById(task.clientId) || { name: 'Client', avatar: 'CL', avatarColor: 'linear-gradient(135deg,#94a3b8,#64748b)' };
@@ -183,7 +183,7 @@ function buildView(Store, task, noWorker) {
 
   // Chat history (or a welcome line for a brand-new project)
   // The workroom is the client and the hired worker talking. Messages on the
-  // same project with bidders or reviewers live in Messages; they used to
+  // same project with invited workers or reviewers live in Messages; they used to
   // appear here drawn as if the hired worker had sent them.
   const pair = new Set([task.clientId, task.workerId]);
   const initialMessages = Store.getMessagesByTask(task.id)
@@ -352,7 +352,7 @@ export default function Workroom({ variant }) {
         <PersonChip label="Worker" person={project.worker} />
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 16 }}>
           <div style={{ textAlign: 'center' }}>
-            <div style={{ fontWeight: 700, color: '#10b981' }}>{`$${project.totalBudget.toLocaleString()}`}</div>
+            <div style={{ fontWeight: 700, color: '#10b981' }}>{`₹${project.totalBudget.toLocaleString('en-IN')}`}</div>
             <div style={{ fontSize: 11, color: 'var(--muted-foreground)' }}>Budget</div>
           </div>
           <div style={{ textAlign: 'center' }}>

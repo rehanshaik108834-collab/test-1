@@ -269,7 +269,7 @@ export default function ReviewDeliverable() {
       return;
     }
     const net = result && result.release && result.release.net != null ? result.release.net : null;
-    Validate.toast(`✓ $${deliverable.budget.toLocaleString()} released to ${deliverable.worker}${net != null ? ` ($${net.toLocaleString()} after the service fee)` : ''}.`, 'success');
+    Validate.toast(`✓ ₹${deliverable.budget.toLocaleString('en-IN')} released to ${deliverable.worker}${net != null ? ` (₹${net.toLocaleString('en-IN')} after the service fee)` : ''}.`, 'success');
     setTimeout(() => navigate('/client-my-projects'), 2000);
   }
 
@@ -331,7 +331,7 @@ export default function ReviewDeliverable() {
           </div>
           <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
             <div style={{ textAlign: 'center', padding: '12px 20px', borderRadius: 12, background: '#ecfdf5' }}>
-              <div style={{ fontWeight: 700, color: '#10b981', fontSize: 18 }}>{`$${deliverable.budget.toLocaleString()}`}</div>
+              <div style={{ fontWeight: 700, color: '#10b981', fontSize: 18 }}>{`₹${deliverable.budget.toLocaleString('en-IN')}`}</div>
               <div style={{ fontSize: 11, color: '#065f46' }}>Milestone Value</div>
             </div>
             <span className={`badge ${reviewable ? 'badge-orange' : 'badge-blue'}`} style={{ fontSize: 13, padding: '8px 16px' }}>
@@ -436,7 +436,7 @@ export default function ReviewDeliverable() {
               <p style={{ fontSize: 13, color: '#7c2d12', lineHeight: 1.6 }}>
                 {role === 'expert'
                   ? 'Filing the report pays your share of the audit fee for this milestone. A report filed more than 5 days after submission can be overtaken by the client approving the work without it.'
-                  : <>Approving will release <strong>{`$${deliverable.budget.toLocaleString()}`}</strong>{` from escrow to ${deliverable.worker}. This action cannot be undone.`}</>}
+                  : <>Approving will release <strong>{`₹${deliverable.budget.toLocaleString('en-IN')}`}</strong>{` from escrow to ${deliverable.worker}. This action cannot be undone.`}</>}
               </p>
               {role !== 'expert' && reviewable && (
                 <ul style={{ fontSize: 12.5, color: '#7c2d12', lineHeight: 1.6, margin: '10px 0 0', paddingLeft: 18 }}>
@@ -456,7 +456,7 @@ export default function ReviewDeliverable() {
             <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'linear-gradient(135deg,#10b981,#059669)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px', fontSize: 28 }}>✓</div>
             <h2 style={{ fontSize: 20, fontWeight: 600, marginBottom: 8 }}>Confirm Release</h2>
             <p style={{ fontSize: 14, color: 'var(--muted-foreground)', marginBottom: 20 }}>
-              Release <strong>{`$${deliverable.budget.toLocaleString()}`}</strong> from escrow to <strong>{deliverable.worker}</strong>? This cannot be undone.
+              Release <strong>{`₹${deliverable.budget.toLocaleString('en-IN')}`}</strong> from escrow to <strong>{deliverable.worker}</strong>? This cannot be undone.
             </p>
             <div style={{ display: 'flex', gap: 12 }}>
               <button onClick={() => setConfirmOpen(false)} className="btn-outline" style={{ flex: 1, padding: 12, borderRadius: 12 }}>Cancel</button>

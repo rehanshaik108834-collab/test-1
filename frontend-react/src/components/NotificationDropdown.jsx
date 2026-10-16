@@ -3,7 +3,7 @@
  * The bell button in the top bar and its dropdown list.
  *
  * Notifications are written by the server whenever something happens to you —
- * a proposal, a hire, a submission, an approval, an offer, a dispute — so the
+ * an invitation, a hire, a submission, an approval, an offer, a dispute — so the
  * list is re-read every few seconds while the page is open, and clicking one
  * opens the page it is about and marks it read.
  */

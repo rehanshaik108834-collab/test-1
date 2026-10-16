@@ -115,8 +115,8 @@ export class MilestonesService implements OnModuleInit, OnModuleDestroy {
     if (round2(others + budget) > task.budget) {
       const left = round2(task.budget - others);
       throw new BadRequestException(
-        `Milestones cannot add up to more than the project budget of $${task.budget}. ` +
-          `$${left > 0 ? left : 0} is left to allocate.`,
+        `Milestones cannot add up to more than the project budget of ₹${task.budget}. ` +
+          `₹${left > 0 ? left : 0} is left to allocate.`,
       );
     }
   }
@@ -423,8 +423,8 @@ export class MilestonesService implements OnModuleInit, OnModuleDestroy {
 
     this.notificationsService.notify(ms.workerId, {
       type: 'payment',
-      text: `"${ms.title}" ${how === 'auto-approved' ? 'was approved automatically' : 'approved'} — $${release.net ?? 0} paid to your wallet`,
-      subtext: `${task.title} · $${ms.budget} less the service fee`,
+      text: `"${ms.title}" ${how === 'auto-approved' ? 'was approved automatically' : 'approved'} — ₹${release.net ?? 0} paid to your wallet`,
+      subtext: `${task.title} · ₹${ms.budget} less the service fee`,
       link: '/worker-wallet',
     });
     if (how === 'auto-approved') {

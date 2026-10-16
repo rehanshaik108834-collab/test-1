@@ -155,7 +155,7 @@ export class RevenueService {
   }
 
   /**
-   * Where every dollar that entered escrow ended up. The buckets are mutually
+   * Where every rupee that entered escrow ended up. The buckets are mutually
    * exclusive and sum to the total funded, so the chart always adds up.
    */
   distribution() {

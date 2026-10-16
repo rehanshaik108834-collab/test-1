@@ -41,7 +41,7 @@ export class CreateDisputeDto {
   @IsOptional() @IsString() @MaxLength(500)
   outcome?: string;
 
-  @ApiPropertyOptional({ example: '$500' })
+  @ApiPropertyOptional({ example: '₹500' })
   @IsOptional() @IsString()
   amount?: string;
 

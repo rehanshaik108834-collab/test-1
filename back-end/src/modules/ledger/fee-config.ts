@@ -4,10 +4,10 @@
  * Rates follow published 2026 marketplace pricing:
  *   - client marketplace fee + contract initiation fee ...... Upwork
  *   - worker service fee, tiered by lifetime billings ....... Upwork
- *   - card processing on deposit ............................ Stripe (2.9% + $0.30)
- *   - payout fee on withdrawal ............................. Stripe Connect (0.25% + $0.25)
+ *   - card processing on deposit ............................ Stripe (2.9% + ₹0.30)
+ *   - payout fee on withdrawal ............................. Stripe Connect (0.25% + ₹0.25)
  *
- * Every amount in the system is USD and rounded to cents at the point a fee is
+ * Every amount in the system is INR (₹) and rounded to paise at the point a fee is
  * computed, so a fee and its net never disagree by a floating-point crumb.
  */
 
@@ -97,7 +97,7 @@ export function resetFeeConfig(): void {
   FEE_CONFIG.contractInitiation.forEach((t, i) => { t.fee = restored.contractInitiation[i].fee; });
 }
 
-/** Rounds to whole cents. Every fee and net amount passes through this. */
+/** Rounds to whole paise. Every fee and net amount passes through this. */
 export function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }

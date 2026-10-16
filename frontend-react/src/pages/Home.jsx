@@ -73,7 +73,7 @@ export default function Home() {
             {stats && members > 0 ? (
               <div className="hero-trust">
                 <span style={{ fontWeight: 500 }}>
-                  {`${members.toLocaleString()} member${members === 1 ? '' : 's'} building on Lannent`}
+                  {`${members.toLocaleString('en-IN')} member${members === 1 ? '' : 's'} building on Lannent`}
                 </span>
               </div>
             ) : null}
@@ -253,8 +253,8 @@ export default function Home() {
                       <div className="progress-bar-fill" style={{ width: '65%', background: 'linear-gradient(90deg,#10b981,#34d399)', boxShadow: '0 0 12px rgba(16,185,129,0.5)' }}></div>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
-                      <span style={{ fontSize: 11, color: '#94a3b8' }}>Released: $3,900</span>
-                      <span style={{ fontSize: 11, color: '#94a3b8' }}>Held: $2,100</span>
+                      <span style={{ fontSize: 11, color: '#94a3b8' }}>Released: ₹3,900</span>
+                      <span style={{ fontSize: 11, color: '#94a3b8' }}>Held: ₹2,100</span>
                     </div>
                   </div>
                 </div>
@@ -310,7 +310,7 @@ export default function Home() {
                     <div className="mini-card">
                       <p className="mini-card-title">UI Wireframes</p>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 6 }}>
-                        <span style={{ fontSize: 9, color: '#059669', fontWeight: 500, padding: '2px 6px', borderRadius: 4, background: '#d1fae5' }}>$800</span>
+                        <span style={{ fontSize: 9, color: '#059669', fontWeight: 500, padding: '2px 6px', borderRadius: 4, background: '#d1fae5' }}>₹800</span>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                         <div style={{ width: 16, height: 16, borderRadius: '50%', background: 'linear-gradient(135deg,#6366f1,#4f46e5)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, fontWeight: 700, color: 'white' }}>A</div>
@@ -414,7 +414,7 @@ export default function Home() {
                   </div>
                   <div className="dash-stat">
                     <div className="dash-stat-label">Total Earned</div>
-                    <div className="dash-stat-val" style={{ color: '#10b981' }}>$48.2K</div>
+                    <div className="dash-stat-val" style={{ color: '#10b981' }}>₹48.2K</div>
                   </div>
                   <div className="dash-stat">
                     <div className="dash-stat-label">Completion Rate</div>
@@ -625,14 +625,14 @@ export default function Home() {
               <div className="metric-icon" style={{ background: 'linear-gradient(135deg,#6366f1,#4f46e5)' }}>
                 <Icon name="users" style={{ color: 'white', width: 24, height: 24 }} />
               </div>
-              <div className="metric-val" style={{ background: 'linear-gradient(135deg,#6366f1,#4f46e5)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>{stats ? stats.workers.toLocaleString() : '—'}</div>
+              <div className="metric-val" style={{ background: 'linear-gradient(135deg,#6366f1,#4f46e5)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>{stats ? stats.workers.toLocaleString('en-IN') : '—'}</div>
               <div className="metric-label">Gig workers on Lannent</div>
             </div>
             <div className="metric-card reveal reveal-delay-1" style={{ background: '#ecfdf5', border: '1.5px solid #a7f3d0' }}>
               <div className="metric-icon" style={{ background: 'linear-gradient(135deg,#10b981,#059669)' }}>
                 <Icon name="check-circle" style={{ color: 'white', width: 24, height: 24 }} />
               </div>
-              <div className="metric-val" style={{ background: 'linear-gradient(135deg,#10b981,#059669)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>{stats ? stats.projectsCompleted.toLocaleString() : '—'}</div>
+              <div className="metric-val" style={{ background: 'linear-gradient(135deg,#10b981,#059669)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>{stats ? stats.projectsCompleted.toLocaleString('en-IN') : '—'}</div>
               <div className="metric-label">{stats ? `Projects completed · ${stats.projectsInProgress} in progress` : 'Projects completed'}</div>
             </div>
             <div className="metric-card reveal reveal-delay-2" style={{ background: '#eff6ff', border: '1.5px solid #bae6fd' }}>

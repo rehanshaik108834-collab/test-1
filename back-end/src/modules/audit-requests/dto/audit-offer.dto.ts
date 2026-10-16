@@ -3,7 +3,7 @@ import { IsMoney } from '../../../common/validation/money';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateOfferDto {
-  @ApiProperty({ example: 300, description: 'Proposed fee for the audit, in USD' })
+  @ApiProperty({ example: 300, description: 'Proposed fee for the audit, in INR' })
   @IsMoney()
   amount: number;
 

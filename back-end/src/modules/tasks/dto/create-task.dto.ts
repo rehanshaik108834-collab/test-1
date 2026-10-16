@@ -46,9 +46,9 @@ export class CreateTaskDto {
   @IsMoney()
   budget: number;
 
-  /** Every wallet and escrow is held in dollars, so a project is too. */
-  @ApiPropertyOptional({ example: 'USD', enum: ['USD'] })
-  @IsOptional() @IsIn(['USD'], { message: 'Projects are priced in USD — wallets and escrow are held in dollars.' })
+  /** Every wallet and escrow is held in rupees, so a project is too. */
+  @ApiPropertyOptional({ example: 'INR', enum: ['INR'] })
+  @IsOptional() @IsIn(['INR'], { message: 'Projects are priced in INR — wallets and escrow are held in rupees.' })
   currency?: string;
 
   @ApiPropertyOptional({ example: '2026-04-15' })

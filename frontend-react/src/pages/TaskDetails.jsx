@@ -3,10 +3,12 @@
  * Converted from front-end/pages/task-details.html.
  *
  * Full details of one task (?id=<taskId>): description, milestones, skills,
- * budget and client. Workers can submit a proposal while the task is open.
+ * budget and client. There is no bidding: the client's budget is the price,
+ * and while the task is open a worker can accept it — the first to accept is
+ * hired on the spot.
  */
 import { useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import EmptyState from '../components/EmptyState';
 import Icon from '../components/Icon';
@@ -18,8 +20,6 @@ import { getSavedTaskIds, toggleSavedTask } from '../utils/helpers';
 import usePageTitle from '../hooks/usePageTitle';
 import pageCss from './TaskDetails.css?raw';
 
-const TIMELINES = ['Less than 1 week', '1 week', '2 weeks', '3 weeks', '4 weeks', '5 weeks', '6 weeks', '2 months', 'More than 2 months'];
-const MIN_COVER_LETTER = 30;
 const MILESTONE_STATUS_TEXT = {
   completed: '✓ Completed',
   approved: '✓ Approved',
@@ -44,6 +44,7 @@ export default function TaskDetails() {
   const Store = useStore();
   const Auth = useAuth();
   const Validate = useValidation();
+  const navigate = useNavigate();
   usePageTitle('Task Details — Lannent');
   const [searchParams] = useSearchParams();
   const urlId = searchParams.get('id');
@@ -58,22 +59,6 @@ export default function TaskDetails() {
     setSaved(nowSaved);
     Validate.toast(nowSaved ? 'Task saved.' : 'Task removed from saved.', nowSaved ? 'success' : 'info');
   }
-
-  // Apply modal
-  const [applyOpen, setApplyOpen] = useState(false);
-  const [timeline, setTimeline] = useState('3 weeks');
-  const [coverLetter, setCoverLetter] = useState('');
-  // The worker's price for the whole project. Binding: hiring makes it the contract.
-  const [price, setPrice] = useState(() => {
-    const t = urlId ? Store.getTaskById(urlId) : null;
-    return t && typeof t.budget === 'number' ? String(t.budget) : '';
-  });
-  // The page shows the proposal count from when it was opened (it is not
-  // refreshed after submitting, as before).
-  const [proposalCount, setProposalCount] = useState(() => (urlId ? Store.getProposalsByTask(urlId).filter(p => p.type !== 'invitation').length : 0));
-  // A worker who already has a live proposal here sees that, not "Apply Now".
-  const [applied, setApplied] = useState(() => !!urlId && Store.getProposals().some(p =>
-    p.taskId === urlId && p.workerId === userId && p.type !== 'invitation' && p.status === 'pending'));
 
   const task = urlId ? Store.getTaskById(urlId) : null;
 
@@ -104,60 +89,32 @@ export default function TaskDetails() {
   const clientInitials = clientInfo ? clientInfo.avatar : (task.clientInitials || '??');
   const clientMemberDate = clientInfo ? ('Member since ' + clientInfo.joinDate) : '';
   const clientProjects = clientInfo ? (Store.getTasksByClient(task.clientId)?.length || 0) : 0;
-  const budgetDisplay = task.budget && typeof task.budget === 'number' ? ('$' + task.budget.toLocaleString()) : (task.budget || '$0');
+  const budgetDisplay = task.budget && typeof task.budget === 'number' ? ('₹' + task.budget.toLocaleString('en-IN')) : (task.budget || '₹0');
   const budgetNum = task.numBudget || (typeof task.budget === 'number' ? task.budget : parseInt(budgetDisplay.replace(/[^0-9]/g, '')) || 0);
   const taskMilestones = Store.getMilestonesByTask(task.id);
   const taskStatus = task.status || 'open';
   const statusLabel = taskStatus.charAt(0).toUpperCase() + taskStatus.slice(1).replace('-', ' ');
   const statusBadgeClass = taskStatus === 'open' ? 'badge-green' : taskStatus === 'in-progress' ? 'badge-blue' : taskStatus === 'completed' ? 'badge-purple' : taskStatus === 'cancelled' ? 'badge-red' : 'badge-orange';
 
-  function submitProposal() {
-    const letter = coverLetter.trim();
-    if (letter.length < MIN_COVER_LETTER) {
-      Validate.toast(`Please write a cover letter of at least ${MIN_COVER_LETTER} characters.`, 'error');
-      return;
-    }
-    const currentUser = Auth.getCurrentUser();
-    if (!currentUser) {
-      Validate.toast('Please log in to submit a proposal', 'error');
-      return;
-    }
+  const acceptable = Store.canBeAccepted(task);
+  const plannedTotal = taskMilestones.reduce((a, m) => a + (Number(m.budget) || 0), 0);
 
-    const latest = Store.getTaskById(task.id);
-
-    // ── Guard: only open tasks accept proposals ───────────────────
-    if (latest && latest.status !== 'open') {
-      Validate.toast('This project is no longer accepting proposals.', 'error');
-      setApplyOpen(false);
-      return;
-    }
-
-    const bidPrice = Number(price);
-    if (!/^\d+(\.\d{1,2})?$/.test(String(price).trim()) || !(bidPrice >= 1)) {
-      Validate.toast('Enter your price for the whole project in dollars (e.g. 1200).', 'error');
-      return;
-    }
-
-    try {
-      // The server fills in who the worker is; the price is the one figure
-      // that matters — it becomes the contract if the client hires.
-      Store.createProposal({
-        taskId: task.id,
-        bidPrice,
-        timeline,
-        coverLetter: letter,
-        skills: currentUser.skills || [],
-      });
-    } catch (e) {
-      console.error('[submitProposal] Error:', e);
-      Validate.toast((e.message), 'error');
-      return;
-    }
-
-    setApplyOpen(false);
-    setApplied(true);
-    setProposalCount(c => c + 1);
-    Validate.toast('✓ Proposal submitted successfully!', 'success');
+  function acceptTask() {
+    Validate.confirm(
+      `Accept "${task.title}" for ${budgetDisplay}? You are hired straight away and the project moves to My Projects. ` +
+        'You are paid milestone by milestone as the client approves your work, less the service fee.',
+      () => {
+        try {
+          Store.acceptTask(task.id);
+        } catch (e) {
+          Validate.toast(e.message, 'error');
+          Store.refresh('tasks', 'milestones');
+          return;
+        }
+        Validate.toast('✓ You accepted the project — it is now in progress.', 'success');
+        navigate(`/worker-milestone-board?id=${task.id}`);
+      },
+    );
   }
 
   return (
@@ -225,7 +182,7 @@ export default function TaskDetails() {
                   <div style={{ flex: 1 }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
                       <span style={{ fontWeight: 600, fontSize: 14 }}>{`Milestone ${i+1}: ${m.title}`}</span>
-                      <span style={{ fontWeight: 700, color: color }}>{`$${(m.budget || 0).toLocaleString()}`}</span>
+                      <span style={{ fontWeight: 700, color: color }}>{`₹${(m.budget || 0).toLocaleString('en-IN')}`}</span>
                     </div>
                     <p style={{ fontSize: 13, color: 'var(--muted-foreground)', marginBottom: 4 }}>{m.description || ''}</p>
                     <span style={{ fontSize: 12, color: 'var(--muted-foreground)' }}>{msStatusLabel}</span>
@@ -250,17 +207,24 @@ export default function TaskDetails() {
             {/* Apply Card */}
             <div className="detail-card" style={{ position: 'sticky', top: 80 }}>
               <div style={{ textAlign: 'center', padding: '8px 0 20px' }}>
-                <div style={{ fontSize: 28, fontWeight: 700, color: '#10b981', marginBottom: 4 }}>{`$${budgetNum.toLocaleString()}`}</div>
+                <div style={{ fontSize: 28, fontWeight: 700, color: '#10b981', marginBottom: 4 }}>{`₹${budgetNum.toLocaleString('en-IN')}`}</div>
                 <div style={{ fontSize: 13, color: 'var(--muted-foreground)' }}>Total budget</div>
               </div>
               {taskStatus === 'open' ? (
                 <>
                 {role !== 'worker' ? (
-                  <div style={{ width: '100%', padding: 12, borderRadius: 12, fontSize: 14, fontWeight: 600, textAlign: 'center', marginBottom: 12, background: '#eef2ff', color: '#3730a3' }}>Open for proposals</div>
-                ) : applied ? (
-                  <Link to="/my-proposals" className="btn-outline" style={{ display: 'block', width: '100%', padding: 12, borderRadius: 12, fontSize: 15, marginBottom: 12, textAlign: 'center', textDecoration: 'none' }}>✓ Proposal submitted — view it</Link>
+                  <div style={{ width: '100%', padding: 12, borderRadius: 12, fontSize: 14, fontWeight: 600, textAlign: 'center', marginBottom: 12, background: '#eef2ff', color: '#3730a3' }}>Open — the first worker to accept is hired</div>
+                ) : acceptable ? (
+                  <>
+                    <button className="btn-primary" style={{ width: '100%', padding: 12, borderRadius: 12, fontSize: 15, marginBottom: 8 }} onClick={acceptTask}>{`Accept for ${budgetDisplay}`}</button>
+                    <p style={{ fontSize: 12, color: 'var(--muted-foreground)', textAlign: 'center', marginBottom: 12, lineHeight: 1.5 }}>
+                      The price is fixed by the client. The first worker to accept is hired.
+                    </p>
+                  </>
                 ) : (
-                  <button className="btn-primary" style={{ width: '100%', padding: 12, borderRadius: 12, fontSize: 15, marginBottom: 12 }} onClick={() => setApplyOpen(true)}>Apply Now</button>
+                  <div style={{ width: '100%', padding: 12, borderRadius: 12, fontSize: 13, textAlign: 'center', marginBottom: 12, ...STATUS_BOX_COLORS.other }}>
+                    {`The client is still finishing the milestone plan (₹${plannedTotal.toLocaleString('en-IN')} of ${budgetDisplay} planned). You can accept once it adds up.`}
+                  </div>
                 )}
                 {' '}
                 {role === 'worker' && <button className="btn-outline" style={{ width: '100%', padding: 12, borderRadius: 12, fontSize: 15, ...(saved ? { borderColor: '#6366f1', color: '#4f46e5', background: '#eef2ff' } : {}) }}
@@ -270,7 +234,7 @@ export default function TaskDetails() {
                 </button>}
                 </>
               ) : (
-                <div style={{ width: '100%', padding: 12, borderRadius: 12, fontSize: 14, fontWeight: 600, textAlign: 'center', marginBottom: 12, ...STATUS_BOX_COLORS[taskStatus === 'in-progress' || taskStatus === 'completed' ? taskStatus : 'other'] }}>{taskStatus === 'in-progress' ? '🔄 In Progress — Not Accepting Proposals' : taskStatus === 'completed' ? '✅ Completed' : '⚠️ ' + statusLabel}</div>
+                <div style={{ width: '100%', padding: 12, borderRadius: 12, fontSize: 14, fontWeight: 600, textAlign: 'center', marginBottom: 12, ...STATUS_BOX_COLORS[taskStatus === 'in-progress' || taskStatus === 'completed' ? taskStatus : 'other'] }}>{taskStatus === 'in-progress' ? '🔄 In Progress — a worker has accepted it' : taskStatus === 'completed' ? '✅ Completed' : '⚠️ ' + statusLabel}</div>
               )}
               <div style={{ marginTop: 20, paddingTop: 20, borderTop: '1px solid var(--border)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
@@ -284,10 +248,6 @@ export default function TaskDetails() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
                   <span style={{ fontSize: 13, color: 'var(--muted-foreground)' }}>Milestones</span>
                   <span style={{ fontSize: 13, fontWeight: 600 }}>{`${taskMilestones.length} defined`}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-                  <span style={{ fontSize: 13, color: 'var(--muted-foreground)' }}>Proposals</span>
-                  <span style={{ fontSize: 13, fontWeight: 600 }}>{`${proposalCount} submitted`}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
                   <span style={{ fontSize: 13, color: 'var(--muted-foreground)' }}>Progress</span>
@@ -321,46 +281,6 @@ export default function TaskDetails() {
                   </div>
                 </div>
               </div>
-            </div>
-          </div>
-        </div>
-        {/* Apply Modal */}
-        <div id="applyModal" style={{ display: applyOpen ? 'flex' : 'none', position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 200, alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
-          <div style={{ background: 'white', borderRadius: 24, padding: 32, width: '100%', maxWidth: 480, margin: '0 16px', boxShadow: '0 32px 80px rgba(0,0,0,0.15)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
-              <h2 style={{ fontSize: 20, fontWeight: 600 }}>Submit Proposal</h2>
-              <button onClick={() => setApplyOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted-foreground)' }}>
-                <Icon name="x" style={{ width: 20, height: 20 }} />
-              </button>
-            </div>
-            <div className="form-group">
-              <label className="form-label" htmlFor="bidPriceInput">Your price for the whole project (USD)</label>
-              {' '}
-              <input id="bidPriceInput" type="number" min="1" step="0.01" className="form-input" style={{ padding: '12px 16px' }}
-                     value={price} onChange={e => setPrice(e.target.value)} />
-              <div style={{ fontSize: 12, marginTop: 4, color: 'var(--muted-foreground)' }}>
-                {`The client posted ${budgetDisplay}. If they hire you, your price becomes the contract and is held in escrow; you are paid it milestone by milestone, less the service fee.`}
-              </div>
-            </div>
-            <div className="form-group">
-              <label className="form-label">Delivery Timeline</label>
-              {' '}
-              <select id="timelineInput" className="form-input filter-select" style={{ padding: '12px 16px' }} value={timeline} onChange={e => setTimeline(e.target.value)}>
-                {TIMELINES.map(t => <option key={t}>{t}</option>)}
-              </select>
-            </div>
-            <div className="form-group">
-              <label className="form-label">Cover Letter</label>
-              {' '}
-              <textarea id="coverLetterInput" className="form-input" rows="4" placeholder="Describe your relevant experience and why you're the best fit for this project..."
-                        value={coverLetter} onChange={e => setCoverLetter(e.target.value)} />
-              <div style={{ fontSize: 12, marginTop: 4, color: coverLetter.trim().length >= MIN_COVER_LETTER ? '#059669' : 'var(--muted-foreground)' }}>
-                {`${coverLetter.trim().length} / ${MIN_COVER_LETTER} characters minimum`}
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
-              <button onClick={() => setApplyOpen(false)} className="btn-outline" style={{ flex: 1, padding: 12, borderRadius: 12 }}>Cancel</button>
-              <button className="btn-primary" style={{ flex: 1, padding: 12, borderRadius: 12 }} onClick={submitProposal}>Submit Proposal</button>
             </div>
           </div>
         </div>

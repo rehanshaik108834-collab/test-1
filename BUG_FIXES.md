@@ -9,7 +9,7 @@ Each entry says what was wrong, what changed, and where (paths are relative to t
 |---|---|
 | Backend typecheck — `cd back-end && npx tsc --noEmit -p tsconfig.json` | clean |
 | Backend unit tests — `npm test` | 17 / 17 pass |
-| Backend end-to-end tests — `npm run test:e2e` | 86 / 86 pass (24 new in round 4) |
+| Backend end-to-end tests — `npm run test:e2e` | 90 / 90 pass (24 new in round 4; bidding tests replaced in round 5; 1 new in round 6) |
 | Frontend production build — `cd frontend-react && npx vite build` | builds |
 | ESLint on `frontend-react/src` | no undefined variables or parse errors (2 reports are only a missing `react-hooks` plugin definition in the lint config) |
 
@@ -363,4 +363,41 @@ Rules chosen by the project owner for this round:
 - The workroom chat shows only the client and the hired worker.
 - Submit Deliverable: the fake "Save Draft" is gone, removing a file deletes it from the server, and a link alone is accepted.
 - `npm run lint` works (its packages were missing). It still reports older React-Compiler warnings in pages not touched in this round.
+
+## 8. Round 5 — bidding removed
+
+Requested by the project owner: the client sets the budget and a worker can only accept or reject it. Owner's decision: **the first worker to accept is hired**. Round 4's "hire at the bid" rule no longer applies.
+
+### How hiring works now
+
+- **Accepting an open project.** A worker opens Task Details and presses *Accept for $X* (`POST /tasks/:id/accept`). They are hired on the spot at the posted budget. The marketplace and initiation fees are charged to the client then; the budget has been in escrow since posting. A second worker who tries is refused.
+- **The plan must match.** A project can only be accepted while its milestones add up to exactly the budget. Until then Task Details says the plan is in progress and Browse Tasks shows "Plan in progress". The client can still edit the plan on the milestone board until someone accepts.
+- **Client short of the fees.** If the client cannot cover the contract fees, nobody can accept. The worker is told, and the client gets a notification linking to their wallet.
+- **Invitations.** A client can still invite a particular worker (`POST /proposals`, `{ taskId, workerId, message }`). The worker accepts (hired, same as above) or declines. A declined worker cannot be invited to that project again, and the client can withdraw an unanswered invitation (`PATCH /proposals/:id` `{ status: 'withdrawn' }`). When anyone is hired, every other pending invitation on the project closes and those workers are told.
+- **Removed.** Worker proposals, the bid price, cover letters and timelines, the 3-bids-per-project limit, `POST /proposals/:id/hire`, client rejection of bids, and topping up or refunding escrow to a bid. `contractPrice` is always the posted budget.
+
+### Files
+
+- Backend: `proposals.service.ts` (rewritten), `proposals.controller.ts`, `proposals.repository.ts`, both proposal DTOs, `tasks.controller.ts` (accept route), `tasks.service.ts` (`assignWorker` takes no price), `contacts.service.ts` (only pending invitees count as participants while the project is open), and the seed (the three bids became two invitations: Alex on t3, Sarah on t5).
+- Frontend:
+  - `TaskDetails.jsx`: an Accept button replaces the bid form.
+  - New `ClientInvitations.jsx` (`/sent-invitations`) replaces `WorkerApplications.jsx`.
+  - `MyProposals.jsx` is removed; the old URLs redirect.
+  - `WorkerInvitations.jsx`, `HireGigWorkers.jsx`, `BrowseTasks.jsx`, both dashboards and Performance Analytics now count invitations instead of proposals.
+  - The milestone board's plan text no longer mentions bids, and the sidebars are updated.
+  - `StoreContext.jsx` gains `acceptTask`, `sendInvitation`, `withdrawInvitation` and `canBeAccepted`.
+- Tests: the bidding tests were replaced by tests for first-to-accept hiring, refusing a project whose plan doesn't add up, refusing when the client can't cover the fees, declining and withdrawing invitations, closing other invitations on hire, and closing invitations on suspension.
+
+## 9. Round 6 — rupees and a fixed budget
+
+Requested by the project owner.
+
+- **Everything is in INR.**
+  - Projects carry `currency: 'INR'`; the API refuses any other currency, USD included.
+  - Every amount shown, and every server message, notification and transaction description, uses ₹ instead of $, with Indian digit grouping (₹1,00,000).
+  - Rupee icons replace dollar icons.
+  - The amounts themselves were not converted (owner's choice): seeded wallets, budgets, fee tiers, the flat fees and the ₹10,00,000 per-amount limit keep their old numbers.
+- **No currency dropdown.** Post Task showed a disabled dropdown with a single option. It is now a fixed "₹ INR — Indian Rupee" field.
+- **The budget cannot change after posting.** `PATCH /tasks/:id` refuses any budget change, with a message saying to delete the project and post it again. The edit dialog in My Projects shows the budget read-only. `ledger.adjustProjectBudget` (which topped up or refunded escrow on a budget edit) is removed. Deleting an open, draft or cancelled project with nobody hired was already available.
+- **Disputes:** unchanged. Any matching reviewer can still be chosen, as decided in round 4.
 

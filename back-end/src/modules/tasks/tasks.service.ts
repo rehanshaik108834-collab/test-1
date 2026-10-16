@@ -157,7 +157,7 @@ export class TasksService implements OnModuleInit {
     const planned = round2(plan.reduce((a, m) => a + m.budget, 0));
     if (plan.length && planned !== round2(dto.budget)) {
       throw new BadRequestException(
-        `The milestones add up to $${planned}, but the budget is $${dto.budget}. They must match.`,
+        `The milestones add up to ₹${planned}, but the budget is ₹${dto.budget}. They must match.`,
       );
     }
 
@@ -167,7 +167,7 @@ export class TasksService implements OnModuleInit {
         throw new BadRequestException('Select an Expert Reviewer for the technical audit before publishing.');
       }
       if (!dto.auditFee || dto.auditFee < 1) {
-        throw new BadRequestException('Enter an opening offer of at least $1 for the technical audit.');
+        throw new BadRequestException('Enter an opening offer of at least ₹1 for the technical audit.');
       }
       this.auditRequests.assertAssignableExpert(dto.auditExpertId, dto.category);
     }
@@ -189,9 +189,9 @@ export class TasksService implements OnModuleInit {
       // goes live when its audit is accepted.
       publishedAt: dto.auditEnabled ? null : new Date().toISOString(),
       // The most this project has ever held, so a client cannot cut the
-      // budget to a dollar and then cancel for a dollar's fee.
+      // budget to a rupee and then cancel for a rupee's fee.
       peakBudget: dto.budget,
-      currency: dto.currency || 'USD',
+      currency: 'INR',
       skills: dto.skills || [],
       auditEnabled: !!dto.auditEnabled,
     };
@@ -300,9 +300,9 @@ export class TasksService implements OnModuleInit {
   /**
    * A client edits their own project.
    *
-   * Only descriptive fields. The budget can change only before anyone is
-   * hired, and escrow follows it — a raise is funded from the wallet, a cut
-   * refunded. The only status a client may set is `cancelled`, on a project
+   * Only descriptive fields. The budget is fixed once the project is posted —
+   * it is the price workers accept — so a client who wants a different one
+   * deletes the project and posts it again. The only status a client may set is `cancelled`, on a project
    * nobody has been hired for — everything else is the lifecycle's to decide
    * (hire → in-progress, last milestone settled → completed).
    */
@@ -310,7 +310,13 @@ export class TasksService implements OnModuleInit {
     const existing = this.findOwned(id, actor);
     const patch: Record<string, any> = {};
 
-    for (const key of ['title', 'description', 'category', 'deadline', 'skills', 'currency'] as const) {
+    if (dto.budget !== undefined && dto.budget !== existing.budget) {
+      throw new BadRequestException(
+        'The budget cannot be changed after a project is posted. Delete the project and post it again with the new budget.',
+      );
+    }
+
+    for (const key of ['title', 'description', 'category', 'deadline', 'skills'] as const) {
       if (dto[key] !== undefined) patch[key] = dto[key];
     }
     if (patch.deadline !== undefined && patch.deadline !== existing.deadline) assertNotPast(patch.deadline, 'The deadline');
@@ -338,21 +344,6 @@ export class TasksService implements OnModuleInit {
       patch.status = 'cancelled';
     }
 
-    if (dto.budget !== undefined && dto.budget !== existing.budget) {
-      if (!['open', 'draft'].includes(existing.status) || existing.workerId || patch.status === 'cancelled') {
-        throw new BadRequestException('The budget cannot change once a worker is hired — escrow is committed to the contract.');
-      }
-      const allocated = this.milestones.totalBudget(id);
-      if (dto.budget < allocated) {
-        throw new BadRequestException(
-          `Milestones on this project already add up to $${allocated}. Lower or remove them before cutting the budget below that.`,
-        );
-      }
-      this.ledger.adjustProjectBudget(id, existing.clientId, dto.budget, existing.title);
-      patch.budget = dto.budget;
-      patch.peakBudget = Math.max(Number(existing.peakBudget) || 0, Number(existing.budget) || 0, dto.budget);
-    }
-
     let cancellation: any = null;
     if (patch.status === 'cancelled') {
       cancellation = this.settleCancellation(existing, `Project cancelled — ${existing.title}`, true);
@@ -364,18 +355,17 @@ export class TasksService implements OnModuleInit {
   }
 
   /**
-   * Lifecycle: a hire was funded. The contract records its price, when it
-   * started (the non-delivery clock) and the worker fee schedule in force, so
-   * a later rate change does not reach back into work already agreed.
+   * Lifecycle: a worker accepted and the contract was funded. The contract
+   * records its price (the posted budget), when it started (the non-delivery
+   * clock) and the worker fee schedule in force, so a later rate change does
+   * not reach back into work already agreed.
    */
-  assignWorker(id: string, workerId: string, price?: number) {
+  assignWorker(id: string, workerId: string) {
     const existing = this.tasksRepository.findById(id);
-    const budget = price ?? existing?.budget;
     return this.tasksRepository.update(id, {
       workerId,
       status: 'in-progress',
-      budget,
-      contractPrice: budget,
+      contractPrice: existing?.budget,
       hiredAt: new Date().toISOString(),
       rates: { workerService: this.ledger.workerServiceSnapshot() },
     });

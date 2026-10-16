@@ -29,7 +29,8 @@ const TODAY = () => new Date().toISOString().slice(0, 10);
 const NO_ERRORS = { msTitleErr: '', msDescErr: '', msBudgetErr: '', msDeadlineErr: '' };
 
 // ── Inline SVG paths used by the original markup ──
-const PATH_DOLLAR = 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z';
+// Indian rupee sign (lucide's indian-rupee outline).
+const PATH_RUPEE = 'M6 3h12M6 8h12M6 13l8.5 8M6 13h3M9 13c6.667 0 6.667-10 0-10';
 const PATH_CHECK_CIRCLE = 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z';
 const PATH_SHIELD_CHECK = 'M9 12l2 2 4-4m7 0a9 9 0 11-18 0 9 9 0 0118 0z';
 const PATH_CALENDAR = 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z';
@@ -79,7 +80,8 @@ export default function PostTask() {
   const [category, setCategory] = useState('Web Development');
   const [deadline, setDeadline] = useState('');
   const [budget, setBudget] = useState(0);
-  const currency = 'USD';
+  // Every wallet and escrow is in rupees, so every project is too.
+  const currency = 'INR';
   const [skills, setSkills] = useState([]);
   const [skillInput, setSkillInput] = useState('');
   const [suggestions, setSuggestions] = useState({ active: false, items: [], gen: 0 });
@@ -101,7 +103,7 @@ export default function PostTask() {
    * stayed until the next rebuild. `msView` is that snapshot; its `key`
    * remounts the form so its inputs start from the stored values again.
    */
-  const [msView, setMsView] = useState({ key: 0, remaining: 0, currency: 'USD', count: 0 });
+  const [msView, setMsView] = useState({ key: 0, remaining: 0, currency: '₹', count: 0 });
 
   // ── Budget helpers ──
   const milestoneTotal = milestones.reduce((sum, m) => sum + (parseFloat(m.budget) || 0), 0);
@@ -120,7 +122,7 @@ export default function PostTask() {
   function renderMilestones(list, editIdx) {
     const total = list.reduce((sum, m) => sum + (parseFloat(m.budget) || 0), 0);
     const remaining = totalBudget - total + (editIdx !== null ? parseFloat(list[editIdx]?.budget || 0) : 0);
-    setMsView(v => ({ key: v.key + 1, remaining, currency, count: list.length }));
+    setMsView(v => ({ key: v.key + 1, remaining, currency: '₹', count: list.length }));
     setMsErrors(NO_ERRORS);
   }
 
@@ -271,7 +273,7 @@ export default function PostTask() {
   let auditSummary = 'Disabled';
   if (auditEnabled) {
     const rev = auditExpertId ? Store.getUserById(auditExpertId) : null;
-    auditSummary = rev ? `${rev.name.split(' ')[0]} · ${currency} ${(auditFee || 0).toLocaleString()}` : 'Select a reviewer';
+    auditSummary = rev ? `${rev.name.split(' ')[0]} · ₹${(auditFee || 0).toLocaleString('en-IN')}` : 'Select a reviewer';
   }
 
   const walletUser = Store.getUserById(session.userId);
@@ -299,7 +301,7 @@ export default function PostTask() {
 
     if (!desc || desc.length < 5) { Validate.toast('Description is required.', 'error'); valid = false; }
     if (deadline && deadline < TODAY()) { Validate.toast('The project deadline is in the past.', 'error'); valid = false; }
-    if (budget && !/^\d+(\.\d{1,2})?$/.test(String(budget).trim())) { Validate.toast('Enter the budget in dollars and cents (e.g. 1500 or 1500.50).', 'error'); valid = false; }
+    if (budget && !/^\d+(\.\d{1,2})?$/.test(String(budget).trim())) { Validate.toast('Enter the budget in rupees and paise (e.g. 1500 or 1500.50).', 'error'); valid = false; }
     if (!budget || parseFloat(budget) <= 0) { Validate.toast('Please enter a valid budget greater than 0.', 'error'); valid = false; }
     if (milestones.length === 0) { Validate.toast('Please add at least one milestone before publishing.', 'error'); valid = false; }
 
@@ -318,11 +320,11 @@ export default function PostTask() {
 
     const amount = parseFloat(budget);
     if (walletBalance < amount) {
-      Validate.toast(`Your wallet holds $${walletBalance.toLocaleString()}, but this project's budget is $${amount.toLocaleString()}. Add funds first.`, 'error');
+      Validate.toast(`Your wallet holds ₹${walletBalance.toLocaleString('en-IN')}, but this project's budget is ₹${amount.toLocaleString('en-IN')}. Add funds first.`, 'error');
       return;
     }
     if (auditEnabled && !(auditFee >= 1)) {
-      Validate.toast('Enter an opening offer of at least $1 for the audit.', 'error');
+      Validate.toast('Enter an opening offer of at least ₹1 for the audit.', 'error');
       return;
     }
 
@@ -349,10 +351,10 @@ export default function PostTask() {
     // The budget is now held in escrow. The audit fee is funded once you and
     // the reviewer agree a price; the contract fees are charged at hire.
     if (auditEnabled) {
-      Validate.toast(`Saved as a draft — $${amount.toLocaleString()} is held in escrow. It goes live once your reviewer accepts the audit.`, 'success');
+      Validate.toast(`Saved as a draft — ₹${amount.toLocaleString('en-IN')} is held in escrow. It goes live once your reviewer accepts the audit.`, 'success');
       setTimeout(() => { navigate('/audit-offers'); }, 1600);
     } else {
-      Validate.toast(`Project published — $${amount.toLocaleString()} is held in escrow until milestones are approved.`, 'success');
+      Validate.toast(`Project published — ₹${amount.toLocaleString('en-IN')} is held in escrow until milestones are approved.`, 'success');
       setTimeout(() => { navigate('/client-my-projects'); }, 1400);
     }
   }
@@ -369,9 +371,9 @@ export default function PostTask() {
     if (matched) {
       icon = '✅'; message = 'Budget perfectly allocated across all milestones.';
     } else if (exceeded) {
-      icon = '🔴'; message = `Total milestone budget exceeds total budget by ${currency} ${diff.toLocaleString()}. Remove or reduce milestones.`;
+      icon = '🔴'; message = `Total milestone budget exceeds total budget by ₹${diff.toLocaleString('en-IN')}. Remove or reduce milestones.`;
     } else {
-      icon = '⚠️'; message = `Total milestone budget must equal total budget. ${currency} ${diff.toLocaleString()} remaining to allocate.`;
+      icon = '⚠️'; message = `Total milestone budget must equal total budget. ₹${diff.toLocaleString('en-IN')} remaining to allocate.`;
     }
     budgetCheck = (
       <div className={`budget-check ${boxClass}`}>
@@ -379,17 +381,17 @@ export default function PostTask() {
         <div className="budget-check-item">
           <span>Milestone total:</span>
           {' '}
-          <strong>{`${currency} ${milestoneTotal.toLocaleString()}`}</strong>
+          <strong>{`₹${milestoneTotal.toLocaleString('en-IN')}`}</strong>
         </div>
         <div className="budget-check-item">
           <span>Project Budget:</span>
           {' '}
-          <strong>{`${currency} ${totalBudget.toLocaleString()}`}</strong>
+          <strong>{`₹${totalBudget.toLocaleString('en-IN')}`}</strong>
         </div>
         <div className="budget-check-item budget-check-divider">
           <span>{matched ? '✓ Fully allocated' : exceeded ? '✗ Over budget' : 'Remaining'}</span>
           {' '}
-          <strong>{`${currency} ${Math.abs(diff).toLocaleString()}`}</strong>
+          <strong>{`₹${Math.abs(diff).toLocaleString('en-IN')}`}</strong>
         </div>
         <div className="budget-check-warning">
           <span style={{ flexShrink: 0 }}>{icon}</span>
@@ -472,17 +474,16 @@ export default function PostTask() {
                 <div className="form-group">
                   <RequiredLabel>Total Budget</RequiredLabel>
                   <div style={{ position: 'relative' }}>
-                    <Icon name="dollar-sign" className="input-icon" />
+                    <Icon name="indian-rupee" className="input-icon" />
                     <input type="number" className="form-input with-icon" defaultValue="" placeholder="5000" onInput={e => setBudget(e.target.value)} />
                   </div>
                 </div>
                 <div className="form-group">
                   <label className="form-label">Currency</label>
-                  {/* Wallets and escrow are held in dollars, so projects are too.
-                      Picking EUR used to charge the same number of dollars. */}
-                  <select className="form-select" value={currency} disabled title="Projects are priced in US dollars">
-                    <option value="USD">USD</option>
-                  </select>
+                  {/* Fixed: wallets and escrow are held in rupees, so there is nothing to choose. */}
+                  <div className="form-input" style={{ background: 'var(--secondary)', fontWeight: 600, cursor: 'default' }} aria-readonly="true">
+                    ₹ INR — Indian Rupee
+                  </div>
                 </div>
               </div>
               <div className="audit-toggle">
@@ -500,7 +501,7 @@ export default function PostTask() {
               <div id="auditPanel" style={{ display: auditEnabled ? 'block' : 'none', marginTop: 16, padding: 18, border: '1px solid var(--border)', borderRadius: 12, background: 'var(--secondary)' }}>
                 <label className="form-label" htmlFor="auditFeeInput" style={{ display: 'block', marginBottom: 6 }}>Your opening offer for the audit</label>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                  <span style={{ fontWeight: 700, color: 'var(--muted-foreground)' }}>$</span>
+                  <span style={{ fontWeight: 700, color: 'var(--muted-foreground)' }}>₹</span>
                   <input id="auditFeeInput" className="form-input" type="number" min="1" step="1" style={{ maxWidth: 180 }} placeholder="300"
                          defaultValue="300" onInput={e => setAuditFee(parseFloat(e.target.value) || 0)} />
                 </div>
@@ -533,7 +534,7 @@ export default function PostTask() {
                   <div className="milestone-form" key={msView.key}>
                     <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
                       {`${editing ? '✏️ Edit' : '➕ Add'} Milestone`}
-                      {remaining > 0 ? <span style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 400, color: 'var(--muted-foreground)' }}>Remaining: <strong style={{ color: '#16a34a' }}>{msView.currency + ' ' + remaining.toLocaleString()}</strong></span> : ''}
+                      {remaining > 0 ? <span style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 400, color: 'var(--muted-foreground)' }}>Remaining: <strong style={{ color: '#16a34a' }}>{msView.currency + remaining.toLocaleString('en-IN')}</strong></span> : ''}
                     </div>
                     <div className="form-group">
                       <RequiredLabel>Milestone Title</RequiredLabel>
@@ -572,8 +573,8 @@ export default function PostTask() {
                       <div className="milestone-desc">{m.description}</div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginLeft: 32 }}>
                         <div className="milestone-budget">
-                          <Svg d={PATH_DOLLAR} />
-                          {`${msView.currency} ${parseFloat(m.budget).toLocaleString()}`}
+                          <Svg d={PATH_RUPEE} />
+                          {`${msView.currency}${parseFloat(m.budget).toLocaleString('en-IN')}`}
                         </div>
                         {m.deadline ? <span style={{ fontSize: 12, color: 'var(--muted-foreground)', display: 'flex', alignItems: 'center', gap: 4 }}>{`📅 ${m.deadline}`}</span> : ''}
                       </div>
@@ -607,7 +608,7 @@ export default function PostTask() {
             <div className="sidebar-card">
               <h3>Project Summary</h3>
 
-              <SummaryItem kind="budget" path={PATH_DOLLAR} label="Budget" id="summarySummaryBudget" value={`${currency} ${isNaN(summaryBudget) ? 0 : summaryBudget.toLocaleString()}`} />
+              <SummaryItem kind="budget" path={PATH_RUPEE} label="Budget" id="summarySummaryBudget" value={`₹${isNaN(summaryBudget) ? 0 : summaryBudget.toLocaleString('en-IN')}`} />
               <SummaryItem kind="milestones" path={PATH_CHECK_CIRCLE} label="Milestones" id="summaryMilestones" value={`${milestones.length}`} />
               <SummaryItem kind="deadline" path={PATH_CALENDAR} label="Deadline" id="summaryDeadline" value={deadline ? `${days} day${days === 1 ? '' : 's'}` : 'Not set'} />
               {/* The "enabled" class was only decided when the page first rendered (audit off), so it never appears */}
@@ -617,14 +618,14 @@ export default function PostTask() {
               <div id="walletCheckSummary">
                 <div className={`summary-item ${walletKind}`} style={{ marginTop: 12 }}>
                   <div className={`summary-label ${walletKind}`}>
-                    <Svg d={PATH_DOLLAR} size="16" />
+                    <Svg d={PATH_RUPEE} size="16" />
                     Wallet Balance
                   </div>
-                  <div className={`summary-value ${walletKind}`} style={{ color: insufficient ? '#dc2626' : '#10b981', fontSize: 16 }}>{`${currency} ${walletBalance.toLocaleString()}`}</div>
+                  <div className={`summary-value ${walletKind}`} style={{ color: insufficient ? '#dc2626' : '#10b981', fontSize: 16 }}>{`₹${walletBalance.toLocaleString('en-IN')}`}</div>
                   {insufficient
                     ? <div style={{ fontSize: 11, marginTop: 6, color: '#991b1b' }}>Not enough to hold this budget in escrow. Add funds in your wallet first.</div>
                     : totalBudget > 0 ? <div style={{ fontSize: 11, marginTop: 6, color: 'var(--muted-foreground)', lineHeight: 1.5 }}>
-                        {`$${totalBudget.toLocaleString()} moves into escrow when you publish. When you hire, a $${hireFees.fees.toLocaleString()} marketplace and contract fee is charged.`}
+                        {`₹${totalBudget.toLocaleString('en-IN')} moves into escrow when you publish. When you hire, a ₹${hireFees.fees.toLocaleString('en-IN')} marketplace and contract fee is charged.`}
                       </div> : ''}
                 </div>
               </div>

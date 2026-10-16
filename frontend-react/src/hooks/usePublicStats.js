@@ -19,10 +19,10 @@ export default function usePublicStats() {
   return stats;
 }
 
-/** "$1,234" / "$12.5k" for the big metric tiles. */
+/** "₹1,234" / "₹12.5k" for the big metric tiles. */
 export function compactMoney(n) {
   const v = Number(n || 0);
-  if (v >= 1_000_000) return '$' + (v / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M';
-  if (v >= 10_000) return '$' + (v / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
-  return '$' + v.toLocaleString('en-US', { maximumFractionDigits: 0 });
+  if (v >= 1_000_000) return '₹' + (v / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M';
+  if (v >= 10_000) return '₹' + (v / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
+  return '₹' + v.toLocaleString('en-IN', { maximumFractionDigits: 0 });
 }

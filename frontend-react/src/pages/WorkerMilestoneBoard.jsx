@@ -35,7 +35,7 @@ function loadWorkerMilestones(Store, Auth, taskId) {
       const card = {
         id: m.id, rawId: m.id, taskId: m.taskId,
         title: m.title, desc: m.description || '',
-        amount: '$' + (m.budget || 0).toLocaleString(),
+        amount: '₹' + (m.budget || 0).toLocaleString('en-IN'),
         due: m.dueDate ? new Date(m.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—',
         assignee: session.avatar || 'AW', assigneeColor: session.avatarColor || 'linear-gradient(135deg,#10b981,#059669)',
         priority: m.priority || 'Medium', progress: m.progress || 0, status: m.status || 'todo',
@@ -55,8 +55,8 @@ function loadWorkerMilestones(Store, Auth, taskId) {
   return colMap;
 }
 
-/** Sum of "$1,234"-style amounts. */
-const sumAmounts = cards => cards.filter(m => !m.cancelled).reduce((s, m) => s + parseFloat((m.amount || '$0').replace(/[^0-9.]/g, '') || 0), 0);
+/** Sum of "₹1,234"-style amounts. */
+const sumAmounts = cards => cards.filter(m => !m.cancelled).reduce((s, m) => s + parseFloat((m.amount || '₹0').replace(/[^0-9.]/g, '') || 0), 0);
 
 /** One milestone card; `col` decides the action at the bottom. */
 function MilestoneCard({ m, col, onChange }) {
@@ -200,8 +200,8 @@ export default function WorkerMilestoneBoard() {
         {/* Summary cards */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16, marginBottom: 24 }}>
           <StatCard value={allMs.length} label="Total Milestones" icon="flag" iconBg="#eef2ff" iconColor="#6366f1" />
-          <StatCard value={`$${earnedAmt.toLocaleString()}`} valueStyle={{ color: '#10b981' }} label="Approved (before fees)" icon="check-circle" iconBg="#ecfdf5" iconColor="#10b981" />
-          <StatCard value={`$${escrowAmt.toLocaleString()}`} valueStyle={{ color: '#6366f1' }} label="In Escrow" icon="lock" iconBg="#eef2ff" iconColor="#6366f1" />
+          <StatCard value={`₹${earnedAmt.toLocaleString('en-IN')}`} valueStyle={{ color: '#10b981' }} label="Approved (before fees)" icon="check-circle" iconBg="#ecfdf5" iconColor="#10b981" />
+          <StatCard value={`₹${escrowAmt.toLocaleString('en-IN')}`} valueStyle={{ color: '#6366f1' }} label="In Escrow" icon="lock" iconBg="#eef2ff" iconColor="#6366f1" />
           <StatCard value={taskDeadline} label="Final Deadline" icon="calendar" iconBg="#fffbeb" iconColor="#f59e0b" />
         </div>
 

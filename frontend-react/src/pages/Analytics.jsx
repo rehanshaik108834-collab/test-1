@@ -139,9 +139,9 @@ function buildInsights(Store, clientId) {
   const events = [];
   myTxs.forEach(t => {
     if (t.type === 'milestone-release') {
-      events.push({ at: t.createdAt, icon: 'dollar-sign', title: 'Escrow Released', desc: '$' + (t.grossAmount != null ? t.grossAmount : t.amount || 0).toLocaleString() + ' — ' + (t.description || 'Milestone payment'), time: ago(t.createdAt), color: '#7c3aed', bg: '#faf5ff' });
+      events.push({ at: t.createdAt, icon: 'indian-rupee', title: 'Escrow Released', desc: '₹' + (t.grossAmount != null ? t.grossAmount : t.amount || 0).toLocaleString('en-IN') + ' — ' + (t.description || 'Milestone payment'), time: ago(t.createdAt), color: '#7c3aed', bg: '#faf5ff' });
     } else if (t.type === 'escrow-lock') {
-      events.push({ at: t.createdAt, icon: 'users', title: 'Escrow Funded', desc: '$' + (t.amount || 0).toLocaleString() + ' — ' + (t.description || 'Project funded'), time: ago(t.createdAt), color: '#2563eb', bg: '#eff6ff' });
+      events.push({ at: t.createdAt, icon: 'users', title: 'Escrow Funded', desc: '₹' + (t.amount || 0).toLocaleString('en-IN') + ' — ' + (t.description || 'Project funded'), time: ago(t.createdAt), color: '#2563eb', bg: '#eff6ff' });
     }
   });
   myMilestones.forEach(ms => {
@@ -233,7 +233,7 @@ function revenueChartConfig(revenueData) {
       },
       scales: {
         x: { grid: { display: false }, ticks: { color: TICK_COLOR, font: FONT } },
-        y: { grid: GRID, ticks: { color: TICK_COLOR, font: FONT, callback: v => '$' + (v / 1000) + 'k' } },
+        y: { grid: GRID, ticks: { color: TICK_COLOR, font: FONT, callback: v => '₹' + (v / 1000) + 'k' } },
       },
     },
   };

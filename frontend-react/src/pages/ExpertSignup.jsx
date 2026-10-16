@@ -42,7 +42,7 @@ const PASSWORD_REQUIREMENTS = [
 const EXPERT_FEATURES = [
   { icon: 'file-check', text: 'Conduct technical audits' },
   { icon: 'scale', text: 'Resolve project disputes' },
-  { icon: 'lock', text: 'Earn $80–$150 per review' },
+  { icon: 'lock', text: 'Earn ₹80–₹150 per review' },
 ];
 
 // Shared style of the eye buttons on this page.

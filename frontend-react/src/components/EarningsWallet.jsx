@@ -84,7 +84,7 @@ export default function EarningsWallet({ role, activePath, title, subtitle, stat
 
   function confirmWithdraw() {
     setAmountError('');
-    if (!(amt >= MIN_WITHDRAWAL)) { setAmountError(`The minimum withdrawal is $${MIN_WITHDRAWAL}.`); return; }
+    if (!(amt >= MIN_WITHDRAWAL)) { setAmountError(`The minimum withdrawal is ₹${MIN_WITHDRAWAL}.`); return; }
     if (amt > available) { setAmountError(`That is more than your available balance of ${money(available)}.`); return; }
     let result;
     try {
@@ -108,7 +108,7 @@ export default function EarningsWallet({ role, activePath, title, subtitle, stat
             <div style={{ fontSize: 13, fontWeight: 500, opacity: 0.85, marginBottom: 8 }}>Available Balance</div>
             <div style={{ fontSize: 38, fontWeight: 900, letterSpacing: '-0.03em', marginBottom: 20 }}>{money(available)}</div>
             <button onClick={openWithdraw} disabled={available < MIN_WITHDRAWAL}
-                    title={available < MIN_WITHDRAWAL ? `You need at least $${MIN_WITHDRAWAL} to withdraw` : ''}
+                    title={available < MIN_WITHDRAWAL ? `You need at least ₹${MIN_WITHDRAWAL} to withdraw` : ''}
                     style={{ padding: '9px 22px', borderRadius: 10, background: 'rgba(255,255,255,0.2)', color: 'white', border: '1px solid rgba(255,255,255,0.3)', fontSize: 13, fontWeight: 600, cursor: available < MIN_WITHDRAWAL ? 'not-allowed' : 'pointer', opacity: available < MIN_WITHDRAWAL ? 0.6 : 1 }}>
               Withdraw Funds
             </button>
@@ -151,14 +151,14 @@ export default function EarningsWallet({ role, activePath, title, subtitle, stat
             </div>
             <label style={{ fontWeight: 700, fontSize: 14 }} htmlFor="withdrawAmount">Amount to withdraw</label>
             <div style={{ marginTop: 10, position: 'relative' }}>
-              <span style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#4f46e5', fontSize: 18, fontWeight: 700 }}>$</span>
+              <span style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#4f46e5', fontSize: 18, fontWeight: 700 }}>₹</span>
               <input id="withdrawAmount" type="number" min={MIN_WITHDRAWAL} step="0.01" placeholder="0.00" value={amount} onChange={e => setAmount(e.target.value)}
                      style={{ width: '100%', padding: '14px 14px 14px 40px', border: amountError ? '2px solid #ef4444' : '2px solid #e5e7eb', borderRadius: 14, fontSize: 22, fontWeight: 800, outline: 'none', boxSizing: 'border-box' }} />
             </div>
             {amountError && <div style={{ color: '#ef4444', fontSize: 12, marginTop: 6 }}>{amountError}</div>}
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', margin: '12px 0 16px' }}>
               {[100, 500, 1000].filter(v => v <= available).map(v => (
-                <button key={v} type="button" onClick={() => setAmount(String(v))} style={{ padding: '8px 14px', borderRadius: 10, border: '1px solid #c7d2fe', background: 'white', color: '#4f46e5', fontWeight: 700, cursor: 'pointer' }}>{`$${v}`}</button>
+                <button key={v} type="button" onClick={() => setAmount(String(v))} style={{ padding: '8px 14px', borderRadius: 10, border: '1px solid #c7d2fe', background: 'white', color: '#4f46e5', fontWeight: 700, cursor: 'pointer' }}>{`₹${v}`}</button>
               ))}
               <button type="button" onClick={() => setAmount(String(available))} style={{ padding: '8px 14px', borderRadius: 10, border: '1px solid #c7d2fe', background: 'white', color: '#4f46e5', fontWeight: 700, cursor: 'pointer' }}>All</button>
             </div>
@@ -167,7 +167,7 @@ export default function EarningsWallet({ role, activePath, title, subtitle, stat
                 <span style={{ color: '#6b7280' }}>Amount</span><span style={{ fontWeight: 700 }}>{money(amt)}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                <span style={{ color: '#6b7280' }}>{`Payout fee (${w.percent}% + $${w.fixed}, min $${w.min})`}</span>
+                <span style={{ color: '#6b7280' }}>{`Payout fee (${w.percent}% + ₹${w.fixed}, min ₹${w.min})`}</span>
                 <span style={{ fontWeight: 700, color: '#ef4444' }}>{amt > 0 ? money(quote.fee) : money(0)}</span>
               </div>
               <div style={{ height: 1, background: '#eef2ff', margin: '8px 0' }}></div>

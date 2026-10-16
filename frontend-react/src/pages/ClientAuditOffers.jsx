@@ -67,7 +67,7 @@ function ReassignPanel({ engagement, task, onDone }) {
   function send() {
     const amount = parseFloat(offer);
     if (!expertId) { Validate.toast('Choose a reviewer first.', 'error'); return; }
-    if (!(amount >= 1)) { Validate.toast('Enter an opening offer of at least $1.', 'error'); return; }
+    if (!(amount >= 1)) { Validate.toast('Enter an opening offer of at least ₹1.', 'error'); return; }
     const r = attempt(Validate, () => Store.reassignAudit(engagement.id, expertId, amount));
     if (!r) return;
     Validate.toast(`Request sent to ${Store.getUserById(expertId)?.name || 'the reviewer'}.`, 'success');
@@ -80,7 +80,7 @@ function ReassignPanel({ engagement, task, onDone }) {
       <ExpertPicker category={task ? task.category : null} selectedId={expertId} onChange={setExpertId}
                     excludeIds={[engagement.declinedBy].filter(Boolean)} />
       <div className="ao-counter" style={{ marginTop: 12 }}>
-        <span style={{ fontWeight: 700, color: 'var(--muted-foreground)' }}>$</span>
+        <span style={{ fontWeight: 700, color: 'var(--muted-foreground)' }}>₹</span>
         <input className="form-input" type="number" min="1" step="1" placeholder="Opening offer" value={offer} onChange={e => setOffer(e.target.value)} />
         <button className="btn-primary" onClick={send}>Send request</button>
       </div>
@@ -102,7 +102,7 @@ export default function AuditOffers() {
 
   function counter(id) {
     const amount = parseFloat(counterValues[id]);
-    if (!amount || amount < 1) { Validate.toast('Enter a price of at least $1.', 'error'); return; }
+    if (!amount || amount < 1) { Validate.toast('Enter a price of at least ₹1.', 'error'); return; }
     const r = attempt(Validate, () => Store.makeAuditOffer(id, { amount, note: 'Counter-offer' }));
     if (!r) return;
     Validate.toast(`Offer of ${money(amount)} sent to the reviewer.`, 'success');
@@ -219,7 +219,7 @@ export default function AuditOffers() {
 
                 {negotiating && (
                   <div className="ao-counter">
-                    <span style={{ fontWeight: 700, color: 'var(--muted-foreground)' }}>$</span>
+                    <span style={{ fontWeight: 700, color: 'var(--muted-foreground)' }}>₹</span>
                     <input className="form-input" type="number" min="1" step="1" placeholder="Your price"
                            value={counterValues[a.id] || ''} onChange={e => setCounterValues(v => ({ ...v, [a.id]: e.target.value }))} />
                     <button className="btn-outline" onClick={() => counter(a.id)}>Send offer</button>

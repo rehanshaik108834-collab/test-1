@@ -76,8 +76,8 @@ function getProjects(Store, userId) {
       deadline: fmtDate(t.deadline),
       status: t.status,
       milestones: `${done}/${milestones.length}`,
-      escrow: `$${(held ? held.total : 0).toLocaleString()}`,
-      paidOut: `$${paidOut.toLocaleString()}`,
+      escrow: `₹${(held ? held.total : 0).toLocaleString('en-IN')}`,
+      paidOut: `₹${paidOut.toLocaleString('en-IN')}`,
       category: taskCategory(t.status),
       auditEnabled: t.auditEnabled,
       hired: !!t.workerId,
@@ -155,9 +155,9 @@ function ProjectCard({ p, onEdit, onDelete, onCancel }) {
           <div style={{ ...CARD_BUTTON_STYLE, cursor: 'default', color: 'var(--muted-foreground)' }}>Cancelled — escrow returned</div>
         ) : p.category === 'open' ? (
           <>
-            <button onClick={e => go(e, '/worker-applications')} style={CARD_BUTTON_STYLE}>
-              <Icon name="users" style={{ width: 14, height: 14 }} />
-              View Proposals
+            <button onClick={e => go(e, '/hire-gig-workers')} style={CARD_BUTTON_STYLE}>
+              <Icon name="user-plus" style={{ width: 14, height: 14 }} />
+              Invite Workers
             </button>
             {!p.hired ? (
               <button onClick={e => { e.stopPropagation(); onCancel(p.id); }} style={{ ...CARD_BUTTON_STYLE, color: '#b91c1c', borderColor: '#fecaca' }}>
@@ -188,7 +188,7 @@ function ProjectCard({ p, onEdit, onDelete, onCancel }) {
   );
 }
 
-const EMPTY_EDIT = { title: '', category: 'Web Development', budget: '', deadline: '', status: 'open' };
+const EMPTY_EDIT = { title: '', category: 'Web Development', deadline: '', status: 'open' };
 
 export default function ClientMyProjects() {
   const Store = useStore();
@@ -206,7 +206,7 @@ export default function ClientMyProjects() {
 
   const all = getProjects(Store, session.userId);
   const editingTask = editingTaskId ? Store.getTaskById(editingTaskId) : null;
-  /** The budget and category can change only before anyone is hired. */
+  /** The category can change only before anyone is hired. The budget never changes once posted. */
   const editable = task => !!task && ['open', 'draft'].includes(task.status) && !task.workerId;
   const count = cat => all.filter(p => p.category === cat).length;
   const list = activeTab === 'all' ? all : all.filter(p => p.category === activeTab);
@@ -216,7 +216,7 @@ export default function ClientMyProjects() {
     const task = Store.getTaskById(id);
     if (!task) return;
     setEditingTaskId(id);
-    setEdit({ title: task.title || '', category: task.category || 'Web Development', budget: task.budget || '', deadline: task.deadline || '', status: task.status || 'open' });
+    setEdit({ title: task.title || '', category: task.category || 'Web Development', deadline: task.deadline || '', status: task.status || 'open' });
   }
 
   function closeEditModal() {
@@ -226,33 +226,28 @@ export default function ClientMyProjects() {
 
   function saveEdit() {
     const title = edit.title.trim();
-    const budget = parseFloat(edit.budget);
     const errors = {};
     if (!title || title.length < 3) errors.title = 'Title must be at least 3 characters.';
-    if (!budget || budget <= 0) errors.budget = 'Budget must be a positive number.';
     setEditErrors(errors);
     if (Object.keys(errors).length) return;
 
     const task = Store.getTaskById(editingTaskId);
     const patch = { title, deadline: edit.deadline || undefined };
-    if (editable(task)) { patch.category = edit.category; patch.budget = budget; }
+    if (editable(task)) patch.category = edit.category;
     try {
       Store.updateTask(editingTaskId, patch);
     } catch (e) {
-      setEditErrors({ budget: e.message });
+      setEditErrors({ title: e.message });
       return;
     }
     closeEditModal();
     refreshView();
-    const change = budget - task.budget;
-    Validate.toast(editable(task) && change > 0 ? `Saved. $${change.toLocaleString()} more moved into escrow.`
-      : editable(task) && change < 0 ? `Saved. $${(-change).toLocaleString()} returned to your wallet.`
-      : 'Project updated.', 'success');
+    Validate.toast('Project updated.', 'success');
   }
 
   /** The server's quote, spelled out for the confirm dialog. */
   function quoteText(q) {
-    const money = n => '$' + Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
+    const money = n => '₹' + Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });
     const parts = [];
     parts.push(q.fee > 0
       ? `A cancellation fee of ${money(q.fee)} (${q.rate}% of the ${money(q.base)} budget) applies, because the project has been live for ${q.hoursLive >= 48 ? Math.floor(q.hoursLive / 24) + ' days' : Math.round(q.hoursLive) + ' hours'}.`
@@ -278,7 +273,7 @@ export default function ClientMyProjects() {
     const q = quoteFor(id);
     if (!q) return;
     if (!q.cancellable) { Validate.toast(q.reason, 'error'); return; }
-    Validate.confirm(`Cancel "${task.title}"? ${quoteText(q)} Open proposals are closed. This cannot be undone.`, () => {
+    Validate.confirm(`Cancel "${task.title}"? ${quoteText(q)} Pending invitations are withdrawn. This cannot be undone.`, () => {
       let result;
       try {
         result = Store.cancelTask(id);
@@ -288,7 +283,7 @@ export default function ClientMyProjects() {
       }
       refreshView();
       const fee = result?.cancellation?.fee?.fee || 0;
-      Validate.toast(fee ? `Project cancelled. $${fee} fee kept; the rest is back in your wallet.` : 'Project cancelled and your money returned.', 'success');
+      Validate.toast(fee ? `Project cancelled. ₹${fee} fee kept; the rest is back in your wallet.` : 'Project cancelled and your money returned.', 'success');
     });
   }
 
@@ -380,15 +375,12 @@ export default function ClientMyProjects() {
               </select>
             </div>
             <div className="modal-field">
-              <label>Budget ($)</label>
+              <label>Budget (₹)</label>
               {' '}
-              <input type="number" id="editBudget" min="1" placeholder="e.g. 2500" value={edit.budget} onChange={setEditField('budget')} disabled={!editingTask || !editable(editingTask)} style={editErrors.budget ? { borderColor: '#ef4444' } : undefined} />
+              <input type="text" id="editBudget" value={editingTask ? '₹' + Number(editingTask.budget || 0).toLocaleString('en-IN') : ''} disabled readOnly />
               <div style={{ fontSize: 12, color: 'var(--muted-foreground)', marginTop: 4 }}>
-                {editingTask && editable(editingTask)
-                  ? 'Escrow follows the budget: a raise is taken from your wallet, a cut is returned. It cannot go below what your milestones add up to.'
-                  : 'The budget is fixed once a worker is hired.'}
+                The budget is fixed once a project is posted. To use a different budget, delete this project and post it again.
               </div>
-              {errorText('budget')}
             </div>
             <div className="modal-field">
               <label>Deadline</label>

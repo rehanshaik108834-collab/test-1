@@ -123,8 +123,8 @@ export class UsersController {
     }
     const updated = this.usersService.update(id, dto);
     if (dto.status === 'suspended') {
-      // A suspended worker cannot sign in to do the work, so their open bids
-      // close rather than wait to be hired onto a contract nobody can deliver.
+      // A suspended worker cannot sign in to do the work, so their pending
+      // invitations close rather than sit on the client's list.
       this.proposals.closeAllForWorker(id, 'The worker\'s account was suspended');
       this.audit.record({ kind: 'account.suspend', outcome: 'ok', detail: { userId: id } });
     }
@@ -144,14 +144,14 @@ export class UsersController {
       throw new ForbiddenException('Operations accounts cannot be deleted here.');
     }
     if ((user.walletBalance || 0) > 0) {
-      throw new BadRequestException(`${user.name} still has $${user.walletBalance} in their wallet. Suspend the account instead.`);
+      throw new BadRequestException(`${user.name} still has ₹${user.walletBalance} in their wallet. Suspend the account instead.`);
     }
     const onWork = this.tasks.findAll({}, 'system').some((t: any) => t.clientId === id || t.workerId === id)
       || this.auditRequests.findAll({}).some((a: any) => a.expertId === id || a.payerId === id);
     if (onWork) {
       throw new BadRequestException(`${user.name} is part of existing projects or reviews. Suspend the account instead so the records stay intact.`);
     }
-    // Pending bids would otherwise let a client hire an account that no longer exists.
+    // Pending invitations to an account that no longer exists close with it.
     this.proposals.closeAllForWorker(id, 'The worker\'s account was removed');
     this.audit.record({ kind: 'account.delete', outcome: 'ok', detail: { userId: id, email: user.email, role: user.role } });
     return this.usersService.delete(id);

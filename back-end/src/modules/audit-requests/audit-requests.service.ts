@@ -157,7 +157,7 @@ export class AuditRequestsService {
       if (!ms || ms.taskId !== task.id) throw new BadRequestException('That milestone does not belong to this project.');
     }
     if (!dto.expertId) throw new BadRequestException('Choose the Expert Reviewer you want to audit this project.');
-    if (!dto.openingOffer || dto.openingOffer < 1) throw new BadRequestException('Enter an opening offer of at least $1.');
+    if (!dto.openingOffer || dto.openingOffer < 1) throw new BadRequestException('Enter an opening offer of at least ₹1.');
     if (this.activeProjectAudit(task.id) || this.liveEngagements(task.id, AUDIT_KIND.PROJECT).length) {
       throw new BadRequestException('This project already has an audit engagement in progress.');
     }
@@ -340,7 +340,7 @@ export class AuditRequestsService {
     const to = this.counterpartOf(ar, side);
     this.notifications.notify(to, {
       type: 'audit-offer',
-      text: `New ${this.label(ar)} offer: $${dto.amount}`,
+      text: `New ${this.label(ar)} offer: ₹${dto.amount}`,
       subtext: `${ar.project || 'Project'} — accept it or send a counter-offer`,
       link: this.linkFor(ar, to),
     });
@@ -392,7 +392,7 @@ export class AuditRequestsService {
     const payer = this.payerOf(ar);
     this.notifications.notify(acceptedBy === 'expert' ? payer : ar.expertId, {
       type: 'audit-offer',
-      text: `Fee agreed at $${offer.amount}`,
+      text: `Fee agreed at ₹${offer.amount}`,
       subtext: acceptedBy === 'expert'
         ? `${ar.project || 'Project'} — fund the escrow so the reviewer can start`
         : `${ar.project || 'Project'} — waiting for the fee to be funded`,
@@ -420,7 +420,7 @@ export class AuditRequestsService {
     const updated = this.auditRequestsRepository.update(id, ar);
     this.notifications.notify(ar.expertId, {
       type: 'audit-funded',
-      text: `$${ar.agreedAmount} is in escrow for your ${this.label(ar)}`,
+      text: `₹${ar.agreedAmount} is in escrow for your ${this.label(ar)}`,
       subtext: `${ar.project || 'Project'} — accept the engagement to start`,
       link: `/expert-audit-preview?id=${ar.id}`,
     });
@@ -463,7 +463,7 @@ export class AuditRequestsService {
       type: 'audit-accepted',
       text: `${expert?.name || 'Your reviewer'} accepted the ${this.label(ar)}`,
       subtext: ar.kind === AUDIT_KIND.PROJECT
-        ? `${ar.project || 'Project'} is now live and open for proposals`
+        ? `${ar.project || 'Project'} is now live — workers can accept it`
         : `${ar.project || 'Project'} — the dispute is under review`,
       link: ar.kind === AUDIT_KIND.PROJECT ? '/client-my-projects' : '/audit-offers',
     });
@@ -501,7 +501,7 @@ export class AuditRequestsService {
     this.notifications.notify(this.payerOf(ar), {
       type: 'audit-declined',
       text: `${expert?.name || 'The reviewer'} declined the ${this.label(ar)}`,
-      subtext: `${refund ? `$${refund.amount} returned to your wallet. ` : ''}Choose another reviewer under Audit Offers.`,
+      subtext: `${refund ? `₹${refund.amount} returned to your wallet. ` : ''}Choose another reviewer under Audit Offers.`,
       link: '/audit-offers',
     });
     return this.withProgress(updated);
@@ -583,7 +583,7 @@ export class AuditRequestsService {
   //
   // A technical audit is paid milestone by milestone. Each milestone carries a
   // share of the agreed fee in proportion to its budget (the last one takes
-  // whatever cents are left), and the share is settled once:
+  // whatever paise are left), and the share is settled once:
   //
   //   - the reviewer files that milestone's report            → paid
   //   - the client approves it within 5 days of submission,
@@ -630,7 +630,7 @@ export class AuditRequestsService {
         auditRequestId: ar.id, taskId: ar.taskId, expertId: ar.expertId, amount, bucket: 'audit',
         payoutKey: `${ar.id}:${ms.id}`,
         commissionPercent: ar.commissionPercent,
-        description: `Audit fee for "${ms.title}" ($${amount} less commission)`,
+        description: `Audit fee for "${ms.title}" (₹${amount} less commission)`,
       });
     } else if (amount > 0) {
       const held = this.ledger.getEscrow(ar.taskId).auditHeld;
@@ -658,7 +658,7 @@ export class AuditRequestsService {
     if (payout) {
       this.notifications.notify(ar.expertId, {
         type: 'payment',
-        text: `$${payout.net ?? 0} paid for your audit of "${ms.title}"`,
+        text: `₹${payout.net ?? 0} paid for your audit of "${ms.title}"`,
         subtext: `${ar.project || 'Project'} — ${why}`,
         link: '/expert-wallet',
       });
@@ -666,12 +666,12 @@ export class AuditRequestsService {
       this.notifications.notify(ar.expertId, {
         type: 'audit-forfeited',
         text: `"${ms.title}" was approved without your report`,
-        subtext: `No report was filed within ${AuditRequestsService.REPORT_WINDOW_DAYS} days of submission, so its $${amount} share went back to the client.`,
+        subtext: `No report was filed within ${AuditRequestsService.REPORT_WINDOW_DAYS} days of submission, so its ₹${amount} share went back to the client.`,
         link: '/expert-audit-requests',
       });
       this.notifications.notify(this.payerOf(ar), {
         type: 'payment',
-        text: `$${refund?.amount ?? amount} of the audit fee returned`,
+        text: `₹${refund?.amount ?? amount} of the audit fee returned`,
         subtext: `"${ms.title}" was approved without an audit report.`,
         link: '/client-wallet',
       });
@@ -845,7 +845,7 @@ export class AuditRequestsService {
       if (!payout.alreadyPaid) {
         this.notifications.notify(ar.expertId, {
           type: 'payment',
-          text: `$${payout.net} paid to your wallet`,
+          text: `₹${payout.net} paid to your wallet`,
           subtext: `${ar.project || 'Project'} — ${this.label(ar)} fee less the platform commission`,
           link: '/expert-wallet',
         });

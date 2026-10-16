@@ -373,7 +373,7 @@ export default function SubmitDeliverable() {
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
               <div style={{ textAlign: 'center' }}>
-                <div style={{ fontWeight: 700, fontSize: 20, color: '#10b981' }}>{`$${milestone.budget.toLocaleString()}`}</div>
+                <div style={{ fontWeight: 700, fontSize: 20, color: '#10b981' }}>{`₹${milestone.budget.toLocaleString('en-IN')}`}</div>
                 <div style={{ fontSize: 11, color: '#4f46e5' }}>Milestone Pay</div>
               </div>
               <div style={{ textAlign: 'center' }}>

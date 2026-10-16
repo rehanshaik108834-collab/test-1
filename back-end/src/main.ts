@@ -167,7 +167,7 @@ async function bootstrap() {
     .setTitle('Lannent API')
     .setDescription(
       'Complete REST API for the Lannent freelance platform. ' +
-      'Supports Users, Tasks, Milestones, Proposals, Audit Requests, Audit Reports, ' +
+      'Supports Users, Tasks, Milestones, Invitations, Audit Requests, Audit Reports, ' +
       'Disputes, Transactions, Expert Applications, and Notifications. ' +
       'Uses in-memory storage with seed data. ' +
       'Include "role" and "user-id" headers for RBAC.',

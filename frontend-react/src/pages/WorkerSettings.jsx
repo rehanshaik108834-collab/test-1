@@ -382,8 +382,8 @@ export default function WorkerSettings() {
                     </select>
                   </div>
                   <div>
-                    <label className="ws-label">Hourly Rate ($)</label>
-                    <InputWrap icon="dollar-sign">
+                    <label className="ws-label">Hourly Rate (₹)</label>
+                    <InputWrap icon="indian-rupee">
                       <input type="number" min="0" className="ws-input" id="wsHourlyRate" defaultValue={professionalData.hourlyRate} />
                     </InputWrap>
                   </div>

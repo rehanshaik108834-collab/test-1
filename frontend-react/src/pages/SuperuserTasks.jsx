@@ -147,7 +147,7 @@ export default function SuperuserTasks() {
                     </td>
                     <td style={{ fontSize: 13 }}>{client?.name || 'Unknown'}</td>
                     <td style={{ fontSize: 13 }}>{worker?.name || <span style={{ color: 'var(--muted-foreground)' }}>Unassigned</span>}</td>
-                    <td style={{ fontWeight: 600 }}>{`$${(Number(t.budget) || 0).toLocaleString()}`}</td>
+                    <td style={{ fontWeight: 600 }}>{`₹${(Number(t.budget) || 0).toLocaleString('en-IN')}`}</td>
                     <td>
                       <div className="progress-bar"><div className="progress-fill" style={{ width: `${progress}%` }}></div></div>
                       <span style={{ fontSize: 11, color: 'var(--muted-foreground)' }}>{`${progress}%`}</span>
@@ -177,7 +177,7 @@ export default function SuperuserTasks() {
               <DetailField label="Status" id="detailStatus" style={{ padding: '10px 14px' }}>{d ? <StatusBadge status={d.status} /> : '—'}</DetailField>
             </div>
             <div className="grid-2">
-              <DetailField label="Budget" id="detailBudget" style={{ ...FIELD_STYLE, fontWeight: 600 }}>{d ? '$' + (Number(d.budget) || 0).toLocaleString() : '—'}</DetailField>
+              <DetailField label="Budget" id="detailBudget" style={{ ...FIELD_STYLE, fontWeight: 600 }}>{d ? '₹' + (Number(d.budget) || 0).toLocaleString('en-IN') : '—'}</DetailField>
               <DetailField label="Deadline" id="detailDeadline">{d ? d.deadline || '—' : '—'}</DetailField>
             </div>
             <div className="grid-2">

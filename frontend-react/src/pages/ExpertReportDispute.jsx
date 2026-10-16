@@ -45,7 +45,7 @@ function buildReport(Store, rawDispute) {
   if (_milestone) {
     _evidence.push({
       label: 'Disputed milestone',
-      text: `${_milestone.title} — $${Number(_milestone.budget || 0).toLocaleString()}, status ${_milestone.status}`,
+      text: `${_milestone.title} — ₹${Number(_milestone.budget || 0).toLocaleString('en-IN')}, status ${_milestone.status}`,
     });
   }
   if (_deliverable) {
@@ -79,7 +79,7 @@ function buildReport(Store, rawDispute) {
     generatedDate: rawDispute.resolvedAt ? fmtDate(rawDispute.resolvedAt) : 'Recently',
     status: rawDispute.status === 'resolved' ? 'Published' : 'Draft',
     verdictClass: rawDispute.verdict === 'worker-favour' ? 'verdict-worker' : rawDispute.verdict === 'client-favour' ? 'verdict-client' : 'verdict-pending',
-    escrow: rawDispute.amount || '$0',
+    escrow: rawDispute.amount || '₹0',
     raisedByName: _raiser ? _raiser.name : (rawDispute.raisedByName || 'Unknown'),
     raisedByInitials: _raiser ? _raiser.avatar : '?',
     raisedByColor: _raiser ? _raiser.avatarColor : '#6366f1',
@@ -95,7 +95,7 @@ function buildReport(Store, rawDispute) {
             : 'Pending Review',
     overridden: !!rawDispute.overriddenBy,
     verdictRaw: rawDispute.verdict || null,
-    reviewerFee: _engagement && _engagement.agreedAmount ? `$${Number(_engagement.agreedAmount).toLocaleString()}` : null,
+    reviewerFee: _engagement && _engagement.agreedAmount ? `₹${Number(_engagement.agreedAmount).toLocaleString('en-IN')}` : null,
     verdictIcon: rawDispute.verdict === 'worker-favour' ? 'check-circle'
                : rawDispute.verdict === 'client-favour' ? 'user-check'
                : 'clock',

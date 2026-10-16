@@ -116,7 +116,7 @@ function DeliverableCard({ milestone, work }) {
         {(work.files && work.files.length)
           ? <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{work.files.map((f, i) => <FileRow key={i} f={f} />)}</div>
           : <p style={MUTED_P_STYLE}>No files were attached to this submission.</p>}
-        {milestone.submittedAt ? <div style={{ marginTop: 14, fontSize: 12.5, color: 'var(--muted-foreground)' }}>{`Submitted ${milestone.submittedAt} · milestone value $${milestone.budget}`}</div> : ''}
+        {milestone.submittedAt ? <div style={{ marginTop: 14, fontSize: 12.5, color: 'var(--muted-foreground)' }}>{`Submitted ${milestone.submittedAt} · milestone value ₹${milestone.budget}`}</div> : ''}
       </>
     );
   }

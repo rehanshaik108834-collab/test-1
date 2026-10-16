@@ -18,7 +18,7 @@ export class NotificationsController {
     return this.notificationsService.findAll({ userId: actor.id });
   }
 
-  // POST /notifications was removed. It let anyone who had bid on a client's
+  // POST /notifications was removed. It let any signed-in user who could see a client's
   // project put any text — "Your account is locked, message me to unlock it"
   // — into that client's notifications, styled as a payment or a dispute.
   // Every notification is now written by the platform itself, about
