@@ -216,7 +216,7 @@ export default function ResolveDispute() {
     if (!valid) return;
 
     // Map verdict to store format
-    const verdictMap = { favour_worker: 'worker-favour', favour_client: 'client-favour', partial: 'split', revision: 'revision' };
+    const verdictMap = { favour_worker: 'worker-favour', favour_client: 'client-favour' };
     const storeVerdict = verdictMap[selectedVerdict] || selectedVerdict;
 
     let result;
@@ -232,9 +232,7 @@ export default function ResolveDispute() {
     const workerName = d.raw.raisedBy === disputedMilestone?.workerId ? d.raisedByName : d.respondentName;
     const msgs = {
       favour_worker: `Verdict recorded. ${d.escrow} released to ${workerName}.`,
-      favour_client: `Verdict recorded. ${d.escrow} returned to the client and the milestone closed.`,
-      partial: `Verdict recorded. ${d.escrow} split between the worker and the client.`,
-      revision: 'Verdict recorded. The milestone goes back to the worker to revise; its escrow stays held.',
+      favour_client: `Verdict recorded. The milestone goes back to ${workerName}'s To Do list with your notes; its ${d.escrow} stays in escrow.`,
     };
     Validate.toast(msgs[selectedVerdict] + fee, 'success');
     setTimeout(() => { navigate('/expert-dispute-cases'); }, 2800);
@@ -253,12 +251,12 @@ export default function ResolveDispute() {
             <Icon name="info" style={{ width: 15, height: 15 }} /> What is a Dispute on Lannent?
           </div>
           <div className="explain-body">
-            A dispute is a formal conflict raised by either the <strong>Client</strong> or the <strong>Gig Worker</strong> when they cannot agree on a milestone outcome. Whoever raises it pays your fee. Common triggers include:
+            A dispute is raised by the <strong>Client</strong> when they do not accept a milestone the <strong>Gig Worker</strong> has submitted — for example the deliverable misses quality standards, features are missing, or it does not match the brief. The client pays your fee.
+            Once raised, <strong>the milestone's escrow is frozen</strong> and the case comes to you. Your verdict is <strong>binding</strong>:
             <ul>
-              <li><strong>Client-raised:</strong> Deliverable does not meet quality standards, performance benchmarks not met, features are missing, or the deadline was breached.</li>
-              <li><strong>Worker-raised:</strong> Scope was expanded beyond the original agreement, an approved milestone payment was not released, or additional work was requested without compensation.</li>
+              <li><strong>In favour of the worker:</strong> the work is accepted and the milestone's escrow is paid to the worker.</li>
+              <li><strong>In favour of the client:</strong> the milestone goes back to the worker's To Do list with your notes, exactly like a revision request. Its escrow stays held until the reworked submission is approved.</li>
             </ul>
-            Once raised, <strong>escrow funds are frozen</strong> and the case is escalated to an Expert Reviewer. The Expert's verdict is <strong>binding</strong> — it releases the milestone to the worker, refunds the client, splits it, or sends the work back for revision.
           </div>
         </div>
 
@@ -352,7 +350,7 @@ export default function ResolveDispute() {
                   <div className="escrow-sub">Held pending Expert verdict</div>
                 </div>
                 <p style={{ fontSize: 12, color: 'var(--muted-foreground)', lineHeight: 1.55 }}>
-                  Per platform rules, funds are <strong>never released</strong> while a dispute is active. Your verdict moves them automatically — to the worker, back to the client, split, or kept held for a revision.
+                  Per platform rules, funds are <strong>never released</strong> while a dispute is active. Your verdict either pays them to the worker or keeps them held while the worker reworks the milestone.
                 </p>
               </div>
             </div>
@@ -376,11 +374,7 @@ export default function ResolveDispute() {
                 <VerdictOption id="v1" value="favour_worker" selected={selectedVerdict} onSelect={setSelectedVerdict}
                                title="Rule in favour of Gig Worker" desc={`Work meets requirements. Release ${d.escrow} escrow to worker immediately.`} />
                 <VerdictOption id="v2" value="favour_client" selected={selectedVerdict} onSelect={setSelectedVerdict}
-                               title="Rule in favour of Client" desc={`Work does not meet requirements. ${d.escrow} returns to the client and the milestone is closed.`} />
-                <VerdictOption id="v4" value="revision" selected={selectedVerdict} onSelect={setSelectedVerdict}
-                               title="Send back for revision" desc="The work can be fixed. The milestone returns to the worker with your notes; its escrow stays held." />
-                <VerdictOption id="v3" value="partial" selected={selectedVerdict} onSelect={setSelectedVerdict}
-                               title="Split the milestone" desc={`Partial delivery. Half of ${d.escrow} is released to the worker and half returned to the client.`} />
+                               title="Rule in favour of Client" desc={`Work does not meet requirements. The milestone goes back to the worker's To Do list with your notes; ${d.escrow} stays in escrow.`} />
 
                 <div style={{ marginTop: 16 }}>
                   <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 6 }}>Resolution Notes <span style={{ color: 'var(--muted-foreground)', fontWeight: 400 }}>(required)</span></label>

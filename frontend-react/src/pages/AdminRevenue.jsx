@@ -27,6 +27,7 @@ const prettyFee = t => ({
   'worker-service': 'Worker service',
   'expert-service': 'Reviewer commission',
   'withdrawal-processing': 'Withdrawal payout',
+  'cancellation': 'Cancellation fees',
 }[t] || t);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -175,7 +176,7 @@ function DistributionChart({ d }) {
           V${first ? r : 0}
           ${first ? `a${r},${r} 0 0 1 ${r},-${r}` : ''} Z`;
         return (
-          <path key={i} d={path} fill={`var(--series-${(i % 6) + 1})`} className="dist-seg" data-i={i} style={{ cursor: 'pointer' }}
+          <path key={i} d={path} fill={`var(--series-${(i % 7) + 1})`} className="dist-seg" data-i={i} style={{ cursor: 'pointer' }}
                 onMouseMove={e => showTip(e, `${esc(s.label)}<br><b>${money(s.amount)}</b> · ${s.share}% of ${money(d.totalFunded)}`)}
                 onMouseLeave={hideTip} />
         );
@@ -253,7 +254,6 @@ function ProjectBreakdown({ b, onClose }) {
           <Line label="Agreed fees" value={money(b.reviewerDispute.grossFees)} />
           <Line label="Platform commission" value={'−' + money(b.reviewerDispute.commission)} fee />
           <Line label="Net received" value={money(b.reviewerDispute.netReceived)} total good />
-          {b.workerPaid && b.workerPaid.intoDisputeEscrow > 0 ? <Line label="Paid in by the worker" value={money(b.workerPaid.intoDisputeEscrow)} /> : null}
           <Line label="Disputes" value={String(b.reviewerDispute.count) + (b.reviewerDispute.reviewers.length ? ' · ' + b.reviewerDispute.reviewers.join(', ') : '')} />
         </BreakdownCard>
 
@@ -271,6 +271,7 @@ function ProjectBreakdown({ b, onClose }) {
           <Line label="Contract initiation" value={money(b.platformEarnings.initiationFee)} />
           <Line label="Worker service fees" value={money(b.platformEarnings.workerServiceFees)} />
           <Line label="Reviewer commission" value={money(b.platformEarnings.reviewerCommission)} />
+          {b.platformEarnings.cancellationFee ? <Line label="Cancellation fee" value={money(b.platformEarnings.cancellationFee)} /> : null}
           <Line label="Total earned" value={money(b.platformEarnings.total)} total good />
         </BreakdownCard>
       </div>
@@ -438,7 +439,7 @@ export default function AdminRevenue() {
               <div className="viz-legend" id="distLegend">
                 {d && d.totalFunded ? d.segments.filter(x => x.amount > 0).map((x, i) => (
                   <span key={i} className="viz-legend-item">
-                    <span className="viz-swatch" style={{ background: `var(--series-${(i % 6) + 1})` }}></span>
+                    <span className="viz-swatch" style={{ background: `var(--series-${(i % 7) + 1})` }}></span>
                     {`${x.label} · `}<b style={{ color: 'var(--foreground)', fontVariantNumeric: 'tabular-nums' }}>{money(x.amount)}</b>
                   </span>
                 )) : ''}

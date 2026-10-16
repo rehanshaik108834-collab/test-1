@@ -64,7 +64,7 @@ export class UpdateUserDto extends PartialType(OmitType(CreateUserDto, ['role', 
   jobTitle?: string;
 
   @ApiPropertyOptional({ example: 'Senior', enum: ['Junior', 'Mid-Level', 'Senior', 'Expert'] })
-  @IsOptional() @IsIn(['Junior', 'Mid-Level', 'Senior', 'Expert'])
+  @IsOptional() @IsIn(['', 'Junior', 'Mid-Level', 'Senior', 'Expert'])
   experienceLevel?: string;
 
   @ApiPropertyOptional({ example: 85 })
@@ -92,19 +92,6 @@ export class UpdateUserDto extends PartialType(OmitType(CreateUserDto, ['role', 
   @ApiPropertyOptional({ example: ['Web Development', 'Security'], description: 'Project categories this reviewer audits' })
   @IsOptional() @IsArray() @ArrayMaxSize(CATEGORIES.length) @IsIn(CATEGORIES as unknown as string[], { each: true })
   domains?: string[];
-
-  // ── Moderation (operations staff only) ──
-  @ApiPropertyOptional({ example: 4.8 })
-  @IsOptional() @IsNumber() @Min(0) @Max(5)
-  rating?: number;
-
-  @ApiPropertyOptional({ example: 25 })
-  @IsOptional() @IsNumber() @Min(0)
-  completedProjects?: number;
-
-  @ApiPropertyOptional({ example: 50 })
-  @IsOptional() @IsNumber() @Min(0)
-  reviewsDone?: number;
 }
 
 export class ChangePasswordDto {

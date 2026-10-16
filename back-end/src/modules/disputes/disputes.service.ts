@@ -13,16 +13,13 @@ import { Actor } from '../../common/decorators/actor.decorator';
 import { assertAllowed } from '../../common/guards/viewer.util';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SETTLED } from '../milestones/milestones.service';
-import { round2 } from '../ledger/fee-config';
 import { ROLES } from '../../common/constants/roles';
 
 const today = () => new Date().toISOString().slice(0, 10);
 
 const VERDICT_TEXT: Record<string, string> = {
-  'worker-favour': 'in favour of the worker',
-  'client-favour': 'in favour of the client',
-  split: 'split 50/50',
-  revision: 'the worker revises the milestone',
+  'worker-favour': 'in favour of the worker — milestone paid',
+  'client-favour': 'in favour of the client — milestone sent back to the worker',
 };
 
 /**
@@ -90,16 +87,20 @@ export class DisputesService {
     if (!task.workerId) {
       throw new BadRequestException('A dispute needs a hired worker — nobody is working on this project yet.');
     }
-    const isClient = task.clientId === actor.id;
-    const isWorker = task.workerId === actor.id;
-    assertAllowed(isClient || isWorker, 'Only the client and the worker on this project can raise a dispute about it.');
-    const againstId = isClient ? task.workerId : task.clientId;
+    // Disputes are the client's remedy against submitted work. A worker whose
+    // submission is not being approved talks to the client in the workroom.
+    assertAllowed(task.clientId === actor.id, 'Only the client on this project can raise a dispute.');
+    const againstId = task.workerId;
 
     if (!dto.milestoneId) throw new BadRequestException('Choose the milestone this dispute is about.');
     const ms = this.milestonesService.findById(dto.milestoneId);
     if (ms.taskId !== task.id) throw new BadRequestException('That milestone does not belong to this project.');
     if (SETTLED.includes(ms.status)) {
       throw new BadRequestException('This milestone has already been settled and can no longer be disputed.');
+    }
+    // There is only something to dispute once the worker has handed work in.
+    if (!['submitted', 'review'].includes(ms.status)) {
+      throw new BadRequestException('A dispute can only be raised on a milestone the worker has submitted.');
     }
     const open = this.disputesRepository
       .findAll()
@@ -129,8 +130,8 @@ export class DisputesService {
       raisedByName: nameOf(actor.id),
       againstId,
       againstName: nameOf(againstId),
-      // Whoever raises the dispute pays the reviewer to arbitrate it.
-      payerId: actor.id,
+      // The client raises the dispute and pays the reviewer to arbitrate it.
+      payerId: task.clientId,
       reviewerFee: dto.reviewerFee,
       id: this.disputesRepository.generateId(),
       status: 'open',
@@ -150,7 +151,7 @@ export class DisputesService {
       milestoneId: ms.id,
       clientId: task.clientId,
       workerId: task.workerId,
-      payerId: actor.id,
+      payerId: task.clientId,
       disputeId: dispute.id,
       expertId: dto.expertId,
       category: task.category,
@@ -166,9 +167,9 @@ export class DisputesService {
 
     this.notifications.notify(againstId, {
       type: 'dispute',
-      text: `${dispute.raisedByName || 'The other party'} raised a dispute`,
+      text: `${dispute.raisedByName || 'The client'} raised a dispute`,
       subtext: `${task.title} — ${ms.title}: ${dto.reason}`,
-      link: isClient ? `/worker-milestone-board?id=${task.id}` : `/project-milestone-board?id=${task.id}`,
+      link: `/worker-milestone-board?id=${task.id}`,
     });
     this.notifications.notify(dto.expertId, {
       type: 'dispute',
@@ -219,7 +220,7 @@ export class DisputesService {
 
     const ms = dispute.milestoneId ? this.milestonesService.findById(dispute.milestoneId) : null;
     const task = this.tasksService.findById(dispute.taskId);
-    if (ms && dto.verdict !== 'revision' && this.ledger.isMilestoneReleased(ms.id)) {
+    if (ms && this.ledger.isMilestoneReleased(ms.id)) {
       throw new BadRequestException('This milestone has already been paid out.');
     }
 
@@ -233,31 +234,13 @@ export class DisputesService {
         });
         this.milestonesService.systemUpdate(ms.id, { status: 'completed', approvedAt: today(), progress: 100 });
       } else if (dto.verdict === 'client-favour') {
-        // The milestone's money goes back and the milestone closes. Sending it
-        // back for revision as well would leave work with nothing behind it in
-        // escrow — its approval would then spend other milestones' money.
-        settlement = this.ledger.refundToClient({
-          taskId: task.id, clientId: task.clientId, amount: ms.budget,
-          reason: `Dispute resolved in the client's favour — ${ms.title}`,
-        });
-        this.milestonesService.systemUpdate(ms.id, { status: 'refunded', refundedAt: today() });
-      } else if (dto.verdict === 'split') {
-        const half = round2(ms.budget / 2);
-        const release = this.ledger.releaseMilestone({
-          milestoneId: ms.id, taskId: task.id, clientId: task.clientId, workerId: ms.workerId,
-          amount: half, description: `Dispute split — worker's share of ${ms.title}`,
-        });
-        const refund = this.ledger.refundToClient({
-          taskId: task.id, clientId: task.clientId, amount: round2(ms.budget - half),
-          reason: `Dispute split — client's share of ${ms.title}`,
-        });
-        settlement = { release, refund };
-        this.milestonesService.systemUpdate(ms.id, { status: 'completed', approvedAt: today(), progress: 100 });
-      } else if (dto.verdict === 'revision') {
-        // No money moves: the escrow stays behind the milestone and the
-        // worker reworks it against the reviewer's notes.
+        // The work is not accepted: the milestone goes back to the worker's
+        // To Do list with the reviewer's notes, exactly like a revision
+        // request. No money moves — the escrow stays behind the milestone
+        // until the reworked submission is approved.
         this.milestonesService.systemUpdate(ms.id, {
-          status: 'revision-needed', revisionNote: dto.resolution, revisionRequestedAt: new Date().toISOString(),
+          status: 'revision-needed', progress: 0,
+          revisionNote: dto.resolution, revisionRequestedAt: new Date().toISOString(),
         });
       }
     }

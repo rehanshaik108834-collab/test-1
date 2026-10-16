@@ -17,7 +17,8 @@ export type FeeType =
   | 'contract-initiation'
   | 'worker-service'
   | 'expert-service'
-  | 'withdrawal-processing';
+  | 'withdrawal-processing'
+  | 'cancellation';
 
 export interface AmountTier {
   /** Inclusive upper bound of this tier. */
@@ -57,6 +58,18 @@ export const FEE_CONFIG = {
 
   /** Payout fee when a user withdraws to an external account. */
   withdrawal: { percent: 0.25, fixed: 0.25, min: 0.25 },
+
+  /**
+   * Cancelling a project before anyone is hired. Charged on the project
+   * budget only — technical-audit and dispute escrow always comes back in
+   * full. The clock starts when the project goes live (a draft awaiting its
+   * audit has never been visible to workers, so cancelling it is free).
+   *
+   *   within `freeHours` of going live ...... free
+   *   up to `earlyDays` live ................ `earlyPercent` of the budget
+   *   after that ............................ `latePercent` of the budget
+   */
+  cancellation: { freeHours: 24, earlyDays: 7, earlyPercent: 2, latePercent: 5 },
 };
 
 /**
@@ -79,6 +92,7 @@ export function resetFeeConfig(): void {
   FEE_CONFIG.withdrawal.percent = restored.withdrawal.percent;
   FEE_CONFIG.withdrawal.fixed = restored.withdrawal.fixed;
   FEE_CONFIG.withdrawal.min = restored.withdrawal.min;
+  Object.assign(FEE_CONFIG.cancellation, restored.cancellation);
   FEE_CONFIG.workerService.forEach((t, i) => { t.percent = restored.workerService[i].percent; });
   FEE_CONFIG.contractInitiation.forEach((t, i) => { t.fee = restored.contractInitiation[i].fee; });
 }
@@ -116,6 +130,14 @@ export function workerServiceRate(lifetimeBillings: number): number {
 
 export function workerServiceFee(amount: number, lifetimeBillings: number): number {
   return round2(amount * (workerServiceRate(lifetimeBillings) / 100));
+}
+
+/** The cancellation rate for a project that has been live this many hours. */
+export function cancellationRate(hoursLive: number): number {
+  const c = FEE_CONFIG.cancellation;
+  if (hoursLive < c.freeHours) return 0;
+  if (hoursLive < c.earlyDays * 24) return c.earlyPercent;
+  return c.latePercent;
 }
 
 export function expertServiceFee(amount: number): number {

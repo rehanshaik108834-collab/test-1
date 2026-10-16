@@ -124,14 +124,11 @@ export class UsersService {
         userId: id,
         location: dto.location || '',
         skills: dto.skills || [],
-        rating: 0,
-        completedProjects: 0,
       });
     } else if (dto.role === 'expert') {
       this.usersRepository.insertExpert({
         userId: id,
         specialization: dto.specialization || '',
-        reviewsDone: 0,
         // Clients are only ever offered reviewers whose domains cover the
         // project category, so an expert created with none could never be
         // picked by anyone.
@@ -180,16 +177,16 @@ export class UsersService {
       if (dto.companyDetails?.name !== undefined) sub.company = dto.companyDetails.name;
     } else if (base?.role === 'worker') {
       let sub = this.usersRepository.findWorkerSub(id);
-      if (!sub) { this.usersRepository.insertWorker({ userId: id, location: '', skills: [], rating: 0, completedProjects: 0 }); sub = this.usersRepository.findWorkerSub(id); }
-      if (dto.availability !== undefined) {
+      if (!sub) { this.usersRepository.insertWorker({ userId: id, location: '', skills: [] }); sub = this.usersRepository.findWorkerSub(id); }
+      if (dto.availability !== undefined && dto.availability !== '') {
         if (!['Full-time', 'Part-time', 'Contract', 'Not Available'].includes(dto.availability)) {
-          throw new BadRequestException('Availability must be Full-time, Part-time, Contract or Not Available.');
+          throw new BadRequestException('Availability must be Full-time, Part-time, Contract, Not Available or left unset.');
         }
       }
-      set(sub, ['location', 'skills', 'rating', 'completedProjects', 'jobTitle', 'experienceLevel', 'hourlyRate', 'languages', 'portfolioProjects', 'availability']);
+      set(sub, ['location', 'skills', 'jobTitle', 'experienceLevel', 'hourlyRate', 'languages', 'portfolioProjects', 'availability']);
     } else if (base?.role === 'expert') {
       let sub = this.usersRepository.findExpertSub(id);
-      if (!sub) { this.usersRepository.insertExpert({ userId: id, specialization: '', reviewsDone: 0, domains: [], hourlyRate: 0 }); sub = this.usersRepository.findExpertSub(id); }
+      if (!sub) { this.usersRepository.insertExpert({ userId: id, specialization: '', domains: [], hourlyRate: 0 }); sub = this.usersRepository.findExpertSub(id); }
       if (dto.availability !== undefined) {
         const a = dto.availability;
         const ok = a && typeof a === 'object' && typeof a.status === 'string' && typeof a.type === 'string'
@@ -200,10 +197,15 @@ export class UsersService {
       if (dto.domains !== undefined && !dto.domains.length) {
         throw new BadRequestException('Choose at least one domain — clients can only pick reviewers who cover their category.');
       }
-      set(sub, ['specialization', 'reviewsDone', 'domains', 'hourlyRate', 'availability']);
+      set(sub, ['specialization', 'domains', 'hourlyRate', 'availability']);
     }
 
     return this.usersRepository.findById(id);
+  }
+
+  /** Lets TasksService supply the derived project counts. */
+  setStatsProvider(fn: (id: string, role: string) => Record<string, any>) {
+    this.usersRepository.setStatsProvider(fn);
   }
 
   /** A person changes their own password, proving they know the current one. */
@@ -228,12 +230,6 @@ export class UsersService {
     assertStrongPassword(newPassword);
     base.password = hashPassword(newPassword);
     return { reset: true };
-  }
-
-  /** Is this user an active client? Used when staff act on a client's behalf. */
-  isActiveClient(id: string): boolean {
-    const u = this.usersRepository.findById(id);
-    return !!u && u.role === 'client' && u.status === 'active';
   }
 
   delete(id: string) {

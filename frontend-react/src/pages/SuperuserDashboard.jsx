@@ -2,8 +2,9 @@
  * LANNENT — SuperuserDashboard
  * Converted from front-end/pages/superuser-dashboard.html.
  *
- * Platform overview for the super user: user / task / escrow totals,
- * quick actions, and the five most recent users and tasks.
+ * Platform overview for the super user: user / task / escrow / dispute
+ * totals (all read live from the API), quick actions, and the five most
+ * recent users and tasks.
  */
 import { Link } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
@@ -12,7 +13,8 @@ import StatCard from '../components/StatCard';
 import { useStore } from '../context/StoreContext';
 import usePageTitle from '../hooks/usePageTitle';
 
-const TASK_STATUS_BADGES = { 'open': 'badge-orange', 'in-progress': 'badge-blue', 'completed': 'badge-green', 'cancelled': 'badge-red' };
+const TASK_STATUS_BADGES = { 'draft': 'badge-gray', 'open': 'badge-orange', 'in-progress': 'badge-blue', 'completed': 'badge-green', 'cancelled': 'badge-red' };
+const STAFF_ROLES = ['superuser', 'revenue-admin', 'intake-admin', 'compliance-admin'];
 
 /** Coloured status pill for a task. */
 function StatusBadge({ status }) {
@@ -21,7 +23,7 @@ function StatusBadge({ status }) {
 
 /** Badge colour per user role. */
 function roleBadge(role) {
-  return role === 'client' ? 'badge-blue' : role === 'expert' ? 'badge-purple' : role === 'superuser' ? 'badge-red' : 'badge-green';
+  return role === 'client' ? 'badge-blue' : role === 'expert' ? 'badge-purple' : STAFF_ROLES.includes(role) ? 'badge-red' : 'badge-green';
 }
 
 export default function SuperuserDashboard() {
@@ -43,6 +45,12 @@ export default function SuperuserDashboard() {
   const clients = users.filter(u => u.role === 'client').length;
   const workers = users.filter(u => u.role === 'worker').length;
   const experts = users.filter(u => u.role === 'expert').length;
+  const staff = users.filter(u => STAFF_ROLES.includes(u.role)).length;
+  const suspended = users.filter(u => u.status === 'suspended').length;
+  const disputes = Store.getDisputes();
+  const openDisputes = disputes.filter(d => d.status === 'open').length;
+  const openTasks = tasks.filter(t => t.status === 'open').length;
+  const money = n => '$' + Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 2 });
 
   // Most recent five of each
   const recentUsers = [...users].slice(-5).reverse();
@@ -50,10 +58,13 @@ export default function SuperuserDashboard() {
 
   return (
     <DashboardLayout role="superuser" activePath="/superuser-dashboard" pageTitle="Super User Dashboard" pageSubtitle="Full platform control and oversight">
-      <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(3,1fr)' }}>
-        <StatCard value={totalUsers} label="Total Users" change={`${clients}C · ${workers}W · ${experts}E`} icon="users" iconBg="#eff6ff" iconColor="#3b82f6" />
-        <StatCard value={tasks.length} label="Total Tasks" change={`${activeTasks} active`} icon="folder-kanban" iconBg="#ecfdf5" iconColor="#10b981" />
-        <StatCard value={`$${escrowBalance.toLocaleString()}`} label="Escrow Balance" change={`$${released.toLocaleString()} released`} icon="wallet" iconBg="#faf5ff" iconColor="#a855f7" />
+      <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))' }}>
+        <StatCard value={totalUsers} label="Total Users"
+                  change={`${clients} clients · ${workers} workers · ${experts} experts · ${staff} staff${suspended ? ` · ${suspended} suspended` : ''}`}
+                  icon="users" iconBg="#eff6ff" iconColor="#3b82f6" />
+        <StatCard value={tasks.length} label="Total Tasks" change={`${openTasks} open · ${activeTasks} in progress`} icon="folder-kanban" iconBg="#ecfdf5" iconColor="#10b981" />
+        <StatCard value={money(escrowBalance)} label="Held in Escrow" change={`${money(released)} paid to workers`} icon="wallet" iconBg="#faf5ff" iconColor="#a855f7" />
+        <StatCard value={openDisputes} label="Open Disputes" change={`${disputes.length - openDisputes} resolved`} icon="scale" iconBg="#fef2f2" iconColor="#ef4444" />
       </div>
 
       {/* Quick Actions */}
@@ -159,7 +170,7 @@ export default function SuperuserDashboard() {
                 {recentTasks.map(t => (
                   <tr key={t.id}>
                     <td style={{ fontWeight: 600, fontSize: 13 }}>{t.title}</td>
-                    <td>{`$${t.budget.toLocaleString()}`}</td>
+                    <td>{money(t.budget)}</td>
                     <td>
                       <StatusBadge status={t.status} />
                     </td>

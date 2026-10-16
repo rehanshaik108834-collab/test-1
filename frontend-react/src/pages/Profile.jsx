@@ -64,10 +64,9 @@ export default function Profile() {
   const settingsPath = SETTINGS[session.role] || '/staff-settings';
   const money = n => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  // Work history from the projects this viewer can see.
+  // Projects this client posted (for the client stats).
   const tasks = Store.getTasks();
   const asClient = tasks.filter(t => t.clientId === user.id);
-  const asWorker = tasks.filter(t => t.workerId === user.id);
 
   return (
     <DashboardLayout role={session.role} activePath={isMe ? '/profile' : ''} pageTitle={isMe ? 'My Profile' : 'Profile'} pageSubtitle={ROLE_LABEL[user.role] || user.role}>
@@ -96,10 +95,9 @@ export default function Profile() {
 
         <div style={{ ...CARD, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
           {user.role === 'worker' && <>
-            <Stat value={user.rating ? user.rating + '★' : '—'} label="Rating" />
-            <Stat value={user.completedProjects || 0} label="Completed projects" />
-            <Stat value={asWorker.length} label="Projects here" />
-            <Stat value={user.hourlyRate ? '$' + user.hourlyRate + '/hr' : '—'} label="Hourly rate" />
+            <Stat value={user.completedProjects || 0} label="Completed on Lannent" />
+            <Stat value={user.activeProjects || 0} label="In progress" />
+            <Stat value={user.hourlyRate ? '$' + user.hourlyRate + '/hr' : '—'} label="Stated hourly rate" />
           </>}
           {user.role === 'expert' && <>
             <Stat value={user.reviewsDone || 0} label="Reviews completed" />
@@ -108,8 +106,8 @@ export default function Profile() {
           </>}
           {user.role === 'client' && <>
             <Stat value={asClient.length} label="Projects posted" />
-            <Stat value={asClient.filter(t => t.status === 'completed').length} label="Completed" />
-            <Stat value={asClient.filter(t => t.status === 'in-progress').length} label="In progress" />
+            <Stat value={user.completedProjects || 0} label="Completed" />
+            <Stat value={user.activeProjects || 0} label="In progress" />
           </>}
           {isMe && user.walletBalance !== undefined && <Stat value={money(user.walletBalance)} label="Wallet balance" />}
         </div>

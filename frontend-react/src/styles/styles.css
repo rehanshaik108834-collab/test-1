@@ -1932,6 +1932,7 @@ tr:hover td { background: rgba(0,0,0,0.01); }
   --series-4:       #eda100;
   --series-5:       #e87ba4;
   --series-6:       #7c5cdb;
+  --series-7:       #e11d48;
   --viz-grid:       rgba(15, 23, 42, 0.07);
   --viz-axis:       rgba(15, 23, 42, 0.18);
 }

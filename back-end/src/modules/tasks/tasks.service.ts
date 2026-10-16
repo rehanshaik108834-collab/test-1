@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Inject, forwardRef, OnModuleInit } from '@nestjs/common';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { TasksRepository } from './tasks.repository';
@@ -11,6 +11,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { Actor } from '../../common/decorators/actor.decorator';
 import { canViewAnyRecord, assertAllowed } from '../../common/guards/viewer.util';
 import { ROLES } from '../../common/constants/roles';
+import { FEE_CONFIG, cancellationRate, round2 } from '../ledger/fee-config';
 
 /**
  * TasksService — Business Logic Layer
@@ -27,7 +28,7 @@ import { ROLES } from '../../common/constants/roles';
  *     `status` and `progress` from anyone.
  */
 @Injectable()
-export class TasksService {
+export class TasksService implements OnModuleInit {
   constructor(
     private readonly tasksRepository: TasksRepository,
     @Inject(forwardRef(() => LedgerService)) private ledger: LedgerService,
@@ -37,6 +38,34 @@ export class TasksService {
     @Inject(forwardRef(() => ProposalsService)) private proposals: ProposalsService,
     @Inject(forwardRef(() => NotificationsService)) private notifications: NotificationsService,
   ) {}
+
+  onModuleInit() {
+    this.users.setStatsProvider((id, role) => this.statsFor(id, role));
+  }
+
+  /**
+   * A person's track record, worked out from what actually happened:
+   *   - workers and clients: projects completed and in progress;
+   *   - experts: engagements completed and paid.
+   * Nothing here is stored, so nothing can be typed in or go stale. (There is
+   * no rating system, so no rating is reported.)
+   */
+  statsFor(id: string, role: string): Record<string, any> {
+    if (role === ROLES.EXPERT) {
+      return { reviewsDone: this.safeCount(() => this.auditRequests.paidReviewCount(id)) };
+    }
+    if (role !== ROLES.WORKER && role !== ROLES.CLIENT) return {};
+    const side = role === ROLES.WORKER ? 'workerId' : 'clientId';
+    const mine = this.tasksRepository.findAll({}).filter((t: any) => t[side] === id);
+    return {
+      completedProjects: mine.filter((t: any) => t.status === 'completed').length,
+      activeProjects: mine.filter((t: any) => t.status === 'in-progress').length,
+    };
+  }
+
+  private safeCount(fn: () => number): number {
+    try { return fn(); } catch { return 0; }
+  }
 
   /**
    * A draft is an audit-gated project that has not gone live yet. It is
@@ -97,15 +126,11 @@ export class TasksService {
 
   create(dto: CreateTaskDto, actor: Actor) {
     // The owner is the caller, not whatever `clientId` the body named — a
-    // client could otherwise post projects on another client's account.
-    // Operations staff create on a client's behalf, so they must name one.
-    let clientId = actor.id;
-    if (actor.role === ROLES.SUPERUSER) {
-      if (!dto.clientId || !this.users.isActiveClient(dto.clientId)) {
-        throw new BadRequestException('Choose an active client account to create this task for.');
-      }
-      clientId = dto.clientId;
-    }
+    // client could otherwise post projects on another client's account. Only
+    // clients post projects: the budget comes out of the poster's own wallet,
+    // so nobody (operations staff included) can post one for someone else.
+    assertAllowed(actor.role === ROLES.CLIENT, 'Only clients can post projects.');
+    const clientId = actor.id;
 
     // Validate the reviewer before anything is stored or charged.
     if (dto.auditEnabled) {
@@ -130,6 +155,12 @@ export class TasksService {
       progress: 0,
       workerId: null,
       createdAt: new Date().toISOString().slice(0, 10),
+      // When workers could first see it — the cancellation clock. A draft
+      // goes live when its audit is accepted.
+      publishedAt: dto.auditEnabled ? null : new Date().toISOString(),
+      // The most this project has ever held, so a client cannot cut the
+      // budget to a dollar and then cancel for a dollar's fee.
+      peakBudget: dto.budget,
       currency: dto.currency || 'USD',
       skills: dto.skills || [],
       auditEnabled: !!dto.auditEnabled,
@@ -181,8 +212,57 @@ export class TasksService {
   publishDraft(id: string) {
     const task = this.findById(id);
     if (task.status !== 'draft') return task;
-    task.status = 'open';
-    return task;
+    return this.tasksRepository.update(id, { status: 'open', publishedAt: new Date().toISOString() });
+  }
+
+  /**
+   * What cancelling would cost. Only a project nobody has been hired for can
+   * be cancelled; once a worker is on it the contract stands and nothing is
+   * refunded by cancelling. The fee applies to the project budget only —
+   * audit and dispute escrow is always returned in full.
+   */
+  cancellationQuote(id: string, actor?: Actor) {
+    const task = actor ? this.findOwned(id, actor) : this.findById(id);
+    const escrow = this.ledger.getEscrow(id);
+    const base = round2(Math.max(Number(task.peakBudget) || 0, Number(task.budget) || 0));
+    const liveSince = task.publishedAt || (task.status === 'open' ? task.createdAt : null);
+    const hoursLive = liveSince ? Math.max(0, (Date.now() - new Date(liveSince).getTime()) / 3600000) : 0;
+    const cancellable = !task.workerId && ['open', 'draft'].includes(task.status);
+    // A draft has never been visible to workers, so it costs nothing.
+    const rate = task.status === 'draft' || !liveSince ? 0 : cancellationRate(hoursLive);
+    const fee = round2(Math.min(round2(base * (rate / 100)), escrow.projectHeld));
+    return {
+      cancellable,
+      reason: cancellable ? null : task.workerId
+        ? 'A worker has been hired, so this project can no longer be cancelled or refunded.'
+        : `A ${task.status} project cannot be cancelled.`,
+      status: task.status,
+      hoursLive: Math.round(hoursLive * 10) / 10,
+      rate,
+      base,
+      fee,
+      refund: {
+        project: round2(escrow.projectHeld - fee),
+        audit: escrow.auditHeld,
+        dispute: escrow.disputeHeld,
+        total: round2(escrow.projectHeld - fee + escrow.auditHeld + escrow.disputeHeld),
+      },
+      policy: { ...FEE_CONFIG.cancellation },
+    };
+  }
+
+  /** Keeps the cancellation fee, then returns everything else held for the project. */
+  private settleCancellation(task: any, reason: string, chargeFee: boolean) {
+    const quote = this.cancellationQuote(task.id);
+    const fee = chargeFee && quote.fee > 0
+      ? this.ledger.chargeCancellationFee({
+          taskId: task.id, clientId: task.clientId, amount: quote.fee, rate: quote.rate, base: quote.base, title: task.title,
+        })
+      : null;
+    const refunds = this.ledger.refundRemaining(task.id, task.clientId, reason, ['project', 'audit', 'dispute']);
+    this.auditRequests.cancelOpenForTask(task.id);
+    this.proposals.closeAllForTask(task.id);
+    return { fee, refunds };
   }
 
   /**
@@ -211,7 +291,12 @@ export class TasksService {
           'This project is awaiting its technical audit. Cancel the draft from Audit Offers to get your money back.',
         );
       }
-      if (dto.status !== 'cancelled' || existing.status !== 'open' || existing.workerId) {
+      if (dto.status === 'cancelled' && existing.workerId) {
+        throw new BadRequestException(
+          'A worker has been hired, so this project can no longer be cancelled or refunded.',
+        );
+      }
+      if (dto.status !== 'cancelled' || existing.status !== 'open') {
         throw new BadRequestException(
           'Project status follows the work: it starts when you hire and completes when the last milestone is settled. ' +
             'You can only cancel an open project with nobody hired.',
@@ -232,14 +317,17 @@ export class TasksService {
       }
       this.ledger.adjustProjectBudget(id, existing.clientId, dto.budget, existing.title);
       patch.budget = dto.budget;
+      patch.peakBudget = Math.max(Number(existing.peakBudget) || 0, Number(existing.budget) || 0, dto.budget);
     }
 
+    let cancellation: any = null;
     if (patch.status === 'cancelled') {
-      this.ledger.refundRemaining(id, existing.clientId, `Project cancelled — ${existing.title}`, ['project', 'audit', 'dispute']);
-      this.proposals.closeAllForTask(id);
+      cancellation = this.settleCancellation(existing, `Project cancelled — ${existing.title}`, true);
+      patch.cancelledAt = new Date().toISOString();
     }
 
-    return this.tasksRepository.update(id, patch);
+    const updated = this.tasksRepository.update(id, patch);
+    return cancellation ? { ...updated, cancellation } : updated;
   }
 
   /** Lifecycle: a hire was funded. */
@@ -258,6 +346,7 @@ export class TasksService {
     const updated = this.tasksRepository.update(id, { progress, status });
     if (status === 'completed' && before && before.status !== 'completed') {
       this.ledger.refundRemaining(id, before.clientId, `Project completed — unused budget returned (${before.title})`);
+      this.auditRequests.closeProjectAudit(id);
     }
     return updated;
   }
@@ -273,8 +362,10 @@ export class TasksService {
     }
     const refunds = this.ledger.refundRemaining(id, task.clientId, `Draft project cancelled — ${task.title}`, ['project', 'audit']);
     this.auditRequests.cancelOpenForTask(id);
-    task.status = 'cancelled';
-    return { task, refunds };
+    // Written through the repository: mutating the object only worked while
+    // findById happened to hand back the stored reference.
+    const cancelled = this.tasksRepository.update(id, { status: 'cancelled', cancelledAt: new Date().toISOString() });
+    return { task: cancelled, refunds };
   }
 
   /**
@@ -289,12 +380,14 @@ export class TasksService {
     if (!['open', 'cancelled', 'draft'].includes(task.status)) {
       throw new ForbiddenException('Only a project that never started can be deleted.');
     }
-    this.ledger.refundRemaining(id, task.clientId, `Project deleted — ${task.title}`, ['project', 'audit', 'dispute']);
-    this.auditRequests.cancelOpenForTask(id);
-    this.proposals.closeAllForTask(id);
+    // Deleting a live project is a cancellation too, so the client pays the
+    // same fee — otherwise deleting would be a free way round it. A superuser
+    // removing a project (moderation) returns everything.
+    const chargeFee = task.status === 'open' && actor.role !== ROLES.SUPERUSER;
+    const { fee, refunds } = this.settleCancellation(task, `Project deleted — ${task.title}`, chargeFee);
     this.milestones.removeAllForTask(id);
     this.tasksRepository.deleteById(id);
-    return { deleted: true };
+    return { deleted: true, fee, refunds };
   }
 
   private notify(userId: string | null | undefined, n: { type: string; text: string; subtext?: string; link?: string }) {

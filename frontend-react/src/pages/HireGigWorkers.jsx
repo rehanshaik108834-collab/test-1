@@ -3,7 +3,7 @@
  * Converted from front-end/pages/hire-gig-workers.html.
  *
  * Browse available freelancers with filters (experience, hourly rate,
- * rating, skills, availability) and a search box. Open a full profile, or
+ * skills, availability) and a search box. Open a full profile, or
  * invite a worker to one of your open projects.
  */
 import { useState } from 'react';
@@ -25,8 +25,6 @@ const sectionIconStyle = bg => ({ width: 20, height: 20, background: bg, borderR
 
 /** Active workers, shaped for the cards and the profile. */
 function loadWorkersFromStore(Store) {
-  const activeHere = {};
-  for (const t of Store.getTasks()) if (t.workerId) activeHere[t.workerId] = (activeHere[t.workerId] || 0) + 1;
   return Store.getUsers()
     .filter(u => u.role === 'worker' && u.status !== 'suspended')
     .map(u => ({
@@ -36,12 +34,13 @@ function loadWorkersFromStore(Store) {
       avatarColor: u.avatarColor || 'linear-gradient(135deg,#6366f1,#4f46e5)',
       // Real profile figures only — a missing one shows as missing.
       specialization: u.jobTitle || (u.skills && u.skills[0]) || 'Freelancer',
-      rating: u.rating || 0,
+      // Project counts are worked out by the server from real projects;
+      // nobody can type them in.
       skills: u.skills || [],
       projectsCompleted: u.completedProjects || 0,
-      onPlatform: activeHere[u.id] || 0,
+      activeProjects: u.activeProjects || 0,
       hourlyRate: u.hourlyRate || 0,
-      location: u.location || 'Remote',
+      location: u.location || '',
       availability: typeof u.availability === 'string' && u.availability ? u.availability : 'Not set',
       experience: u.experienceLevel || 'Not set',
       bio: u.bio || '',
@@ -84,13 +83,13 @@ function WorkerCard({ w, onProfile, onInvite }) {
         {w.skills.map(s => <span key={s} className="skill-tag" style={{ fontSize: 11, padding: '2px 8px' }}>{s}</span>)}
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 14 }}>
-        <CardStat value={w.rating ? `${w.rating}★` : 'New'} label="Rating" color="#f59e0b" />
         <CardStat value={w.projectsCompleted} label="Completed" color="#10b981" />
-        <CardStat value={w.hourlyRate ? `$${w.hourlyRate}/h` : '—'} label="Rate" />
+        <CardStat value={w.activeProjects} label="In progress" color="#f59e0b" />
+        <CardStat value={w.hourlyRate ? `$${w.hourlyRate}/h` : '—'} label="Stated rate" />
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
         <Icon name="map-pin" style={{ width: 14, height: 14, color: 'var(--muted-foreground)' }} />
-        <span style={{ fontSize: 12, color: 'var(--muted-foreground)' }}>{w.location}</span>
+        <span style={{ fontSize: 12, color: 'var(--muted-foreground)' }}>{w.location || 'Location not set'}</span>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
         <button onClick={e => { e.stopPropagation(); onProfile(w.id); }} className="btn-outline">View Profile</button>
@@ -132,9 +131,9 @@ function WorkerProfile({ worker, onClose, onInvite }) {
               <div style={{ fontWeight: 700, fontSize: 20, color: '#111827' }}>{worker.name}</div>
               <div style={{ fontSize: 14, color: '#4f46e5', fontWeight: 500, marginTop: 2 }}>{worker.specialization}</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 12, color: '#6b7280' }}>{'📍 ' + worker.location}</span>
-                <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 9px', borderRadius: 9999, background: availBg, color: availColor }}>{worker.availability}</span>
-                <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 9px', borderRadius: 9999, background: expBg, color: expColor }}>{worker.experience}</span>
+                <span style={{ fontSize: 12, color: '#6b7280' }}>{'📍 ' + (worker.location || 'Location not set')}</span>
+                {worker.availability !== 'Not set' && <span title="Availability the worker set on their profile" style={{ fontSize: 11, fontWeight: 600, padding: '2px 9px', borderRadius: 9999, background: availBg, color: availColor }}>{worker.availability}</span>}
+                {worker.experience !== 'Not set' && <span title="Experience level the worker set on their profile" style={{ fontSize: 11, fontWeight: 600, padding: '2px 9px', borderRadius: 9999, background: expBg, color: expColor }}>{worker.experience}</span>}
               </div>
             </div>
           </div>
@@ -154,11 +153,10 @@ function WorkerProfile({ worker, onClose, onInvite }) {
         </div>
 
         {/* Stats row */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10, marginBottom: 20 }}>
-          <ProfileStat value={worker.rating ? <>{worker.rating}<span style={{ fontSize: 13 }}>★</span></> : 'New'} label="Rating" bg="#fffbeb" border="#fde68a" valueColor="#d97706" labelColor="#92400e" />
-          <ProfileStat value={worker.onPlatform} label="Projects on Lannent" bg="#ecfdf5" border="#a7f3d0" valueColor="#059669" labelColor="#065f46" />
-          <ProfileStat value={worker.projectsCompleted} label="Projects" bg="#eef2ff" border="#c7d2fe" valueColor="#4f46e5" labelColor="#3730a3" />
- <ProfileStat value={worker.hourlyRate ? <>{`$${worker.hourlyRate}`}<span style={{ fontSize: 10 }}>/hr</span></> : '—'} label="Hourly Rate" bg="#faf5ff" border="#ddd6fe" valueColor="#7c3aed" labelColor="#5b21b6" valueSize={15} />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 20 }}>
+          <ProfileStat value={worker.projectsCompleted} label="Completed on Lannent" bg="#ecfdf5" border="#a7f3d0" valueColor="#059669" labelColor="#065f46" />
+          <ProfileStat value={worker.activeProjects} label="In progress now" bg="#eef2ff" border="#c7d2fe" valueColor="#4f46e5" labelColor="#3730a3" />
+          <ProfileStat value={worker.hourlyRate ? <>{`$${worker.hourlyRate}`}<span style={{ fontSize: 10 }}>/hr</span></> : '—'} label="Stated hourly rate" bg="#faf5ff" border="#ddd6fe" valueColor="#7c3aed" labelColor="#5b21b6" valueSize={15} />
         </div>
 
         {/* Skills */}
@@ -190,27 +188,6 @@ function WorkerProfile({ worker, onClose, onInvite }) {
           </div>
         ) : ''}
 
-        {/* Reviews */}
-        {worker.reviews && worker.reviews.length ? (
-          <div style={{ marginBottom: 22 }}>
-            <div style={SECTION_TITLE_STYLE}>
-              <span style={{ ...sectionIconStyle('#f59e0b'), color: undefined }}>★</span>
-              Client Reviews
-            </div>
-            {worker.reviews.map((rev, i) => (
-              <div key={i} style={{ padding: '12px 14px', borderRadius: 10, border: '1px solid #fde68a', background: '#fffbeb', marginBottom: 8 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
-                  <span style={{ fontWeight: 600, fontSize: 12, color: '#111827' }}>{rev.client}</span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    {[0, 1, 2, 3, 4].map(s => <span key={s} style={{ color: s < rev.rating ? '#f59e0b' : '#d1d5db', fontSize: 12 }}>★</span>)}
-                    <span style={{ fontSize: 11, color: '#9ca3af' }}>{rev.date}</span>
-                  </div>
-                </div>
-                <p style={{ fontSize: 12, color: '#374151', margin: 0, lineHeight: 1.5 }}>{rev.comment}</p>
-              </div>
-            ))}
-          </div>
-        ) : ''}
 
         {/* Work History */}
         {worker.workHistory && worker.workHistory.length ? (
@@ -241,7 +218,9 @@ function WorkerProfile({ worker, onClose, onInvite }) {
   );
 }
 
-const DEFAULT_FILTERS = { search: '', experience: '', minRating: '0', maxRate: '500', skills: [], availability: [] };
+// The rate slider's top end means "any rate", so nobody is hidden by default.
+const MAX_RATE = 500;
+const DEFAULT_FILTERS = { search: '', experience: '', maxRate: String(MAX_RATE), skills: [], availability: [] };
 
 export default function HireGigWorkers() {
   const Store = useStore();
@@ -266,18 +245,16 @@ export default function HireGigWorkers() {
   const toggleIn = (key, value) => setFilters(f => ({ ...f, [key]: f[key].includes(value) ? f[key].filter(v => v !== value) : [...f[key], value] }));
 
   const q = filters.search.toLowerCase();
-  const minRating = parseFloat(filters.minRating);
   const maxRate = Number(filters.maxRate);
   const filtered = workers.filter(w => {
     const matchSearch = !q || w.name.toLowerCase().indexOf(q) !== -1
       || w.specialization.toLowerCase().indexOf(q) !== -1
       || w.skills.some(s => s.toLowerCase().indexOf(q) !== -1);
     const matchExp = !filters.experience || w.experience === filters.experience;
-    const matchRating = w.rating >= minRating;
-    const matchRate = w.hourlyRate <= maxRate;
+    const matchRate = maxRate >= MAX_RATE || w.hourlyRate <= maxRate;
     const matchSkills = filters.skills.length === 0 || filters.skills.some(sk => w.skills.indexOf(sk) !== -1);
     const matchAvail = filters.availability.length === 0 || filters.availability.indexOf(w.availability) !== -1;
-    return matchSearch && matchExp && matchRating && matchRate && matchSkills && matchAvail;
+    return matchSearch && matchExp && matchRate && matchSkills && matchAvail;
   });
 
   function openProfile(id) {
@@ -361,19 +338,10 @@ export default function HireGigWorkers() {
               </div>
               <div className="form-group">
                 <label className="form-label" style={{ fontSize: 12 }}>Hourly Rate (max)</label>
-                <input id="rateRange" type="range" min="0" max="500" step="5" value={filters.maxRate} onChange={e => setFilter('maxRate', e.target.value)} style={{ width: '100%' }} />
+                <input id="rateRange" type="range" min="0" max={MAX_RATE} step="5" value={filters.maxRate} onChange={e => setFilter('maxRate', e.target.value)} style={{ width: '100%' }} />
                 <p style={{ fontSize: 12, color: 'var(--muted-foreground)', marginTop: 4 }}>
-                  Up to $<span id="rateValue">{filters.maxRate}</span>/hr
+                  {Number(filters.maxRate) >= MAX_RATE ? 'Any rate' : <>Up to $<span id="rateValue">{filters.maxRate}</span>/hr</>}
                 </p>
-              </div>
-              <div className="form-group">
-                <label className="form-label" style={{ fontSize: 12 }}>Minimum Rating</label>
-                <select id="filterRating" className="form-input" value={filters.minRating} onChange={e => setFilter('minRating', e.target.value)}>
-                  <option value="0">Any</option>
-                  <option value="4">4.0+</option>
-                  <option value="4.5">4.5+</option>
-                  <option value="4.8">4.8+</option>
-                </select>
               </div>
               <div className="form-group">
                 <label className="form-label" style={{ fontSize: 12 }}>Skills</label>

@@ -1,12 +1,11 @@
 /**
  * LANNENT — AuditOffers (Audit & Dispute Fees)
  *
- * Every reviewer engagement the signed-in person pays for: the technical
- * audit a client asked for when posting a project, and the reviewer fee for
- * any dispute they raised (clients and workers alike — whoever raises a
- * dispute pays its reviewer). Each card shows the offer history and the next
- * step: counter, accept, fund the escrow, or — after a decline — choose
- * another reviewer.
+ * Every reviewer engagement the client pays for: the technical audit they
+ * asked for when posting a project, and the reviewer fee for any dispute they
+ * raised (only clients raise disputes). Each card shows the offer history and
+ * the next step: counter, accept, fund the escrow, or — after a decline —
+ * choose another reviewer.
  */
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -32,12 +31,12 @@ const STATUS_TEXT = {
   cancelled: 'cancelled',
 };
 
-/** Engagements this person pays for, newest first. */
+/** Engagements this client pays for, newest first. */
 function loadEngagements(Store, userId) {
   const tasks = Store.getTasks();
   const disputes = Store.getDisputes();
   return Store.getAuditRequests()
-    .filter(a => (a.payerId || a.clientId) === userId)
+    .filter(a => a.clientId === userId)
     .filter(a => a.status !== 'cancelled')
     // A declined one stays only while it can still be replaced.
     .filter(a => {
@@ -100,7 +99,6 @@ export default function AuditOffers() {
   const [reassigning, setReassigning] = useState(null);
 
   const engagements = loadEngagements(Store, session.userId);
-  const isClient = session.role === 'client';
 
   function counter(id) {
     const amount = parseFloat(counterValues[id]);
@@ -145,7 +143,7 @@ export default function AuditOffers() {
   return (
     <>
       <PageStyle css={pageCss} />
-      <DashboardLayout role={session.role} activePath="/audit-offers" pageTitle={isClient ? 'Audit & Dispute Fees' : 'Dispute Fees'}
+      <DashboardLayout role={session.role} activePath="/audit-offers" pageTitle="Audit & Dispute Fees"
                        pageSubtitle="Agree a price with an Expert Reviewer, then fund it into escrow">
         <div style={{ marginBottom: 16, fontSize: 13, color: 'var(--muted-foreground)' }}>
           Wallet balance: <strong style={{ color: 'var(--foreground)' }}>{money(wallet)}</strong>
@@ -155,11 +153,9 @@ export default function AuditOffers() {
             <div className="ao-empty">
               <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 6 }}>Nothing to pay a reviewer for</div>
               <div style={{ color: 'var(--muted-foreground)', fontSize: 14, marginBottom: 18 }}>
-                {isClient
-                  ? 'Turn on Technical Audit when posting a project, or raise a dispute on a milestone, to hire an Expert Reviewer.'
-                  : 'If you raise a dispute on a milestone, the reviewer fee you offer appears here.'}
+                Turn on Technical Audit when posting a project, or raise a dispute on a submitted milestone, to hire an Expert Reviewer.
               </div>
-              {isClient && <Link to="/post-task" className="btn-primary" style={{ textDecoration: 'none' }}>Post a Task</Link>}
+              <Link to="/post-task" className="btn-primary" style={{ textDecoration: 'none' }}>Post a Task</Link>
             </div>
           ) : engagements.map(a => {
             const task = Store.getTaskById(a.taskId);

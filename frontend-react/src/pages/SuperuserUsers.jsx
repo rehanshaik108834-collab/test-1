@@ -223,8 +223,11 @@ export default function SuperuserUsers() {
                   <td>
                     <div className="action-btns">
                       <button className="btn-edit" onClick={() => openEditModal(u.id)}>Edit</button>
-                      <button className="btn-suspend" onClick={() => toggleSuspend(u.id)}>{u.status === 'active' ? 'Suspend' : 'Activate'}</button>
-                      <button className="btn-delete" onClick={() => deleteUser(u.id)}>Delete</button>
+                      {/* Operations accounts (including your own) cannot be suspended or deleted. */}
+                      {u.role !== 'superuser' && <>
+                        <button className="btn-suspend" onClick={() => toggleSuspend(u.id)}>{u.status === 'active' ? 'Suspend' : 'Activate'}</button>
+                        <button className="btn-delete" onClick={() => deleteUser(u.id)}>Delete</button>
+                      </>}
                     </div>
                   </td>
                 </tr>

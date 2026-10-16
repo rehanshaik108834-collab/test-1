@@ -3,8 +3,10 @@
  * Converted from front-end/pages/client-my-projects.html.
  *
  * The client's projects as cards with tabs (All / Open / Active / Completed).
- * Each card shows progress, escrow and deadline, can be edited in a dialog,
- * and open tasks with no worker can be deleted (escrow is refunded).
+ * Each card shows progress, escrow and deadline and can be edited in a
+ * dialog. A project nobody has been hired for can be cancelled (the server's
+ * quote — fee by time live, audit and dispute escrow refunded in full — is
+ * shown first). Once a worker is hired it cannot be cancelled.
  */
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -79,12 +81,13 @@ function getProjects(Store, userId) {
       category: taskCategory(t.status),
       auditEnabled: t.auditEnabled,
       hired: !!t.workerId,
+      workerName: worker ? worker.name : '',
     };
   });
 }
 
 /** One project card. */
-function ProjectCard({ p, onEdit, onDelete }) {
+function ProjectCard({ p, onEdit, onDelete, onCancel }) {
   const navigate = useNavigate();
   const go = (e, path) => { e.stopPropagation(); navigate(path); };
   const completed = p.category === 'completed';
@@ -149,12 +152,20 @@ function ProjectCard({ p, onEdit, onDelete }) {
             Audit Offers
           </button>
         ) : p.status === 'cancelled' ? (
-          <div style={{ ...CARD_BUTTON_STYLE, cursor: 'default', color: 'var(--muted-foreground)' }}>Cancelled — budget returned</div>
+          <div style={{ ...CARD_BUTTON_STYLE, cursor: 'default', color: 'var(--muted-foreground)' }}>Cancelled — escrow returned</div>
         ) : p.category === 'open' ? (
-          <button onClick={e => go(e, '/worker-applications')} style={CARD_BUTTON_STYLE}>
-            <Icon name="users" style={{ width: 14, height: 14 }} />
-            View Proposals
-          </button>
+          <>
+            <button onClick={e => go(e, '/worker-applications')} style={CARD_BUTTON_STYLE}>
+              <Icon name="users" style={{ width: 14, height: 14 }} />
+              View Proposals
+            </button>
+            {!p.hired ? (
+              <button onClick={e => { e.stopPropagation(); onCancel(p.id); }} style={{ ...CARD_BUTTON_STYLE, color: '#b91c1c', borderColor: '#fecaca' }}>
+                <Icon name="x-circle" style={{ width: 14, height: 14 }} />
+                Cancel
+              </button>
+            ) : null}
+          </>
         ) : completed ? (
           <button onClick={e => go(e, `/project-milestone-board?id=${p.id}`)} style={CARD_BUTTON_STYLE}>
             <Icon name="eye" style={{ width: 14, height: 14 }} />
@@ -225,7 +236,6 @@ export default function ClientMyProjects() {
     const task = Store.getTaskById(editingTaskId);
     const patch = { title, deadline: edit.deadline || undefined };
     if (editable(task)) { patch.category = edit.category; patch.budget = budget; }
-    if (edit.status === 'cancelled' && task.status !== 'cancelled') patch.status = 'cancelled';
     try {
       Store.updateTask(editingTaskId, patch);
     } catch (e) {
@@ -235,20 +245,65 @@ export default function ClientMyProjects() {
     closeEditModal();
     refreshView();
     const change = budget - task.budget;
-    Validate.toast(patch.status === 'cancelled' ? `Project cancelled — $${task.budget.toLocaleString()} returned to your wallet.`
-      : editable(task) && change > 0 ? `Saved. $${change.toLocaleString()} more moved into escrow.`
+    Validate.toast(editable(task) && change > 0 ? `Saved. $${change.toLocaleString()} more moved into escrow.`
       : editable(task) && change < 0 ? `Saved. $${(-change).toLocaleString()} returned to your wallet.`
       : 'Project updated.', 'success');
+  }
+
+  /** The server's quote, spelled out for the confirm dialog. */
+  function quoteText(q) {
+    const money = n => '$' + Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
+    const parts = [];
+    parts.push(q.fee > 0
+      ? `A cancellation fee of ${money(q.fee)} (${q.rate}% of the ${money(q.base)} budget) applies, because the project has been live for ${q.hoursLive >= 48 ? Math.floor(q.hoursLive / 24) + ' days' : Math.round(q.hoursLive) + ' hours'}.`
+      : 'No cancellation fee applies.');
+    parts.push(`You get back ${money(q.refund.total)}: ${money(q.refund.project)} of the project budget`
+      + (q.refund.audit ? `, ${money(q.refund.audit)} technical-audit escrow` : '')
+      + (q.refund.dispute ? `, ${money(q.refund.dispute)} dispute escrow` : '') + '.');
+    return parts.join(' ');
+  }
+
+  function quoteFor(id) {
+    try {
+      return Store.getCancellationQuote(id);
+    } catch (e) {
+      Validate.toast(e.message, 'error');
+      return null;
+    }
+  }
+
+  function cancelProject(id) {
+    const task = Store.getTaskById(id);
+    if (!task) return;
+    const q = quoteFor(id);
+    if (!q) return;
+    if (!q.cancellable) { Validate.toast(q.reason, 'error'); return; }
+    Validate.confirm(`Cancel "${task.title}"? ${quoteText(q)} Open proposals are closed. This cannot be undone.`, () => {
+      let result;
+      try {
+        result = Store.cancelTask(id);
+      } catch (e) {
+        Validate.toast(e.message, 'error');
+        return;
+      }
+      refreshView();
+      const fee = result?.cancellation?.fee?.fee || 0;
+      Validate.toast(fee ? `Project cancelled. $${fee} fee kept; the rest is back in your wallet.` : 'Project cancelled and your money returned.', 'success');
+    });
   }
 
   function deleteTask(id) {
     const task = Store.getTaskById(id);
     if (!task) return;
     if (task.workerId) {
-      Validate.toast('A project with a hired worker cannot be deleted.', 'error');
+      Validate.toast('A worker has been hired, so this project can no longer be cancelled or deleted.', 'error');
       return;
     }
-    Validate.confirm(`Delete "${task.title}"? Anything still held in escrow for it is returned to your wallet. This cannot be undone.`, () => {
+    // Deleting a live project is a cancellation too, so it carries the same fee.
+    const q = task.status === 'open' ? quoteFor(id) : null;
+    if (task.status === 'open' && !q) return;
+    const detail = q ? quoteText(q) : 'Anything still held in escrow for it is returned to your wallet.';
+    Validate.confirm(`Delete "${task.title}"? ${detail} This cannot be undone.`, () => {
       try {
         Store.deleteTask(id);
       } catch (e) {
@@ -298,11 +353,12 @@ export default function ClientMyProjects() {
             </div>
           ) : (
             <div className="projects-grid">
-              {list.map(p => <ProjectCard key={p.id} p={p} onEdit={openEditModal} onDelete={deleteTask} />)}
+              {list.map(p => <ProjectCard key={p.id} p={p} onEdit={openEditModal} onDelete={deleteTask} onCancel={cancelProject} />)}
             </div>
           )}
         </div>
       </DashboardLayout>
+
 
       {/* Edit modal (lives at the end of <body>, as before) */}
       {createPortal(
@@ -342,11 +398,13 @@ export default function ClientMyProjects() {
             <div className="modal-field">
               <label>Status</label>
               {' '}
-              <select id="editStatus" value={edit.status} onChange={setEditField('status')} disabled={!editingTask || editingTask.status !== 'open' || !!editingTask.workerId}>
+              <select id="editStatus" value={edit.status} disabled>
                 <option value={editingTask ? editingTask.status : 'open'}>{editingTask ? editingTask.status.replace(/-/g, ' ') : 'Open'}</option>
-                {editingTask && editingTask.status === 'open' && !editingTask.workerId ? <option value="cancelled">Cancel this project (budget returned)</option> : null}
               </select>
-              <div style={{ fontSize: 12, color: 'var(--muted-foreground)', marginTop: 4 }}>Status follows the work — it starts when you hire and completes when the last milestone is settled.</div>
+              <div style={{ fontSize: 12, color: 'var(--muted-foreground)', marginTop: 4 }}>
+                Status follows the work — it starts when you hire and completes when the last milestone is settled.
+                {editingTask && editingTask.status === 'open' && !editingTask.workerId ? ' To cancel before anyone is hired, use Cancel on the project card.' : ''}
+              </div>
             </div>
             <div className="modal-actions">
               <button className="btn-cancel-modal" onClick={closeEditModal}>Cancel</button>

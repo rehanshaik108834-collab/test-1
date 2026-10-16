@@ -142,13 +142,12 @@ export class ProposalsService {
       status: 'pending',
       createdAt: new Date().toISOString().slice(0, 10),
       skills: dto.skills || worker.skills || [],
-      // Profile figures come from the record, not the request — a bid could
-      // otherwise claim a 5.0 rating and 500 completed projects.
+      // Identity comes from the record, not the request. Rating and project
+      // counts are read live from the worker's profile wherever a bid is
+      // shown, so a bid neither claims nor freezes them.
       workerName: worker.name,
       avatar: worker.avatar,
       avatarColor: worker.avatarColor,
-      rating: worker.rating,
-      completedProjects: worker.completedProjects,
     };
     const saved = this.proposalsRepository.insert(prop);
     if (type === 'invitation') {
@@ -228,6 +227,11 @@ export class ProposalsService {
    */
   private assignAndFund(prop: any) {
     const task = this.tasksService.findById(prop.taskId);
+    // Payment happens milestone by milestone; a contract with none could never
+    // pay out or complete, and its budget would sit in escrow indefinitely.
+    if (!this.milestonesService.findAll({ taskId: task.id }).length) {
+      throw new BadRequestException('Add at least one milestone to this project before hiring — that is how the worker gets paid.');
+    }
     this.ledger.chargeContractFees(task.id, task.clientId, task.budget, task.title);
     this.tasksService.assignWorker(prop.taskId, prop.workerId);
 

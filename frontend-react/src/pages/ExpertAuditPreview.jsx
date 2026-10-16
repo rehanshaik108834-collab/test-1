@@ -50,7 +50,7 @@ function MilestoneRow({ m, a, session, disputedId }) {
     );
   }
   const audited = !!(a.auditProgress && a.auditProgress.auditedMilestoneIds.includes(m.id));
-  const submitted = ['submitted', 'review', 'disputed'].includes(m.status) || (!!m.deliverable && m.status !== 'refunded');
+  const submitted = ['submitted', 'review', 'disputed'].includes(m.status) || !!m.deliverable;
   const engaged = a.status === 'in-progress' || a.status === 'paid';
   const mine = session && a.expertId === session.userId;
   const reportUrl = `/expert-report-audit?id=${a.id}&milestoneId=${m.id}`;
@@ -128,7 +128,7 @@ export default function ExpertAuditPreview() {
   const home = pv.kind === 'dispute-audit' ? '/expert-dispute-cases' : '/expert-audit-requests';
   const live = (pv.offers || []).find(o => o.status === 'pending');
   const canAccept = live && live.offeredBy !== 'expert';
-  const payerLabel = pv.payer && pv.payer.role === 'worker' ? 'Worker' : 'Client';
+  const payerLabel = 'Client'; // only clients pay reviewers
   const negotiating = ['preview-sent', 'negotiating'].includes(a.status);
 
   function quote() {
@@ -235,7 +235,7 @@ export default function ExpertAuditPreview() {
                     <PersonAvatar background={pv.worker.avatarColor}>{pv.worker.avatar}</PersonAvatar>
                     <div>
                       <div style={{ fontWeight: 600, fontSize: 14 }}>{pv.worker.name}</div>
-                      <div style={{ fontSize: 12, color: 'var(--muted-foreground)' }}>{`Rating ${pv.worker.rating || '—'}`}</div>
+                      <div style={{ fontSize: 12, color: 'var(--muted-foreground)' }}>{`${pv.worker.completedProjects || 0} project${pv.worker.completedProjects === 1 ? '' : 's'} completed on Lannent`}</div>
                     </div>
                   </div>
                 </>

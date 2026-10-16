@@ -22,7 +22,7 @@ import { useValidation } from '../context/ValidationContext';
 import pageCss from './WorkerMilestoneBoard.css?raw';
 
 const PRIORITY_COLORS = { High: '#ef4444', Medium: '#f59e0b', Low: '#10b981' };
-const DONE_STATUSES = ['done', 'approved', 'completed', 'audit-passed', 'refunded'];
+const DONE_STATUSES = ['done', 'approved', 'completed', 'audit-passed'];
 
 /** The worker's milestones grouped into the four board columns. */
 function loadWorkerMilestones(Store, Auth, taskId) {
@@ -107,9 +107,7 @@ function MilestoneCard({ m, col, onChange }) {
       </div>
       {col === 'done' ? (
         <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid rgba(0,0,0,0.05)', textAlign: 'center' }}>
-          {m.status === 'refunded'
-            ? <span style={{ fontSize: 12, color: '#64748b', fontWeight: 600 }}>Refunded to the client after a dispute</span>
-            : <span style={{ fontSize: 12, color: '#10b981', fontWeight: 600 }}>✓ Paid</span>}
+          <span style={{ fontSize: 12, color: '#10b981', fontWeight: 600 }}>✓ Paid</span>
         </div>
       ) : ''}
       {m.revisionNote ? (
@@ -167,7 +165,7 @@ export default function WorkerMilestoneBoard() {
       : { cls: 'badge badge-blue', text: 'In Progress' };
   const doneMs = milestones.done.length;
   const totalBudget = sumAmounts(allMs);
-  const earnedAmt = sumAmounts(milestones.done.filter(m => m.status !== 'refunded'));
+  const earnedAmt = sumAmounts(milestones.done);
   const escrowAmt = taskId ? (Store.getMyEscrow().projects.find(p => p.taskId === taskId)?.projectHeld || 0) : totalBudget - earnedAmt;
   const taskDeadline = task && task.deadline ? new Date(task.deadline).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—';
   const progressPct = allMs.length ? Math.round((doneMs / allMs.length) * 100) : 0;

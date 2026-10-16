@@ -36,18 +36,29 @@ export class TasksController {
 
   @Post()
   @ApiHeader({ name: 'role', required: true, description: 'User role required' })
-  @Roles('client', 'superuser')
-  @ApiOperation({ summary: 'Create a new task (a client creates their own; staff name the client)' })
+  @Roles('client')
+  @ApiOperation({ summary: 'Post a new project (clients only — the budget comes out of their own wallet)' })
   create(@Body() dto: CreateTaskDto, @CurrentActor() actor: Actor) {
     return this.tasksService.create(dto, actor);
   }
 
   @Patch(':id')
   @ApiHeader({ name: 'role', required: true, description: 'User role required' })
-  @Roles('client', 'superuser')
+  @Roles('client')
   @ApiOperation({ summary: 'Edit your own task' })
   update(@Param('id') id: string, @Body() dto: UpdateTaskDto, @CurrentActor() actor: Actor) {
     return this.tasksService.update(id, dto, actor);
+  }
+
+  @Get(':id/cancellation-quote')
+  @ApiHeader({ name: 'role', required: true, description: 'User role required' })
+  @Roles('client', 'superuser')
+  @ApiOperation({
+    summary: 'What cancelling this project would cost and refund',
+    description: 'Only a project nobody has been hired for can be cancelled. The fee depends on how long it has been live.',
+  })
+  cancellationQuote(@Param('id') id: string, @CurrentActor() actor: Actor) {
+    return this.tasksService.cancellationQuote(id, actor);
   }
 
   @Post(':id/cancel-draft')

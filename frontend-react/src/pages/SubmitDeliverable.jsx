@@ -339,7 +339,7 @@ export default function SubmitDeliverable() {
 
   const blocked = !milestone ? 'No milestone was selected. Open Submit Deliverable from your milestone board.'
     : milestone.status === 'disputed' ? 'This milestone is under dispute. You can resubmit once the reviewer gives their verdict.'
-    : ['completed', 'approved', 'refunded'].includes(milestone.status) ? 'This milestone has already been settled.'
+    : ['completed', 'approved'].includes(milestone.status) ? 'This milestone has already been settled.'
     : null;
   if (blocked) {
     return (

@@ -185,6 +185,8 @@ export class LedgerRepository {
       } else if (tx.type === 'dispute-fee-release') {
         this.addDisputeHeld(tx.taskId, -gross);
         if (tx.auditRequestId) this.markAuditPaid(tx.auditRequestId);
+      } else if (tx.type === 'cancellation-fee') {
+        this.addHeld(tx.taskId, 'project', -gross);
       } else if (tx.type === 'refund') {
         // Seed refunds name the bucket they came out of; default is project.
         this.addHeld(tx.taskId, (tx.bucket as EscrowBucket) || 'project', -gross);

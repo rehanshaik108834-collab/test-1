@@ -40,6 +40,9 @@ export function describeTx(t, viewerId) {
       return toMe
         ? { label: 'Dispute review fee received', amount: net, sign: 1, tone: 'in', fee: t.feeAmount }
         : { label: 'Dispute fee paid to the reviewer', amount: gross, sign: 0, tone: 'released' };
+    case 'cancellation-fee':
+      // Kept out of the project's escrow — the wallet itself does not change.
+      return { label: 'Cancellation fee (kept from escrow)', amount: t.amount || 0, sign: 0, tone: 'fee' };
     case 'refund':
       return toMe
         ? { label: t.bucket === 'dispute' ? 'Dispute fee refunded' : t.bucket === 'audit' ? 'Audit fee refunded' : 'Refund from escrow', amount: t.amount || 0, sign: 1, tone: 'refund' }

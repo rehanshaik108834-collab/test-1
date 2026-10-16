@@ -31,6 +31,10 @@ function serverShape(c) {
     withdrawalFixed: c.withdrawal.fixed,
     workerServicePercents: c.workerService.map(t => t.percent),
     contractInitiationFees: c.contractInitiation.map(t => t.fee),
+    cancellationFreeHours: c.cancellation.freeHours,
+    cancellationEarlyDays: c.cancellation.earlyDays,
+    cancellationEarlyPercent: c.cancellation.earlyPercent,
+    cancellationLatePercent: c.cancellation.latePercent,
   };
 }
 
@@ -41,6 +45,8 @@ function formValuesFrom(c) {
     depositPercent: s.depositPercent, depositFixed: s.depositFixed,
     marketplacePercent: s.clientMarketplacePercent, expertPercent: s.expertServicePercent,
     withdrawalPercent: s.withdrawalPercent, withdrawalFixed: s.withdrawalFixed,
+    cancelFreeHours: s.cancellationFreeHours, cancelEarlyDays: s.cancellationEarlyDays,
+    cancelEarlyPercent: s.cancellationEarlyPercent, cancelLatePercent: s.cancellationLatePercent,
   };
   s.workerServicePercents.forEach((p, i) => { values['workerTier' + i] = p; });
   s.contractInitiationFees.forEach((f, i) => { values['initBand' + i] = f; });
@@ -49,16 +55,16 @@ function formValuesFrom(c) {
 }
 
 /** One labelled rate input ("$ [ 0.30 ]" or "[ 2.9 ] %"). */
-function NumRow({ id, label, note, unit, value, onChange }) {
+function NumRow({ id, label, note, unit, value, onChange, step = '0.01' }) {
   return (
     <div className="fc-row">
       <label htmlFor={id}>
         {label}
         <span className="fc-note">{note}</span>
       </label>
-      <span className="fc-unit">{unit === '%' ? '' : '$'}</span>
-      <input className="fc-input" id={id} type="number" min="0" step="0.01" value={value} onChange={e => onChange(id, e.target.value)} />
-      <span className="fc-unit">{unit === '%' ? '%' : ''}</span>
+      <span className="fc-unit">{unit === '$' ? '$' : ''}</span>
+      <input className="fc-input" id={id} type="number" min="0" step={step} value={value} onChange={e => onChange(id, e.target.value)} />
+      <span className="fc-unit">{unit === '$' ? '' : unit}</span>
     </div>
   );
 }
@@ -86,11 +92,17 @@ function WorkedExample({ draft }) {
       {row('Processing fee', `−${money(depFee)}`, 'fee')}
       {row('Credited to wallet', money(1000 - depFee), 'net')}
 
-      <div className="fc-ex-title">Funding a $2,500 project</div>
-      {row('Into escrow', money(2500))}
-      {row('Marketplace fee', `+${money(mkt)}`, 'fee')}
-      {row('Contract initiation', `+${money(init)}`, 'fee')}
-      {row('Client pays', money(2500 + mkt + init), 'net')}
+      <div className="fc-ex-title">A $2,500 project</div>
+      {row('Held in escrow when posted', money(2500))}
+      {row('Marketplace fee (at hire)', `+${money(mkt)}`, 'fee')}
+      {row('Contract initiation (at hire)', `+${money(init)}`, 'fee')}
+      {row('Client pays in total', money(2500 + mkt + init), 'net')}
+
+      <div className="fc-ex-title">Cancelling that project before anyone is hired</div>
+      {row(`Within ${draft.cancellationFreeHours} hours of going live`, money(0), 'fee')}
+      {row(`Up to ${draft.cancellationEarlyDays} days live (${draft.cancellationEarlyPercent}%)`, `−${money(r2(2500 * draft.cancellationEarlyPercent / 100))}`, 'fee')}
+      {row(`After that (${draft.cancellationLatePercent}%)`, `−${money(r2(2500 * draft.cancellationLatePercent / 100))}`, 'fee')}
+      {row('Audit / dispute escrow', 'refunded in full', 'net')}
 
       <div className="fc-ex-title">Releasing an $800 milestone</div>
       {row('From escrow', money(800))}
@@ -126,7 +138,7 @@ export default function AdminFeeConfig() {
         <EmptyState
           role={role} activePath="/admin-fee-config" pageTitle="Fee Configuration"
           message="Fee rates could not be loaded. Check that the API is running, then reload."
-          linkHref="/admin-dashboard" linkLabel="Back to Dashboard"
+          linkHref="/admin-revenue" linkLabel="Back to Revenue"
         />
       </>
     );
@@ -143,8 +155,15 @@ export default function AdminFeeConfig() {
     withdrawalFixed: num('withdrawalFixed'),
     workerServicePercents: cfg.workerService.map((_, i) => num('workerTier' + i)),
     contractInitiationFees: cfg.contractInitiation.map((_, i) => num('initBand' + i)),
+    cancellationFreeHours: num('cancelFreeHours'),
+    cancellationEarlyDays: num('cancelEarlyDays'),
+    cancellationEarlyPercent: num('cancelEarlyPercent'),
+    cancellationLatePercent: num('cancelLatePercent'),
   };
   const bad = Object.values(draft).flat().some(v => typeof v !== 'number' || isNaN(v) || v < 0);
+  const percentTooHigh = [draft.depositPercent, draft.clientMarketplacePercent, draft.expertServicePercent, draft.withdrawalPercent,
+    ...draft.workerServicePercents].some(p => p > 100) || draft.cancellationEarlyPercent > 50 || draft.cancellationLatePercent > 50;
+  const windowWrong = draft.cancellationEarlyDays * 24 < draft.cancellationFreeHours;
   const changed = JSON.stringify(draft) !== JSON.stringify(serverShape(cfg));
   // While a rate is invalid the "Unsaved changes" note keeps its last value (as before).
   if (!bad) dirtyNote.current = changed ? 'Unsaved changes' : '';
@@ -153,6 +172,8 @@ export default function AdminFeeConfig() {
 
   function saveConfig() {
     if (bad) { Validate.toast('Every rate must be zero or greater.', 'error'); return; }
+    if (percentTooHigh) { Validate.toast('Percentages cannot exceed 100% (cancellation fees: 50%).', 'error'); return; }
+    if (windowWrong) { Validate.toast('The early-cancellation window must end after the free window.', 'error'); return; }
     let result;
     try {
       result = Store.updateFeeConfig(draft);
@@ -212,7 +233,19 @@ export default function AdminFeeConfig() {
                   unit="%"
                 />
               ))}
-              <NumRow {...rowProps('expertPercent')} label="Reviewer commission" note="Percentage of an agreed audit fee" unit="%" />
+              <NumRow {...rowProps('expertPercent')} label="Reviewer commission" note="Percentage of an agreed audit or dispute fee" unit="%" />
+            </div>
+
+            <div className="fc-card">
+              <h2>Cancelling a project</h2>
+              <p className="hint">
+                A client can cancel only before a worker is hired. The fee is a share of the project budget (the highest it was ever set to),
+                by how long the project has been live. Technical-audit and dispute escrow is always refunded in full; a draft that never went live is free.
+              </p>
+              <NumRow {...rowProps('cancelFreeHours')} label="Free cancellation window" note="Hours after the project goes live" unit="hours" step="1" />
+              <NumRow {...rowProps('cancelEarlyDays')} label="Early window ends after" note="Days live — the early rate applies until then" unit="days" step="1" />
+              <NumRow {...rowProps('cancelEarlyPercent')} label="Early cancellation fee" note="Percentage of the budget inside the early window" unit="%" />
+              <NumRow {...rowProps('cancelLatePercent')} label="Late cancellation fee" note="Percentage of the budget after the early window" unit="%" />
             </div>
 
             <div className="fc-card">

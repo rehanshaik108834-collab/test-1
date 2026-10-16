@@ -354,7 +354,6 @@ export default function ReviewDeliverable() {
                   {milestone.status === 'revision-needed' ? 'You requested changes. The worker will resubmit.'
                     : milestone.status === 'disputed' ? 'This milestone is under dispute. The reviewer\'s verdict will settle it.'
                     : ['completed', 'approved'].includes(milestone.status) ? 'This milestone has been approved and paid.'
-                    : milestone.status === 'refunded' ? 'This milestone was refunded to you after a dispute.'
                     : 'The worker has not submitted this milestone yet.'}
                 </div>
               </div>

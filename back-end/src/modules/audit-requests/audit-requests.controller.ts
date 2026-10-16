@@ -50,14 +50,14 @@ export class AuditRequestsController {
 
   @Post()
   @ApiHeader({ name: 'role', required: true, description: 'User role required' })
-  @Roles('client', 'superuser')
+  @Roles('client')
   @ApiOperation({ summary: 'Create an audit request' })
   create(@Body() dto: CreateAuditRequestDto, @CurrentActor() actor: Actor) {
     return this.auditRequestsService.createForClient(dto, actor);
   }
 
   @Post(':id/reassign')
-  @Roles('client', 'worker')
+  @Roles('client')
   @ApiOperation({ summary: 'After a decline, ask a different reviewer' })
   reassign(@Param('id') id: string, @Body() dto: ReassignAuditDto, @CurrentActor() actor: Actor) {
     return this.auditRequestsService.reassign(id, dto, actor);
@@ -65,7 +65,7 @@ export class AuditRequestsController {
 
   @Post(':id/offers')
   @ApiHeader({ name: 'role', required: true, description: 'User role required' })
-  @Roles('client', 'worker', 'expert')
+  @Roles('client', 'expert')
   @ApiOperation({ summary: 'Make or counter an offer for the audit fee' })
   addOffer(@Param('id') id: string, @Body() dto: CreateOfferDto, @CurrentActor() actor: Actor) {
     return this.auditRequestsService.addOffer(id, dto, actor);
@@ -73,7 +73,7 @@ export class AuditRequestsController {
 
   @Post(':id/offers/:offerId/accept')
   @ApiHeader({ name: 'role', required: true, description: 'User role required' })
-  @Roles('client', 'worker', 'expert')
+  @Roles('client', 'expert')
   @ApiOperation({ summary: 'Accept an outstanding offer, fixing the agreed fee' })
   acceptOffer(@Param('id') id: string, @Param('offerId') offerId: string, @CurrentActor() actor: Actor) {
     return this.auditRequestsService.acceptOffer(id, offerId, actor);
@@ -81,7 +81,7 @@ export class AuditRequestsController {
 
   @Post(':id/fund')
   @ApiHeader({ name: 'role', required: true, description: 'User role required' })
-  @Roles('client', 'worker')
+  @Roles('client')
   @ApiOperation({ summary: 'Move the agreed fee into escrow' })
   fund(@Param('id') id: string, @CurrentActor() actor: Actor) {
     return this.auditRequestsService.fund(id, actor);
@@ -89,7 +89,7 @@ export class AuditRequestsController {
 
   @Post(':id/accept')
   @ApiHeader({ name: 'role', required: true, description: 'User role required' })
-  @Roles('expert', 'superuser')
+  @Roles('expert')
   @ApiOperation({
     summary: 'Expert takes the engagement',
     description: 'For a project audit this also releases the project from draft.',
@@ -100,7 +100,7 @@ export class AuditRequestsController {
 
   @Post(':id/decline')
   @ApiHeader({ name: 'role', required: true, description: 'User role required' })
-  @Roles('expert', 'superuser')
+  @Roles('expert')
   @ApiOperation({ summary: 'Expert passes on the engagement' })
   decline(@Param('id') id: string, @Body() dto: DeclineAuditDto, @CurrentActor() actor: Actor) {
     return this.auditRequestsService.decline(id, dto, actor);

@@ -57,13 +57,13 @@ function computeWalletData(Store, userId) {
   const walletBalance = user?.walletBalance || 0;
   const mineOut = t => t.fromId === userId;
   const deposits = sum(allTxs.filter(t => t.type === 'deposit' && t.toId === userId), t => t.netAmount ?? t.amount);
-  const fees = sum(allTxs.filter(t => t.type === 'platform-fee' && mineOut(t)), t => t.amount);
+  // Marketplace/contract fees, plus any cancellation fee kept from escrow.
+  const fees = sum(allTxs.filter(t => ['platform-fee', 'cancellation-fee'].includes(t.type) && mineOut(t)), t => t.amount);
   // Paid out to workers and reviewers from this client's escrow.
   const released = sum(
     allTxs.filter(t => clientTaskIds.has(t.taskId) && (
-      t.type === 'milestone-release' || t.type === 'audit-release'
-      // A dispute fee counts only when this client was the one who paid it.
-      || (t.type === 'dispute-fee-release' && allTxs.some(l => l.type === 'dispute-escrow-lock' && l.taskId === t.taskId && l.fromId === userId))
+      // Only clients pay reviewers, so every audit and dispute fee on their projects is theirs.
+      ['milestone-release', 'audit-release', 'dispute-fee-release'].includes(t.type)
     )),
     t => t.grossAmount ?? t.amount,
   );

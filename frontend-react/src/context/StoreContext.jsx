@@ -657,12 +657,31 @@ const Store = (() => {
 
   function deleteTask(id) {
     const task = _cache.tasks.find(t => t.id === id);
-    _write('DELETE', `${API}/tasks/${id}`);
+    const result = _write('DELETE', `${API}/tasks/${id}`);
     _cache.tasks = _cache.tasks.filter(t => t.id !== id);
     _cache.milestones = _cache.milestones.filter(m => m.taskId !== id);
     if (task) _refreshUser(task.clientId);
     _refreshTransactions();
+    return result;
   }
+
+  /** What cancelling (or deleting) a project would cost and refund, from the server. */
+  function getCancellationQuote(id) {
+    return _write('GET', `${API}/tasks/${id}/cancellation-quote`);
+  }
+
+  /** Cancels an open project nobody was hired for; the server keeps the fee and refunds the rest. */
+  function cancelTask(id) {
+    const result = _write('PATCH', `${API}/tasks/${id}`, { status: 'cancelled' });
+    const { cancellation: _cancellation, ...task } = result || {};
+    const idx = _cache.tasks.findIndex(t => t.id === id);
+    if (idx >= 0) _cache.tasks[idx] = task;
+    refresh('auditRequests', 'proposals');
+    _refreshUser(task.clientId);
+    _refreshTransactions();
+    return result;
+  }
+
 
   // ─── MILESTONES ───────────────────────────────────────────────────────────
   function getMilestones() { return _cache.milestones; }
@@ -931,6 +950,7 @@ const Store = (() => {
     getRevenueSummary, getRevenueByFeeType, getRevenueTimeseries, getRevenueByUser,
     getRevenueDistribution, getRevenueByProject, getProjectBreakdown, getFeeConfig, updateFeeConfig,
     getTasks, getTaskById, getTasksByClient, getTasksByWorker, getOpenTasks, createTask, updateTask, deleteTask,
+    getCancellationQuote, cancelTask,
     getMilestones, getMilestonesByTask, getMilestoneById, createMilestone, updateMilestone, submitDeliverable, approveDeliverable,
     getProposals, getProposalsByTask, getProposalsByWorker, getInvitationsByWorker, createProposal, updateProposal, hireWorker, acceptInvitation, declineInvitation,
     getAuditRequests, getAuditRequestById, createAuditRequest, updateAuditRequest,

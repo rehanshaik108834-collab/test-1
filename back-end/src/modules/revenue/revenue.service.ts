@@ -191,6 +191,12 @@ export class RevenueService {
         .filter((r) => ['worker-service', 'expert-service'].includes(r.feeType))
         .reduce((a, r) => a + r.amount, 0),
     );
+    const cancellationFees = round2(
+      this.ledger
+        .getRevenue()
+        .filter((r) => r.feeType === 'cancellation')
+        .reduce((a, r) => a + r.amount, 0),
+    );
     const stillHeld = this.ledger.totalHeld();
 
     const segments = [
@@ -198,6 +204,7 @@ export class RevenueService {
       { label: 'Paid to reviewers (audits)', amount: expertNet },
       { label: 'Paid to reviewers (disputes)', amount: disputeNet },
       { label: 'Platform commission', amount: escrowFees },
+      { label: 'Cancellation fees', amount: cancellationFees },
       { label: 'Refunded to clients', amount: refunded },
       { label: 'Still held in escrow', amount: stillHeld },
     ];
@@ -277,8 +284,6 @@ export class RevenueService {
     const escrowLocks = txs.filter((t: any) => t.type === 'escrow-lock');
     const auditLocks = txs.filter((t: any) => t.type === 'audit-escrow-lock');
     const disputeLocks = txs.filter((t: any) => t.type === 'dispute-escrow-lock');
-    const clientDisputeLocks = disputeLocks.filter((t: any) => t.fromId === task.clientId);
-    const workerDisputeLocks = disputeLocks.filter((t: any) => t.fromId !== task.clientId);
     const releases = txs.filter((t: any) => t.type === 'milestone-release');
     const refunds = txs.filter((t: any) => t.type === 'refund');
 
@@ -290,7 +295,8 @@ export class RevenueService {
     const initiation = feeOf('contract-initiation');
     const workerFees = feeOf('worker-service');
     const expertFees = feeOf('expert-service');
-    const platformRevenue = round2(marketplace + initiation + workerFees + expertFees);
+    const cancellationFee = feeOf('cancellation');
+    const platformRevenue = round2(marketplace + initiation + workerFees + expertFees + cancellationFee);
 
     return {
       project: {
@@ -304,17 +310,13 @@ export class RevenueService {
       clientPaid: {
         intoProjectEscrow: sum(escrowLocks, net),
         intoAuditEscrow: sum(auditLocks, net),
-        intoDisputeEscrow: sum(clientDisputeLocks, net),
+        // Only clients raise disputes, so only clients pay dispute reviewers.
+        intoDisputeEscrow: sum(disputeLocks, net),
         marketplaceFee: marketplace,
         initiationFee: initiation,
         total: round2(
-          sum(escrowLocks, net) + sum(auditLocks, net) + sum(clientDisputeLocks, net) + marketplace + initiation,
+          sum(escrowLocks, net) + sum(auditLocks, net) + sum(disputeLocks, net) + marketplace + initiation,
         ),
-      },
-
-      // A worker who raises a dispute pays its reviewer.
-      workerPaid: {
-        intoDisputeEscrow: sum(workerDisputeLocks, net),
       },
 
       // What the gig worker took out
@@ -352,6 +354,7 @@ export class RevenueService {
         initiationFee: initiation,
         workerServiceFees: workerFees,
         reviewerCommission: expertFees,
+        cancellationFee,
         total: platformRevenue,
       },
 
@@ -372,6 +375,7 @@ export class RevenueService {
       workerService: FEE_CONFIG.workerService,
       expertService: FEE_CONFIG.expertService,
       withdrawal: FEE_CONFIG.withdrawal,
+      cancellation: FEE_CONFIG.cancellation,
     };
   }
 
@@ -406,6 +410,11 @@ export class RevenueService {
         }
       });
     }
+    const freeHours = dto.cancellationFreeHours ?? FEE_CONFIG.cancellation.freeHours;
+    const earlyDays = dto.cancellationEarlyDays ?? FEE_CONFIG.cancellation.earlyDays;
+    if (earlyDays * 24 < freeHours) {
+      throw new BadRequestException('The early-cancellation window must end after the free window.');
+    }
     if (dto.contractInitiationFees) {
       if (!Array.isArray(dto.contractInitiationFees) || dto.contractInitiationFees.length !== bands) {
         throw new BadRequestException(`Expected ${bands} initiation bands.`);
@@ -427,6 +436,10 @@ export class RevenueService {
     if (dto.withdrawalFixed !== undefined) FEE_CONFIG.withdrawal.fixed = dto.withdrawalFixed;
     dto.workerServicePercents?.forEach((p, i) => { FEE_CONFIG.workerService[i].percent = p; });
     dto.contractInitiationFees?.forEach((f, i) => { FEE_CONFIG.contractInitiation[i].fee = f; });
+    if (dto.cancellationFreeHours !== undefined) FEE_CONFIG.cancellation.freeHours = dto.cancellationFreeHours;
+    if (dto.cancellationEarlyDays !== undefined) FEE_CONFIG.cancellation.earlyDays = dto.cancellationEarlyDays;
+    if (dto.cancellationEarlyPercent !== undefined) FEE_CONFIG.cancellation.earlyPercent = dto.cancellationEarlyPercent;
+    if (dto.cancellationLatePercent !== undefined) FEE_CONFIG.cancellation.latePercent = dto.cancellationLatePercent;
 
     const after = this.getFeeConfig();
     this.audit.record({

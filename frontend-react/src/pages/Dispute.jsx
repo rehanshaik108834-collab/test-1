@@ -78,13 +78,16 @@ export default function Dispute() {
   usePageTitle('Raise Dispute — Lannent');
   const navigate = useNavigate();
   const session = Auth.getCurrentUser();
+  // Only clients raise disputes (the route is client-only too).
   const userRole = session?.role || 'client';
-  const workroomURL = userRole === 'worker' ? '/worker-workroom' : '/project-workroom';
+  const workroomURL = '/project-workroom';
 
   const [searchParams] = useSearchParams();
   const [target] = useState(() => loadTarget(Store, searchParams.get('milestoneId')));
   const openDispute = target ? Store.getDisputes().find(d => d.milestoneId === target.id && d.status === 'open') : null;
-  const settled = target && ['completed', 'approved', 'refunded'].includes(target.status);
+  const settled = target && ['completed', 'approved'].includes(target.status);
+  // There is only something to dispute once the worker has handed work in.
+  const notSubmitted = target && !['submitted', 'review'].includes(target.status);
   const backURL = target ? `${workroomURL}?id=${target.taskId}` : workroomURL;
   const targetTask = target ? target.task : null;
   // A project audited at creation already has its reviewer: that is who
@@ -109,7 +112,7 @@ export default function Dispute() {
       return;
     }
 
-    // Whoever raises the dispute pays the reviewer to arbitrate it.
+    // The client raises the dispute and pays the reviewer to arbitrate it.
     const fee = parseFloat(reviewerFee);
     if (!(fee >= 1)) {
       showToast('Enter the fee you will pay the reviewer (at least $1).', 'warn');
@@ -147,10 +150,8 @@ export default function Dispute() {
 
     // Notifications render as text, so they are not HTML-escaped here —
     // escaping them showed "&amp;" in the dropdown.
-    showToast('Dispute raised. Agree the reviewer\'s fee and fund it under Dispute Fees.', 'success');
-    // The client pays the reviewer, so they go where the fee is agreed. A
-    // worker was sent to the client's board, which bounced them to their
-    // dashboard.
+    showToast('Dispute raised. Agree the reviewer\'s fee and fund it under Audit & Dispute Fees.', 'success');
+    // The client pays the reviewer, so they go where the fee is agreed.
     const next = '/audit-offers';
     setTimeout(() => { navigate(next); }, 1300);
   }
@@ -158,7 +159,7 @@ export default function Dispute() {
   return (
     <>
       <PageStyle css={pageCss} />
-      <DashboardLayout role={userRole} activePath={userRole === 'worker' ? '/worker-my-projects' : '/client-my-projects'} pageTitle="Raise Dispute" pageSubtitle="Dispute details">
+      <DashboardLayout role={userRole} activePath="/client-my-projects" pageTitle="Raise Dispute" pageSubtitle="Dispute a milestone the worker submitted">
         <div className="dispute-form" id="disputeBody" style={{ padding: 20, margin: '0 auto', maxWidth: 800 }}>
           {!target ? (
             <div style={{ padding: 20, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, textAlign: 'center' }}>
@@ -166,16 +167,23 @@ export default function Dispute() {
             </div>
           ) : openDispute ? (
             <div style={{ padding: 20, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, textAlign: 'center' }}>
-              There is already an open dispute on <strong>{target.title}</strong>. Follow it under <Link to="/audit-offers">Dispute Fees</Link>.
+              There is already an open dispute on <strong>{target.title}</strong>. Follow it under <Link to="/audit-offers">Audit &amp; Dispute Fees</Link>.
             </div>
           ) : settled ? (
             <div style={{ padding: 20, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, textAlign: 'center' }}>
               <strong>{target.title}</strong> has already been settled, so it can no longer be disputed.
             </div>
+          ) : notSubmitted ? (
+            <div style={{ padding: 20, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, textAlign: 'center' }}>
+              The worker has not submitted <strong>{target.title}</strong> yet. You can dispute a milestone once its work has been handed in.
+            </div>
           ) : (
             <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 16, padding: 24 }}>
               <h2 style={{ fontSize: 18, marginBottom: 10 }}>Dispute Milestone</h2>
-              <p style={{ marginBottom: 18, color: 'var(--muted-foreground)' }}>Provide details to raise a dispute for the selected milestone.</p>
+              <p style={{ marginBottom: 18, color: 'var(--muted-foreground)' }}>
+                Tell the reviewer what is wrong with the submitted work. If they rule for you, the milestone goes back to the worker&apos;s To Do list
+                with their notes and its escrow stays held; if they rule for the worker, the milestone is paid.
+              </p>
 
               <div className="field-group">
                 <label>Milestone</label>
@@ -203,7 +211,7 @@ export default function Dispute() {
               </div>
               <div className="field-group">
                 <label htmlFor="disputeOutcome">Desired outcome</label>
-                <input id="disputeOutcome" className="field-input" placeholder="E.g., revision, partial refund, cancellation"
+                <input id="disputeOutcome" className="field-input" placeholder="E.g., fix the checkout bug and match the agreed design"
                        value={outcome} onChange={e => setOutcome(e.target.value)} />
               </div>
 
@@ -230,8 +238,8 @@ export default function Dispute() {
               <div className="field-group">
                 <label htmlFor="disputeReviewerFee">Reviewer fee you will pay</label>
                 <div style={{ fontSize: 12, color: 'var(--muted-foreground)', marginBottom: 6 }}>
-                  As the person raising the dispute, you pay the reviewer to arbitrate it. This is your offer — the reviewer can accept it or
-                  counter, and nothing is charged until you both agree and you fund it under Dispute Fees. The platform keeps
+                  You pay the reviewer to arbitrate the dispute. This is your offer — the reviewer can accept it or
+                  counter, and nothing is charged until you both agree and you fund it under Audit &amp; Dispute Fees. The platform keeps
                   {` ${Store.Fees.rates().expertService.percent}%`} of the reviewer&apos;s fee.
                 </div>
                 <div style={{ position: 'relative', maxWidth: 220 }}>

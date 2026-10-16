@@ -18,6 +18,19 @@ import { getSavedTaskIds, toggleSavedTask } from '../utils/helpers';
 import usePageTitle from '../hooks/usePageTitle';
 import pageCss from './TaskDetails.css?raw';
 
+const TIMELINES = ['Less than 1 week', '1 week', '2 weeks', '3 weeks', '4 weeks', '5 weeks', '6 weeks', '2 months', 'More than 2 months'];
+const MIN_COVER_LETTER = 30;
+const MILESTONE_STATUS_TEXT = {
+  completed: '✓ Completed',
+  approved: '✓ Approved',
+  submitted: '⬆ Submitted',
+  review: '⬆ In review',
+  'in-progress': '⏳ In Progress',
+  'revision-needed': '↺ Revision requested',
+  disputed: '⚠ Disputed',
+  pending: '○ Pending',
+};
+
 const MILESTONE_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#a855f7', '#ec4899', '#14b8a6', '#f97316', '#8b5cf6'];
 
 // Colours of the status box shown instead of "Apply Now" once a task is not open
@@ -86,17 +99,17 @@ export default function TaskDetails() {
   const clientInitials = clientInfo ? clientInfo.avatar : (task.clientInitials || '??');
   const clientMemberDate = clientInfo ? ('Member since ' + clientInfo.joinDate) : '';
   const clientProjects = clientInfo ? (Store.getTasksByClient(task.clientId)?.length || 0) : 0;
-  const clientRating = clientInfo?.rating || 0;
   const budgetDisplay = task.budget && typeof task.budget === 'number' ? ('$' + task.budget.toLocaleString()) : (task.budget || '$0');
   const budgetNum = task.numBudget || (typeof task.budget === 'number' ? task.budget : parseInt(budgetDisplay.replace(/[^0-9]/g, '')) || 0);
   const taskMilestones = Store.getMilestonesByTask(task.id);
   const taskStatus = task.status || 'open';
   const statusLabel = taskStatus.charAt(0).toUpperCase() + taskStatus.slice(1).replace('-', ' ');
-  const statusBadgeClass = taskStatus === 'open' ? 'badge-green' : taskStatus === 'in-progress' ? 'badge-blue' : taskStatus === 'completed' ? 'badge-purple' : 'badge-yellow';
+  const statusBadgeClass = taskStatus === 'open' ? 'badge-green' : taskStatus === 'in-progress' ? 'badge-blue' : taskStatus === 'completed' ? 'badge-purple' : taskStatus === 'cancelled' ? 'badge-red' : 'badge-orange';
 
   function submitProposal() {
-    if (!coverLetter) {
-      Validate.toast('Please write a cover letter', 'error');
+    const letter = coverLetter.trim();
+    if (letter.length < MIN_COVER_LETTER) {
+      Validate.toast(`Please write a cover letter of at least ${MIN_COVER_LETTER} characters.`, 'error');
       return;
     }
     const currentUser = Auth.getCurrentUser();
@@ -118,14 +131,14 @@ export default function TaskDetails() {
 
     try {
       Store.createProposal({
-        taskId: task.id || 't1',
+        taskId: task.id,
         workerId: currentUser.userId,
         workerName: currentUser.name || 'Worker',
         avatar: currentUser.avatar || 'WK',
         avatarColor: currentUser.avatarColor || '#6366f1',
         bidPrice: '$' + taskBudget.toLocaleString(),
         timeline,
-        coverLetter,
+        coverLetter: letter,
         skills: currentUser.skills || [],
         status: 'pending',
       });
@@ -199,7 +212,7 @@ export default function TaskDetails() {
                 {taskMilestones.length > 0 ? taskMilestones.map((m, i) => {
                   const color = MILESTONE_COLORS[i % MILESTONE_COLORS.length];
                   const msStatus = m.status || 'pending';
-                  const msStatusLabel = msStatus === 'completed' ? '✓ Completed' : msStatus === 'submitted' ? '⬆ Submitted' : msStatus === 'in-progress' ? '⏳ In Progress' : msStatus === 'disputed' ? '⚠ Disputed' : '○ Pending';
+                  const msStatusLabel = MILESTONE_STATUS_TEXT[msStatus] || msStatus;
                   return (
                 <div key={m.id} className="milestone-item">
                   <div className="milestone-dot" style={{ background: color, marginTop: 6 }}></div>
@@ -293,8 +306,8 @@ export default function TaskDetails() {
                     <div style={{ fontSize: 11, color: 'var(--muted-foreground)' }}>Projects</div>
                   </div>
                   <div style={{ textAlign: 'center', flex: 1 }}>
-                    <div style={{ fontWeight: 700, fontSize: 16 }}>{clientRating > 0 ? clientRating + '★' : 'N/A'}</div>
-                    <div style={{ fontSize: 11, color: 'var(--muted-foreground)' }}>Rating</div>
+                    <div style={{ fontWeight: 700, fontSize: 16 }}>{clientInfo?.completedProjects || 0}</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted-foreground)' }}>Completed</div>
                   </div>
                   <div style={{ textAlign: 'center', flex: 1 }}>
                     <div style={{ fontWeight: 700, fontSize: 16 }}>{task.auditEnabled ? 'Yes' : 'No'}</div>
@@ -318,10 +331,7 @@ export default function TaskDetails() {
               <label className="form-label">Delivery Timeline</label>
               {' '}
               <select id="timelineInput" className="form-input filter-select" style={{ padding: '12px 16px' }} value={timeline} onChange={e => setTimeline(e.target.value)}>
-                <option>3 weeks</option>
-                <option>4 weeks</option>
-                <option>5 weeks</option>
-                <option>6 weeks</option>
+                {TIMELINES.map(t => <option key={t}>{t}</option>)}
               </select>
             </div>
             <div className="form-group">
@@ -329,6 +339,9 @@ export default function TaskDetails() {
               {' '}
               <textarea id="coverLetterInput" className="form-input" rows="4" placeholder="Describe your relevant experience and why you're the best fit for this project..."
                         value={coverLetter} onChange={e => setCoverLetter(e.target.value)} />
+              <div style={{ fontSize: 12, marginTop: 4, color: coverLetter.trim().length >= MIN_COVER_LETTER ? '#059669' : 'var(--muted-foreground)' }}>
+                {`${coverLetter.trim().length} / ${MIN_COVER_LETTER} characters minimum`}
+              </div>
             </div>
             <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
               <button onClick={() => setApplyOpen(false)} className="btn-outline" style={{ flex: 1, padding: 12, borderRadius: 12 }}>Cancel</button>

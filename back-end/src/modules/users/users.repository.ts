@@ -16,6 +16,16 @@ export class UsersRepository {
   private workers: any[] = JSON.parse(JSON.stringify(SEED_WORKERS));
   private experts: any[] = JSON.parse(JSON.stringify(SEED_EXPERTS));
   private counter = 100;
+  /**
+   * Project counts (and an expert's reviews done) are facts about what happened on
+   * the platform, so they are worked out from projects and reviews (by
+   * TasksService) on every read — never typed in or stored.
+   */
+  private statsProvider: ((id: string, role: string) => Record<string, any>) | null = null;
+
+  setStatsProvider(fn: (id: string, role: string) => Record<string, any>) {
+    this.statsProvider = fn;
+  }
 
   generateId(): string {
     return 'u_' + Date.now() + '_' + (this.counter++);
@@ -29,7 +39,7 @@ export class UsersRepository {
     const merged: any = {
       phone: '', phoneCountryCode: '', bio: '',
       company: '', location: '', companyDetails: null,
-      skills: [], rating: 0, completedProjects: 0,
+      skills: [], completedProjects: 0, activeProjects: 0,
       jobTitle: '', experienceLevel: '', hourlyRate: 0, languages: [], portfolioProjects: [], availability: null,
       specialization: '', reviewsDone: 0, domains: [],
       ...base,
@@ -46,6 +56,7 @@ export class UsersRepository {
         if (v !== undefined && v !== null) merged[k] = v;
       }
     }
+    if (this.statsProvider) Object.assign(merged, this.statsProvider(base.id, base.role));
     return merged;
   }
 

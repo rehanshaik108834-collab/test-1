@@ -245,6 +245,44 @@ export class LedgerService {
   }
 
   /**
+   * Keeps the cancellation fee from a cancelled project's escrow. It goes to
+   * the platform, like any other fee; whatever is left is refunded after.
+   */
+  chargeCancellationFee(params: { taskId: string; clientId: string; amount: number; rate: number; base: number; title: string }) {
+    const { taskId, clientId, rate, base, title } = params;
+    const held = this.ledger.getEscrow(taskId).projectHeld;
+    const fee = round2(Math.min(params.amount, held));
+    if (fee <= 0) return null;
+
+    this.ledger.addProjectHeld(taskId, -fee);
+    this.ledger.recordRevenue({
+      feeType: 'cancellation',
+      amount: fee,
+      baseAmount: base,
+      rate,
+      fromUserId: clientId,
+      taskId,
+      milestoneId: null,
+    });
+    this.transactions.create({
+      type: 'cancellation-fee',
+      amount: fee,
+      grossAmount: fee,
+      feeAmount: fee,
+      netAmount: 0,
+      feeType: 'cancellation',
+      bucket: 'project',
+      fromId: clientId,
+      toId: 'platform',
+      taskId,
+      description: `Cancellation fee (${rate}% of $${base}) — ${title}`,
+      status: 'completed',
+    });
+    this.log.money('cancellation.fee', { task: taskId, client: clientId, rate: `${rate}%`, base, fee });
+    return { fee, rate, base };
+  }
+
+  /**
    * Brings project escrow in line with a changed budget before anyone is
    * hired: a higher budget is topped up from the wallet, a lower one refunds
    * the difference.

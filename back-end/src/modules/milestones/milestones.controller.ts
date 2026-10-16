@@ -29,7 +29,7 @@ export class MilestonesController {
 
   @Post()
   @ApiHeader({ name: 'role', required: true, description: 'User role required' })
-  @Roles('client', 'superuser')
+  @Roles('client')
   @ApiOperation({ summary: 'Create a new milestone' })
   create(@Body() dto: CreateMilestoneDto, @CurrentActor() actor: Actor) {
     return this.milestonesService.create(dto, actor);
@@ -37,7 +37,7 @@ export class MilestonesController {
 
   @Patch(':id')
   @ApiHeader({ name: 'role', required: true, description: 'User role required' })
-  @Roles('client', 'worker', 'superuser')
+  @Roles('client', 'worker')
   @ApiOperation({ summary: 'Update a milestone' })
   update(@Param('id') id: string, @Body() dto: UpdateMilestoneDto, @CurrentActor() actor: Actor) {
     return this.milestonesService.update(id, dto, actor);

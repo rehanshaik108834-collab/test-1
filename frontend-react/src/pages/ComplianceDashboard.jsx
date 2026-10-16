@@ -11,7 +11,7 @@ import DashboardLayout from '../components/DashboardLayout';
 import PageStyle from '../components/PageStyle';
 import { useAuth } from '../context/AuthContext';
 import { useValidation } from '../context/ValidationContext';
-import { LANNENT_API } from '../context/StoreContext';
+import { LANNENT_API, useStore } from '../context/StoreContext';
 import usePageTitle from '../hooks/usePageTitle';
 import pageCss from './ComplianceDashboard.css?raw';
 
@@ -52,6 +52,7 @@ function detailText(e) {
 
 /** The table body for one log response. */
 function AuditRows({ data }) {
+  const Store = useStore();
   if (!data) return <tr><td colSpan="6" style={{ padding: 28, textAlign: 'center', color: 'var(--muted-foreground)' }}>The audit log could not be read.</td></tr>;
   if (!data.events.length) return <tr><td colSpan="6" style={{ padding: 28, textAlign: 'center', color: 'var(--muted-foreground)' }}>No events recorded yet.</td></tr>;
   return data.events.map((e, i) => (
@@ -59,8 +60,8 @@ function AuditRows({ data }) {
       <td className="mono" style={{ whiteSpace: 'nowrap' }}>{e.at.slice(0, 19).replace('T', ' ')}</td>
       <td><span className={`kind ${KIND_CLASS[e.kind] || 'kind-admin-read'}`}>{KIND_LABEL[e.kind] || e.kind}</span></td>
       <td>
-        {e.actorId || '—'}
-        <div style={{ color: 'var(--muted-foreground)', fontSize: 11.5 }}>{e.actorRole || ''}</div>
+        {(e.actorId && Store.getUserById(e.actorId)?.name) || e.actorId || '—'}
+        <div style={{ color: 'var(--muted-foreground)', fontSize: 11.5 }}>{[e.actorRole, e.actorId && Store.getUserById(e.actorId) ? e.actorId : ''].filter(Boolean).join(' · ')}</div>
       </td>
       <td className="mono">{(e.method || '') + ' ' + (e.path || '')}</td>
       <td className={e.outcome === 'refused' ? 'outcome-refused' : ''}>
@@ -77,9 +78,7 @@ export default function ComplianceDashboard() {
   const Validate = useValidation();
   usePageTitle('Audit Log — Lannent');
 
-  // The summary line is computed once on load; the filter only swaps the rows.
-  const [initialData] = useState(() => fetchLog(''));
-  const [data, setData] = useState(initialData);
+  const [data, setData] = useState(() => fetchLog(''));
   const [kind, setKind] = useState('');
 
   /**
@@ -106,8 +105,9 @@ export default function ComplianceDashboard() {
       Validate.toast(e.message, 'error');
     }
   }
-  const note = initialData
-    ? `${initialData.total} event${initialData.total === 1 ? '' : 's'} matching · ${initialData.stored} stored${initialData.droppedFromCapacity ? ' · ' + initialData.droppedFromCapacity + ' dropped at capacity' : ''}`
+  // The summary follows the filter, so "matching" means what it says.
+  const note = data
+    ? `${data.total} event${data.total === 1 ? '' : 's'} matching · showing the latest ${data.events.length} · ${data.stored} stored${data.droppedFromCapacity ? ' · ' + data.droppedFromCapacity + ' dropped at capacity' : ''}`
     : 'unavailable';
 
   return (

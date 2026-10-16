@@ -16,11 +16,12 @@ import { useStore } from '../context/StoreContext';
 import usePageTitle from '../hooks/usePageTitle';
 import pageCss from './Analytics.css?raw';
 
-const DONE_MS = ['completed', 'approved', 'audit-passed', 'done'];
+const DONE_MS = ['completed', 'approved'];
 
+/** Year and month, so last year's March is not counted as this year's. */
 function monthKey(d) {
   const dt = new Date(d);
-  return isNaN(dt) ? null : dt.toLocaleString('en-US', { month: 'short' });
+  return isNaN(dt) ? null : `${dt.getFullYear()}-${dt.getMonth()}`;
 }
 
 function ago(dateStr) {
@@ -54,21 +55,22 @@ function buildInsights(Store, clientId) {
   const months = [];
   const now = new Date();
   for (let k = 5; k >= 0; k--) {
-    months.push(new Date(now.getFullYear(), now.getMonth() - k, 1).toLocaleString('en-US', { month: 'short' }));
+    const d = new Date(now.getFullYear(), now.getMonth() - k, 1);
+    months.push({ key: monthKey(d), label: d.toLocaleString('en-US', { month: 'short' }) });
   }
 
   const milestoneData = months.map(m => ({
-    month: m,
-    completed: myMilestones.filter(ms => DONE_MS.indexOf(ms.status) !== -1 && monthKey(ms.approvedAt) === m).length,
+    month: m.label,
+    completed: myMilestones.filter(ms => DONE_MS.indexOf(ms.status) !== -1 && monthKey(ms.approvedAt) === m.key).length,
   }));
 
   // Gross amounts: a release row's `amount` is what the worker netted after fees.
-  const sumOf = (type, m) => myTxs.filter(t => t.type === type && monthKey(t.createdAt) === m)
+  const sumOf = (type, m) => myTxs.filter(t => t.type === type && monthKey(t.createdAt) === m.key && (!t.bucket || t.bucket === 'project'))
     .reduce((a, t) => a + (t.grossAmount != null ? t.grossAmount : t.amount || 0), 0);
   const revenueData = months.map(m => {
     const locked = sumOf('escrow-lock', m);
     const released = sumOf('milestone-release', m);
-    return { month: m, escrow: locked, released, pending: Math.max(locked - released, 0) };
+    return { month: m.label, escrow: locked, released, pending: Math.max(locked - released, 0) };
   });
 
   // Workers who have actually worked for this client.
@@ -84,21 +86,28 @@ function buildInsights(Store, clientId) {
     const msForWorker = myMilestones.filter(ms => ms.workerId === wid);
     const doneMs = msForWorker.filter(ms => DONE_MS.indexOf(ms.status) !== -1).length;
     const rate = msForWorker.length ? Math.round((doneMs / msForWorker.length) * 100) : 0;
+    // On time = handed in by the milestone's due date.
+    const delivered = msForWorker.filter(ms => ms.submittedAt);
+    const onTime = delivered.filter(ms => !ms.dueDate || new Date(ms.submittedAt) <= new Date(ms.dueDate)).length;
     return {
       id: wid,
       name: u.name || 'Unknown worker',
       avatar: u.avatar || '??',
-      projectsCompleted: u.completedProjects || byWorker[wid].done,
+      // Projects completed for this client, not a platform-wide figure.
+      projectsCompleted: byWorker[wid].done,
       successRate: rate,
-      rating: u.rating || 0,
-      onTimeDelivery: rate,
+      onTimeDelivery: delivered.length ? Math.round((onTime / delivered.length) * 100) : 0,
       top: false,
     };
   });
   workerPerformance.sort((a, b) => b.projectsCompleted - a.projectsCompleted);
   if (workerPerformance.length) workerPerformance[0].top = true;
 
-  // Health = milestone completion rate, discounted when a dispute is open.
+  // Health starts at 100 and drops for real warning signs — an open dispute,
+  // overdue milestones or project, work sent back for revision. It used to be
+  // the completion percentage, so every project that had just started was
+  // flagged "High Risk".
+  const todayStr = new Date().toISOString().slice(0, 10);
   const openDisputeTaskIds = {};
   Store.getDisputes().forEach(d => { if (d.status === 'open') openDisputeTaskIds[d.taskId] = true; });
   const projectHealth = myTasks
@@ -106,15 +115,21 @@ function buildInsights(Store, clientId) {
     .map(t => {
       const ms = Store.getMilestonesByTask(t.id);
       const done = ms.filter(m => DONE_MS.indexOf(m.status) !== -1).length;
-      const pct = ms.length ? Math.round((done / ms.length) * 100) : (t.progress || 0);
-      let score = pct;
-      if (openDisputeTaskIds[t.id]) score = Math.max(score - 35, 0);
+      const pct = ms.length ? Math.round((done / ms.length) * 100) : 0;
+      const overdue = ms.filter(m => m.dueDate && m.dueDate < todayStr && DONE_MS.indexOf(m.status) === -1).length;
+      const revisions = ms.filter(m => m.status === 'revision-needed').length;
+      let score = 100;
+      if (openDisputeTaskIds[t.id]) score -= 35;
+      if (t.deadline && t.deadline < todayStr) score -= 25;
+      score -= Math.min(overdue * 15, 30);
+      score -= Math.min(revisions * 10, 20);
+      score = Math.max(score, 0);
       const worker = t.workerId ? Store.getUserById(t.workerId) : null;
       return {
         id: t.id,
         name: t.title,
         healthScore: score,
-        progress: t.progress != null ? t.progress : pct,
+        progress: pct,
         risk: score >= 80 ? 'low' : score >= 60 ? 'medium' : 'high',
         worker: worker ? worker.name : 'Unassigned',
       };
@@ -284,7 +299,6 @@ export default function Analytics() {
                   <th>Worker</th>
                   <th className="center">Projects Completed</th>
                   <th className="center">Success Rate</th>
-                  <th className="center">Average Rating</th>
                   <th className="center">On-Time Delivery</th>
                 </tr>
               </thead>
@@ -305,12 +319,6 @@ export default function Analytics() {
                       <div className="pi-bar-wrap">
                         <div className="pi-bar-bg"><div className="pi-bar-fill" style={{ width: `${w.successRate}%` }}></div></div>
                         <span style={{ fontWeight: 500 }}>{`${w.successRate}%`}</span>
-                      </div>
-                    </td>
-                    <td className="center">
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
-                        <Icon name="star" style={{ width: 14, height: 14, fill: '#facc15', color: '#facc15' }} />
-                        <span style={{ fontWeight: 500 }}>{w.rating}</span>
                       </div>
                     </td>
                     <td className="center" style={{ fontWeight: 500 }}>{`${w.onTimeDelivery}%`}</td>

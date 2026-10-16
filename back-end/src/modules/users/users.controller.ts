@@ -55,6 +55,11 @@ export class UsersController {
   @Roles('superuser')
   @ApiOperation({ summary: 'Create any user type including staff/admin (superuser only)' })
   createStaff(@Body() dto: CreateUserDto) {
+    // Expert Reviewers join through the intake desk's application review,
+    // which records the domains they cover and checks their résumé.
+    if (dto.role === 'expert') {
+      throw new BadRequestException('Expert Reviewers are added by approving their application on the intake desk.');
+    }
     return redact(this.usersService.createPrivileged(dto));
   }
 
@@ -77,9 +82,9 @@ export class UsersController {
     if (!moderator && actor.id !== id) {
       throw new ForbiddenException('You can only edit your own profile.');
     }
-    // Account standing and reputation are not self-service: a worker could
-    // set their own rating, or un-suspend themselves.
-    const MODERATED = ['status', 'rating', 'completedProjects', 'reviewsDone'] as const;
+    // Account standing is not self-service: a user could un-suspend
+    // themselves. (Rating and project counts are derived, so nobody sets them.)
+    const MODERATED = ['status'] as const;
     if (!moderator) {
       const attempted = MODERATED.filter(k => (dto as any)[k] !== undefined);
       if (attempted.length) {
@@ -105,6 +110,9 @@ export class UsersController {
     // Deleting someone with projects, engagements or money would strand it —
     // escrow with no owner to refund, a contract with no worker to pay.
     const user = this.usersService.findById(id);
+    if (user.role === 'superuser') {
+      throw new ForbiddenException('Operations accounts cannot be deleted here.');
+    }
     if ((user.walletBalance || 0) > 0) {
       throw new BadRequestException(`${user.name} still has $${user.walletBalance} in their wallet. Suspend the account instead.`);
     }
@@ -134,7 +142,7 @@ export class UsersController {
 
   @Post(':id/wallet/add')
   @ApiHeader({ name: 'role', required: true, description: 'User role required' })
-  @Roles('client', 'worker', 'expert', 'superuser')
+  @Roles('client', 'worker', 'expert')
   @ApiOperation({
     summary: 'Deposit funds into a wallet (card processing fee applies)',
     description: 'Charges the deposit processing fee and credits the net. Returns the fee breakdown.',
@@ -151,7 +159,7 @@ export class UsersController {
 
   @Post(':id/wallet/withdraw')
   @ApiHeader({ name: 'role', required: true, description: 'User role required' })
-  @Roles('client', 'worker', 'expert', 'superuser')
+  @Roles('client', 'worker', 'expert')
   @ApiOperation({
     summary: 'Withdraw to an external account (payout fee applies)',
     description: 'Debits the full gross amount and returns the fee breakdown and net paid out.',
@@ -173,7 +181,7 @@ export class UsersController {
 /** Fields anyone signed in may see about another user — enough to judge who they are working with. */
 const PUBLIC_FIELDS = [
   'id', 'name', 'role', 'avatar', 'avatarColor', 'status', 'joinDate', 'bio', 'location', 'company',
-  'skills', 'rating', 'completedProjects', 'jobTitle', 'experienceLevel', 'hourlyRate', 'languages',
+  'skills', 'completedProjects', 'activeProjects', 'jobTitle', 'experienceLevel', 'hourlyRate', 'languages',
   'portfolioProjects', 'availability', 'specialization', 'reviewsDone', 'domains',
 ];
 

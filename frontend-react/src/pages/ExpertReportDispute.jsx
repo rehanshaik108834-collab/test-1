@@ -90,10 +90,8 @@ function buildReport(Store, rawDispute) {
     expertInitials: _expert ? _expert.avatar : 'ER',
     expertTitle: _expert ? (_expert.jobTitle || 'Expert Reviewer') : 'Expert Reviewer',
     resolution: rawDispute.resolution || 'Resolution pending.',
-    decision: rawDispute.verdict === 'worker-favour' ? 'In Favour of Worker'
-            : rawDispute.verdict === 'client-favour' ? 'In Favour of Client'
-            : rawDispute.verdict === 'split' ? 'Split 50/50'
-            : rawDispute.verdict === 'revision' ? 'Sent Back for Revision'
+    decision: rawDispute.verdict === 'worker-favour' ? 'In Favour of Worker — milestone paid'
+            : rawDispute.verdict === 'client-favour' ? 'In Favour of Client — milestone sent back to the worker'
             : 'Pending Review',
     overridden: !!rawDispute.overriddenBy,
     verdictRaw: rawDispute.verdict || null,

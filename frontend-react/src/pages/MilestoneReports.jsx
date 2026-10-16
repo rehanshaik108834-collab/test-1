@@ -29,8 +29,7 @@ const VERDICTS = {
   'fail':          { bg: '#fef2f2', border: '#fecaca', text: '#b91c1c', label: 'Failed audit' },
   'conditional':   { bg: '#fffbeb', border: '#fde68a', text: '#b45309', label: 'Passed with conditions' },
   'worker-favour': { bg: '#ecfdf5', border: '#a7f3d0', text: '#047857', label: 'Resolved for the worker' },
-  'client-favour': { bg: '#eff6ff', border: '#bfdbfe', text: '#1d4ed8', label: 'Resolved for the client' },
-  'split':         { bg: '#f5f3ff', border: '#ddd6fe', text: '#6d28d9', label: 'Split decision' },
+  'client-favour': { bg: '#eff6ff', border: '#bfdbfe', text: '#1d4ed8', label: 'Resolved for the client — sent back to the worker' },
 };
 
 /** Audit reports + disputes (optionally only those belonging to one task). */
@@ -136,8 +135,8 @@ function VerdictChip({ r }) {
 
 const VERDICT_TEXT = {
   pass: 'Pass', fail: 'Fail', conditional: 'Pass with conditions',
-  'worker-favour': 'In favour of the worker', 'client-favour': 'In favour of the client',
-  split: 'Split 50/50', revision: 'Sent back for revision',
+  'worker-favour': 'In favour of the worker — milestone paid',
+  'client-favour': 'In favour of the client — milestone sent back to the worker',
 };
 
 /** Builds and saves the PDF for one report card. */

@@ -27,7 +27,6 @@ const workerItems = [
   { icon: 'folder-kanban', label: 'My Projects', path: '/worker-my-projects' },
   { icon: 'mail', label: 'Invitations', path: '/worker-invitations' },
   { icon: 'file-text', label: 'My Proposals', path: '/my-proposals' },
-  { icon: 'scale', label: 'Dispute Fees', path: '/audit-offers' },
   { icon: 'wallet', label: 'Wallet', path: '/worker-wallet' },
   { icon: 'message-square', label: 'Messages', path: '/messages' },
   { icon: 'file-text', label: 'Reports', path: '/milestone-reports' },
@@ -48,7 +47,6 @@ const superItems = [
   { icon: 'layout-dashboard', label: 'Dashboard', path: '/superuser-dashboard' },
   { icon: 'users', label: 'Manage Users', path: '/superuser-users' },
   { icon: 'folder-kanban', label: 'Manage Tasks', path: '/superuser-tasks' },
-  { icon: 'plus-circle', label: 'Create Task', path: '/superuser-create-task' },
   { icon: 'scale', label: 'Disputes', path: '/superuser-disputes' },
   { icon: 'wallet', label: 'Escrow & Finance', path: '/superuser-escrow' },
 ];

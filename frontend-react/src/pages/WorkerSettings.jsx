@@ -104,10 +104,12 @@ export default function WorkerSettings() {
   }));
   const [professionalData] = useState(() => ({
     jobTitle: user.jobTitle || '',
-    experienceLevel: user.experienceLevel || 'Mid-Level',
+    // Left blank until the worker chooses — pre-filling "Mid-Level" /
+    // "Full-time" showed every worker who saved once as exactly that.
+    experienceLevel: user.experienceLevel || '',
     hourlyRate: user.hourlyRate || 0,
     languages: user.languages || ['English'],
-    availability: user.availability || 'Full-time',
+    availability: typeof user.availability === 'string' ? user.availability : '',
   }));
 
   const [activeTab, setActiveTab] = useState('profile');
@@ -374,7 +376,8 @@ export default function WorkerSettings() {
                   </div>
                   <div>
                     <label className="ws-label">Experience Level</label>
-                    <select className="ws-select" id="wsExpLevel" defaultValue={EXPERIENCE_LEVELS.includes(professionalData.experienceLevel) ? professionalData.experienceLevel : EXPERIENCE_LEVELS[0]}>
+                    <select className="ws-select" id="wsExpLevel" defaultValue={EXPERIENCE_LEVELS.includes(professionalData.experienceLevel) ? professionalData.experienceLevel : ''}>
+                      <option value="">Not set</option>
                       {EXPERIENCE_LEVELS.map(o => <option key={o}>{o}</option>)}
                     </select>
                   </div>
@@ -386,7 +389,8 @@ export default function WorkerSettings() {
                   </div>
                   <div>
                     <label className="ws-label">Availability</label>
-                    <select className="ws-select" id="wsAvailability" defaultValue={AVAILABILITY.includes(professionalData.availability) ? professionalData.availability : AVAILABILITY[0]}>
+                    <select className="ws-select" id="wsAvailability" defaultValue={AVAILABILITY.includes(professionalData.availability) ? professionalData.availability : ''}>
+                      <option value="">Not set</option>
                       {AVAILABILITY.map(o => <option key={o}>{o}</option>)}
                     </select>
                   </div>

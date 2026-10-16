@@ -5,7 +5,7 @@
  * Every technical-audit report and dispute resolution the expert has filed,
  * with counts, a type filter, a search box and a link to each report.
  */
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import Icon from '../components/Icon';
@@ -20,6 +20,9 @@ const FILTERS = ['All', 'Technical Audit', 'Dispute Resolution'];
 const TH_STYLE = { padding: '12px 16px', textAlign: 'left', fontSize: 12, fontWeight: 600, color: 'var(--muted-foreground)', textTransform: 'uppercase', letterSpacing: '0.05em' };
 const CELL = { padding: '14px 16px' };
 const formatDate = d => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+const AUDIT_VERDICT = { pass: 'Pass', fail: 'Fail', conditional: 'Conditional' };
+const DISPUTE_VERDICT = { 'worker-favour': 'Worker Favour', 'client-favour': 'Client Favour' };
+const clip = (text, n = 100) => (text.length > n ? text.substring(0, n) + '…' : text);
 
 /** The expert's audit reports and resolved disputes, as table rows. */
 function loadReports(Store, userId) {
@@ -31,28 +34,31 @@ function loadReports(Store, userId) {
     milestone: r.milestoneTitle || 'Milestone',
     reportId: 'AUD-' + r.id.toUpperCase(),
     generatedDate: r.createdAt ? formatDate(r.createdAt) : 'Recent',
-    verdict: r.verdict === 'pass' ? 'Pass' : r.verdict === 'fail' ? 'Fail' : 'Pending',
+    sortKey: r.createdAt || '',
+    verdict: AUDIT_VERDICT[r.verdict] || r.verdict,
     worker: r.workerName || 'Worker',
-    summary: r.findings ? r.findings.substring(0, 100) + '...' : 'Report pending.',
+    summary: r.findings ? clip(r.findings) : '',
     status: 'Published',
     raw: r,
   }));
 
-  const disputeReports = Store.getDisputes().filter(d => d.status === 'resolved' && d.expertId === userId).map(d => ({
+  // A dispute settled by an operations override was not this reviewer's verdict.
+  const disputeReports = Store.getDisputes().filter(d => d.status === 'resolved' && d.expertId === userId && !d.overriddenBy).map(d => ({
     id: 'dr-' + d.id,
     type: 'Dispute Resolution',
     project: d.project || 'Unknown Project',
     milestone: d.milestone || 'Dispute',
     reportId: 'DIS-' + d.id.toUpperCase(),
     generatedDate: d.resolvedAt ? formatDate(d.resolvedAt) : 'Recent',
-    verdict: d.verdict === 'worker-favour' ? 'Worker Favour' : d.verdict === 'client-favour' ? 'Client Favour' : 'Split',
-    worker: d.againstName || 'Worker',
-    summary: d.resolution ? d.resolution.substring(0, 100) + '...' : 'Resolution issued.',
+    sortKey: d.resolvedAt || '',
+    verdict: DISPUTE_VERDICT[d.verdict] || d.verdict,
+    worker: [d.raisedByName, d.againstName].filter(Boolean).join(' vs ') || 'Parties',
+    summary: d.resolution ? clip(d.resolution) : '',
     status: 'Published',
     raw: d,
   }));
 
-  return [...auditReports, ...disputeReports];
+  return [...auditReports, ...disputeReports].sort((a, b) => String(b.sortKey).localeCompare(String(a.sortKey)));
 }
 
 function verdictBadge(v) {
@@ -60,6 +66,7 @@ function verdictBadge(v) {
   if (v === 'Fail') return 'badge-red';
   if (v === 'Worker Favour') return 'badge-green';
   if (v === 'Client Favour') return 'badge-blue';
+  if (v === 'Conditional') return 'badge-orange';
   return 'badge-gray';
 }
 
@@ -67,7 +74,7 @@ function verdictBadge(v) {
 function ReportRow({ r }) {
   // Build the correct link for the report type
   const viewUrl = r.type === 'Technical Audit'
-    ? '/expert-report-audit?id=' + (r.auditRequestId || (r.raw ? r.raw.auditRequestId : ''))
+    ? `/expert-report-audit?id=${r.auditRequestId}${r.raw.milestoneId ? `&milestoneId=${r.raw.milestoneId}` : ''}`
     : '/expert-report-dispute?id=' + (r.raw ? r.raw.id : '');
   const isAudit = r.type === 'Technical Audit';
   return (
@@ -102,15 +109,13 @@ export default function ExpertReports() {
   const [reports] = useState(() => loadReports(Store, session.userId));
   const [activeFilter, setActiveFilter] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
-  const shownRows = useRef([]);   // when nothing matches, the hidden table keeps its last rows (as before)
 
-  const q = searchQuery.toLowerCase();
+  const q = searchQuery.trim().toLowerCase();
   const list = reports.filter(r => {
-    const matchQ = !q || r.project.toLowerCase().includes(q) || r.type.toLowerCase().includes(q);
+    const matchQ = !q || [r.project, r.milestone, r.type, r.worker, r.reportId, r.verdict].some(v => String(v).toLowerCase().includes(q));
     const matchF = activeFilter === 'All' || r.type === activeFilter;
     return matchQ && matchF;
   });
-  if (list.length) shownRows.current = list;
 
   const count = type => reports.filter(r => r.type === type).length;
 
@@ -146,18 +151,18 @@ export default function ExpertReports() {
           </div>
           <div id="reportsEmpty" style={{ display: list.length ? 'none' : 'block', padding: '64px 32px', textAlign: 'center', color: 'var(--muted-foreground)' }}>
             <Icon name="file-x" style={{ width: 40, height: 40, opacity: 0.4, margin: '0 auto 12px', display: 'block' }} />
-            <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 6 }}>No reports yet</div>
-            <div style={{ fontSize: 14 }}>Complete audit requests and dispute resolutions to see reports here.</div>
+            <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 6 }}>{reports.length ? 'No reports match' : 'No reports yet'}</div>
+            <div style={{ fontSize: 14 }}>{reports.length ? 'Try a different filter or search.' : 'Complete audit requests and dispute resolutions to see reports here.'}</div>
           </div>
           <div id="reportsTableWrap" style={{ overflowX: 'auto', ...(list.length ? {} : { display: 'none' }) }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: 'var(--secondary)', borderBottom: '1px solid var(--border)' }}>
-                  {['Report ID', 'Type', 'Project / Milestone', 'Worker', 'Verdict', 'Date', 'Status', 'Actions'].map(h => <th key={h} style={TH_STYLE}>{h}</th>)}
+                  {['Report ID', 'Type', 'Project / Milestone', 'Worker / Parties', 'Verdict', 'Date', 'Status', 'Actions'].map(h => <th key={h} style={TH_STYLE}>{h}</th>)}
                 </tr>
               </thead>
               <tbody id="reportsTbody">
-                {shownRows.current.map(r => <ReportRow key={r.id} r={r} />)}
+                {list.map(r => <ReportRow key={r.id} r={r} />)}
               </tbody>
             </table>
           </div>

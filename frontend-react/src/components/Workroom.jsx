@@ -80,7 +80,6 @@ function statusLabel(status) {
     : status === 'disputed' ? 'Disputed'
     : status === 'pending' ? 'Not started'
     : status === 'revision-needed' ? 'Changes requested'
-    : status === 'refunded' ? 'Refunded'
     : status;
 }
 
@@ -259,9 +258,12 @@ export default function Workroom({ variant }) {
     navigate(cfg.actionUrl(selected));
   }
 
+  // Only the client raises disputes, and only about work that was submitted.
+  const canDispute = variant === 'client' && !!selected && normalizeStatus(selected.status) === 'review';
+
   function raiseDisputeFromWorkroom() {
     if (!selectedMilestoneId) { showToast('Select a milestone first', 'warn'); return; }
-    if (!selected) return;
+    if (!selected || !canDispute) return;
     try {
       localStorage.setItem('disputeTargetMilestone', JSON.stringify(selected));
     } catch (e) {
@@ -436,10 +438,13 @@ export default function Workroom({ variant }) {
               Milestone Board
             </Link>
             {' '}
-            <button id="btnRaiseDispute" className={'btn-outline' + (selected ? '' : ' btn-disabled')} style={ACTION_BUTTON_STYLE} onClick={raiseDisputeFromWorkroom} disabled={!selected}>
-              <Icon name="alert-triangle" style={{ width: 15, height: 15, color: '#f59e0b' }} />
-              Raise Dispute
-            </button>
+            {variant === 'client' && (
+              <button id="btnRaiseDispute" className={'btn-outline' + (canDispute ? '' : ' btn-disabled')} style={ACTION_BUTTON_STYLE} onClick={raiseDisputeFromWorkroom} disabled={!canDispute}
+                      title={canDispute ? '' : 'Select a submitted milestone to dispute it'}>
+                <Icon name="alert-triangle" style={{ width: 15, height: 15, color: '#f59e0b' }} />
+                Raise Dispute
+              </button>
+            )}
             <div style={{ marginTop: 10, fontSize: 13, color: 'var(--muted-foreground)' }}>
               Selected milestone: <strong id="selectedMilestoneTitle">{selected ? selected.title : 'None'}</strong>
             </div>

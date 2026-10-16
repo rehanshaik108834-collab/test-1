@@ -44,11 +44,13 @@ export function canViewAnyRecord(role?: string): boolean {
 /**
  * May this role move money in or out of a wallet that is not theirs?
  *
- * Operations only. No admin desk has any reason to, and compliance least of
- * all — it exists to watch value move, not to move it.
+ * Nobody. A superuser could previously top up any wallet (money from
+ * nowhere) or withdraw anyone's balance to an outside account. Wallets are
+ * strictly self-service; operations fix money through the ledger flows
+ * (refunds, dispute overrides), which record who got what.
  */
-export function canMoveAnyWallet(role?: string): boolean {
-  return role === ROLES.SUPERUSER;
+export function canMoveAnyWallet(_role?: string): boolean {
+  return false;
 }
 
 /**

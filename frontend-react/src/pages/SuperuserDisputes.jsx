@@ -20,9 +20,7 @@ import pageCss from './SuperuserDisputes.css?raw';
 
 const VERDICT_LABELS = {
   'worker-favour': 'The worker receives the milestone payment',
-  'client-favour': 'The milestone escrow is refunded to the client and the milestone closed',
-  split: 'The milestone escrow is split equally',
-  revision: 'The worker revises the milestone; its escrow stays held',
+  'client-favour': 'The milestone goes back to the worker to rework; its escrow stays held',
 };
 
 /** Applies a verdict as an operations override. The server notifies both parties. */
@@ -145,8 +143,6 @@ export default function SuperuserDisputes() {
                 <div className="dispute-actions">
                   <button className="btn-worker" onClick={() => quickResolve(d.id, 'worker-favour')}>✓ Favour Worker</button>
                   <button className="btn-client" onClick={() => quickResolve(d.id, 'client-favour')}>✓ Favour Client</button>
-                  <button className="btn-split" onClick={() => quickResolve(d.id, 'split')}>⟺ Split 50/50</button>
-                  <button className="btn-split" onClick={() => quickResolve(d.id, 'revision')}>↺ Send for revision</button>
                   <button className="btn-edit" onClick={() => openOverrideModal(d.id)} style={{ padding: '8px 16px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--background)', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>Custom Override</button>
                 </div>
               )}
@@ -169,9 +165,7 @@ export default function SuperuserDisputes() {
                       onChange={e => { setOverrideVerdict(e.target.value); clearError('overrideVerdict'); }}>
                 <option value="">Select verdict</option>
                 <option value="worker-favour">Favour Worker — release payment</option>
-                <option value="client-favour">Favour Client — refund escrow</option>
-                <option value="split">Split 50/50 — divide equally</option>
-                <option value="revision">Send back for revision — escrow stays held</option>
+                <option value="client-favour">Favour Client — send the milestone back to the worker</option>
               </select>
               <FieldError id="overrideVerdict" message={errors.overrideVerdict} />
             </div>

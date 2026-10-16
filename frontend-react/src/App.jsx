@@ -74,7 +74,6 @@ import SuperuserUsers from './pages/SuperuserUsers';
 import SuperuserTasks from './pages/SuperuserTasks';
 import SuperuserEscrow from './pages/SuperuserEscrow';
 import SuperuserDisputes from './pages/SuperuserDisputes';
-import SuperuserCreateTask from './pages/SuperuserCreateTask';
 
 // ── Admin pages (revenue / intake / compliance) ──
 import AdminDashboard from './pages/AdminDashboard';
@@ -143,7 +142,7 @@ export default function App() {
           <Route path="/post-task" element={guard(['client'], <PostTask />)} />
           <Route path="/hire-gig-workers" element={guard(['client'], <HireGigWorkers />)} />
           <Route path="/worker-applications" element={guard(['client'], <WorkerApplications />)} />
-          <Route path="/audit-offers" element={guard(['client', 'worker'], <AuditOffers />)} />
+          <Route path="/audit-offers" element={guard(['client'], <AuditOffers />)} />
           <Route path="/client-audit-offers" element={<Navigate to="/audit-offers" replace />} />
           <Route path="/client-wallet" element={guard(['client'], <ClientWallet />)} />
           <Route path="/profile-settings" element={guard(['client'], <ProfileSettings />)} />
@@ -179,7 +178,7 @@ export default function App() {
           <Route path="/milestone-reports" element={guard(['client', 'worker', 'expert'], <MilestoneReports />)} />
           <Route path="/project-workroom" element={guard(['client', 'worker'], <ProjectWorkroom />)} />
           <Route path="/task-details" element={guard(['client', 'worker'], <TaskDetails />)} />
-          <Route path="/dispute" element={guard(['client', 'worker'], <Dispute />)} />
+          <Route path="/dispute" element={guard(['client'], <Dispute />)} />
           <Route path="/review-deliverable" element={guard(['client', 'expert'], <ReviewDeliverable />)} />
           <Route path="/expert-report-audit" element={guard(['expert', 'client', 'worker'], <ExpertReportAudit />)} />
           <Route path="/expert-report-dispute" element={guard(['expert', 'client', 'worker'], <ExpertReportDispute />)} />
@@ -192,7 +191,8 @@ export default function App() {
           {/* Reviewer intake is the intake desk's job, not operations'. */}
           <Route path="/superuser-expert-applications" element={<Navigate to="/superuser-dashboard" replace />} />
           <Route path="/superuser-disputes" element={guard(['superuser'], <SuperuserDisputes />)} />
-          <Route path="/superuser-create-task" element={guard(['superuser'], <SuperuserCreateTask />)} />
+          {/* Only clients post projects — the budget comes out of their own wallet. */}
+          <Route path="/superuser-create-task" element={<Navigate to="/superuser-tasks" replace />} />
 
           {/* ── ADMIN DESKS ── */}
           {/* Old admin desk: always redirects to the user's own dashboard (see the page) */}

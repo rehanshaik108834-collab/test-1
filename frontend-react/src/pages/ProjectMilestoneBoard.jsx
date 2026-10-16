@@ -47,7 +47,7 @@ function loadMilestonesFromStore(Store, Auth, taskId) {
       taskId: m.taskId,
       revision: m.status === 'revision-needed',
     };
-    if (['completed', 'approved', 'audit-passed', 'refunded'].includes(m.status)) colMap.done.push(card);
+    if (['completed', 'approved', 'audit-passed'].includes(m.status)) colMap.done.push(card);
     else if (m.status === 'review' || m.status === 'submitted') colMap.review.push(card);
     else if (m.status === 'disputed') colMap.disputed.push(card);
     else if (m.status === 'in-progress') colMap.inProgress.push(card);
@@ -94,9 +94,7 @@ function MilestoneCard({ m, col }) {
       </div>
       {col === 'done' ? (
         <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid rgba(0,0,0,0.05)', textAlign: 'center' }}>
-          {m.status === 'refunded'
-            ? <span style={{ fontSize: 12, color: '#64748b', fontWeight: 600 }}>Refunded to you after a dispute</span>
-            : <span style={{ fontSize: 12, color: '#10b981', fontWeight: 600 }}>✓ Approved &amp; Paid</span>}
+          <span style={{ fontSize: 12, color: '#10b981', fontWeight: 600 }}>✓ Approved &amp; Paid</span>
         </div>
       ) : ''}
       {col === 'review' ? (
@@ -124,7 +122,7 @@ export default function ProjectMilestoneBoard() {
   const doneMs = milestones.done.length;
   const boardTaskId = taskId || Store.getTasksByClient(Auth.getCurrentUser()?.userId)[0]?.id;
   const boardTask = boardTaskId ? Store.getTaskById(boardTaskId) : null;
-  const releasedAmt = sumAmounts(milestones.done.filter(m => m.status !== 'refunded'));
+  const releasedAmt = sumAmounts(milestones.done);
   const released = '$' + releasedAmt.toLocaleString();
   const heldNow = boardTaskId ? (Store.getMyEscrow().projects.find(p => p.taskId === boardTaskId)?.projectHeld || 0) : 0;
   const pending = '$' + heldNow.toLocaleString();

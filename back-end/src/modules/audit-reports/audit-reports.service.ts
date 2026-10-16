@@ -5,9 +5,9 @@ import { AuditRequestsService } from '../audit-requests/audit-requests.service';
 import { MilestonesService } from '../milestones/milestones.service';
 import { TasksService } from '../tasks/tasks.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { UsersService } from '../users/users.service';
 import { canViewTask, canViewAnyRecord, assertAllowed } from '../../common/guards/viewer.util';
 import { Actor } from '../../common/decorators/actor.decorator';
-import { ROLES } from '../../common/constants/roles';
 
 /**
  * AuditReportsService — Business Logic Layer
@@ -23,6 +23,7 @@ export class AuditReportsService {
     @Inject(forwardRef(() => MilestonesService)) private milestonesService: MilestonesService,
     @Inject(forwardRef(() => TasksService)) private tasks: TasksService,
     @Inject(forwardRef(() => NotificationsService)) private notifications: NotificationsService,
+    @Inject(forwardRef(() => UsersService)) private users: UsersService,
   ) {}
 
   findAll(query?: { taskId?: string; auditRequestId?: string },
@@ -70,7 +71,8 @@ export class AuditReportsService {
     // task and milestone, and filing is what triggers the payout.
     const ar = this.auditRequestsService.findById(dto.auditRequestId);
     assertAllowed(
-      (ar.expertId && ar.expertId === actor.id) || actor.role === ROLES.SUPERUSER,
+      // Filing is what pays the reviewer, so only they can do it.
+      !!ar.expertId && ar.expertId === actor.id,
       'Only the reviewer assigned to this audit can file its report.',
     );
     if (ar.kind === 'dispute-audit') {
@@ -84,7 +86,18 @@ export class AuditReportsService {
     if (!ms.deliverable && !['submitted', 'review', 'disputed'].includes(ms.status)) {
       throw new BadRequestException('The worker has not submitted this milestone yet, so there is nothing to audit.');
     }
-    const fields = { ...dto, taskId: ar.taskId, expertId: ar.expertId };
+    // The display names come from the records, not the request body, so a
+    // report cannot claim to be about a different project or worker.
+    const task = this.safe(() => this.tasks.findById(ar.taskId));
+    const worker = task?.workerId ? this.safe(() => this.users.findById(task.workerId)) : null;
+    const fields = {
+      ...dto,
+      taskId: ar.taskId,
+      expertId: ar.expertId,
+      milestoneTitle: ms.title,
+      projectTitle: task?.title || dto.projectTitle || '',
+      workerName: worker?.name || dto.workerName || '',
+    };
 
     // Keyed on the milestone as well as the engagement: re-filing a report
     // updates that milestone's report, it does not replace another one.
@@ -118,7 +131,6 @@ export class AuditReportsService {
     const { payout } = this.auditRequestsService.settle(dto.auditRequestId, dto.milestoneId);
 
     // Expert reports do not change milestone status — that stays with the client.
-    const task = this.safe(() => this.tasks.findById(ar.taskId));
     const verdict = dto.verdict === 'pass' ? 'passed' : dto.verdict === 'fail' ? 'failed' : 'passed with conditions';
     for (const userId of [ar.clientId, ar.workerId]) {
       this.notifications.notify(userId, {

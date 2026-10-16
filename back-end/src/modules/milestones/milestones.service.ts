@@ -12,14 +12,13 @@ import { AppLoggerService } from '../../common/logging/app-logger.service';
 import { Actor } from '../../common/decorators/actor.decorator';
 import { assertAllowed, canViewAnyRecord, canViewTask } from '../../common/guards/viewer.util';
 import { round2 } from '../ledger/fee-config';
-import { ROLES } from '../../common/constants/roles';
 
 /** Statuses a worker moves their own milestone between while working on it. */
 const WORKER_SETTABLE = ['pending', 'in-progress'];
 /** Statuses from which a worker may pick the milestone back up. */
 const WORKER_FROM = ['pending', 'in-progress', 'revision-needed'];
-/** A milestone whose money has moved, one way or another — paid out or refunded. */
-export const SETTLED = ['completed', 'approved', 'audit-passed', 'done', 'refunded'];
+/** A milestone whose money has been paid out to the worker. */
+export const SETTLED = ['completed', 'approved', 'audit-passed', 'done'];
 /** Statuses a worker can submit (or resubmit) work from. */
 const SUBMITTABLE = ['pending', 'in-progress', 'revision-needed', 'submitted'];
 
@@ -108,17 +107,17 @@ export class MilestonesService {
     const task = this.tasksService.findById(ms.taskId);
     return {
       task,
-      isClient: task.clientId === actor.id || actor.role === ROLES.SUPERUSER,
+      // Only the project's own client — operations staff do not edit the
+      // plan or approve work on a client's behalf (stuck cases go through
+      // the dispute override instead).
+      isClient: task.clientId === actor.id,
       isWorker: !!task.workerId && task.workerId === actor.id,
     };
   }
 
   create(dto: CreateMilestoneDto, actor: Actor) {
     const task = this.tasksService.findById(dto.taskId);
-    assertAllowed(
-      task.clientId === actor.id || actor.role === ROLES.SUPERUSER,
-      'Only the client who owns this project can add milestones to it.',
-    );
+    assertAllowed(task.clientId === actor.id, 'Only the client who owns this project can add milestones to it.');
     if (['completed', 'cancelled'].includes(task.status)) {
       throw new BadRequestException(`Milestones cannot be added to a ${task.status} project.`);
     }
@@ -161,6 +160,12 @@ export class MilestonesService {
       if (dto.budget !== undefined && dto.budget !== ms.budget) {
         if (!['pending', 'in-progress'].includes(ms.status)) {
           throw new BadRequestException('The budget cannot change once work has been submitted.');
+        }
+        // Once a worker is hired the milestone amounts are what they agreed
+        // to. Lowering one would cut their pay and hand the difference back
+        // to the client when the project completes.
+        if (task.workerId && dto.budget < ms.budget) {
+          throw new BadRequestException('A worker has been hired, so a milestone\'s amount can be raised but not lowered.');
         }
         this.assertWithinBudget(task, dto.budget, ms.id);
         patch.budget = dto.budget;

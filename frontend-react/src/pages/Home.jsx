@@ -10,6 +10,7 @@ import { Link } from 'react-router-dom';
 import Icon from '../components/Icon';
 import PageStyle from '../components/PageStyle';
 import usePageTitle from '../hooks/usePageTitle';
+import usePublicStats, { compactMoney } from '../hooks/usePublicStats';
 import useScrollReveal from '../hooks/useScrollReveal';
 import useSmoothScroll from '../hooks/useSmoothScroll';
 import pageCss from './Home.css?raw';
@@ -18,6 +19,9 @@ export default function Home() {
   usePageTitle('Lannent — Trusted Collaboration for Freelance Projects');
   useScrollReveal();   // fades in every ".reveal" section on scroll
   useSmoothScroll();   // smooth "#section" links + navbar shadow + steps connector
+  // Live figures from the platform — the page used to show invented ones.
+  const stats = usePublicStats();
+  const members = stats ? stats.clients + stats.workers + stats.experts : 0;
 
   return (
     <>
@@ -66,16 +70,13 @@ export default function Home() {
             <Link to="/signup" style={{ width: '100%' }}>
               <button className="btn-hero">Get Started</button>
             </Link>
-            <div className="hero-trust">
-              <div className="hero-stars">
-                <span className="star-icon">★</span>
-                <span className="star-icon">★</span>
-                <span className="star-icon">★</span>
-                <span className="star-icon">★</span>
-                <span className="star-icon">★</span>
+            {stats && members > 0 ? (
+              <div className="hero-trust">
+                <span style={{ fontWeight: 500 }}>
+                  {`${members.toLocaleString()} member${members === 1 ? '' : 's'} building on Lannent`}
+                </span>
               </div>
-              <span style={{ fontWeight: 500 }}>Trusted by 2,000+ builders</span>
-            </div>
+            ) : null}
           </div>
         </div>
       </section>
@@ -359,7 +360,7 @@ export default function Home() {
               </div>
               <h3 style={{ fontWeight: 600, fontSize: 20, marginBottom: 8, color: '#0f172a' }}>Dispute Resolution</h3>
               <p style={{ color: '#64748b', fontSize: 14, lineHeight: 1.7 }}>
-                Fair, expert-mediated resolution with full transparency. Average case closed in under 48 hours.
+                Fair, expert-mediated resolution with full transparency. The reviewer either releases the milestone or sends it back for rework.
               </p>
             </div>
             {/* Verified (col 6) */}
@@ -398,12 +399,11 @@ export default function Home() {
                 <div className="browser-url">
                   <div className="url-bar">
                     <div className="url-dot"></div>
-                    gigboard.app/dashboard
+                    lannent.app/dashboard
                   </div>
                 </div>
-                <div className="browser-live">
-                  <div className="live-dot"></div>
-                  Live
+                <div className="browser-live" title="An illustration with sample data">
+                  Example
                 </div>
               </div>
               <div className="browser-content">
@@ -610,62 +610,6 @@ export default function Home() {
           </div>
         </div>
       </section>
-      {/* ═══════════ TESTIMONIALS ═══════════ */}
-      <section className="section-testimonials">
-        <div style={{ position: 'absolute', inset: 0, backgroundImage: 'radial-gradient(circle,rgba(251,191,36,0.07) 1px,transparent 1px)', backgroundSize: '28px 28px', pointerEvents: 'none' }}></div>
-        <div className="container" style={{ position: 'relative', zIndex: 1 }}>
-          <div className="section-header reveal">
-            <span className="pill pill-amber">★ Testimonials</span>
-            <h2 className="section-title">
-              Loved by <span className="grad-amber">10,000+ builders</span>
-            </h2>
-          </div>
-          <div className="testimonials-grid">
-            <div className="testi-card reveal">
-              <div className="testi-quote-bg">"</div>
-              <div className="testi-stars">★★★★★</div>
-              <p className="testi-text">
-                "The escrow system gave me complete peace of mind. I knew my funds were safe until the work was verified by an expert reviewer."
-              </p>
-              <div className="testi-author">
-                <div className="testi-avatar" style={{ background: 'linear-gradient(135deg,#f43f5e,#db2777)' }}></div>
-                <div>
-                  <p style={{ fontWeight: 700, fontSize: 14, color: '#1e293b' }}>Sarah Chen</p>
-                  <p style={{ fontSize: 12, color: '#94a3b8' }}>Startup Founder</p>
-                </div>
-              </div>
-            </div>
-            <div className="testi-card reveal reveal-delay-1">
-              <div className="testi-quote-bg">"</div>
-              <div className="testi-stars">★★★★★</div>
-              <p className="testi-text">
-                "Milestone tracking and real-time workrooms made managing our remote freelancers effortless. Best platform we've used by a mile."
-              </p>
-              <div className="testi-author">
-                <div className="testi-avatar" style={{ background: 'linear-gradient(135deg,#6366f1,#4f46e5)' }}></div>
-                <div>
-                  <p style={{ fontWeight: 700, fontSize: 14, color: '#1e293b' }}>Marcus Rivera</p>
-                  <p style={{ fontSize: 12, color: '#94a3b8' }}>Product Manager</p>
-                </div>
-              </div>
-            </div>
-            <div className="testi-card reveal reveal-delay-2">
-              <div className="testi-quote-bg">"</div>
-              <div className="testi-stars">★★★★★</div>
-              <p className="testi-text">
-                "The expert audit feature is a game-changer. We caught critical issues before deployment that would have cost us thousands."
-              </p>
-              <div className="testi-author">
-                <div className="testi-avatar" style={{ background: 'linear-gradient(135deg,#10b981,#059669)' }}></div>
-                <div>
-                  <p style={{ fontWeight: 700, fontSize: 14, color: '#1e293b' }}>Aisha Patel</p>
-                  <p style={{ fontSize: 12, color: '#94a3b8' }}>CTO, Buildfast</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
       {/* ═══════════ METRICS ═══════════ */}
       <section className="section-metrics">
         <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse 90% 70% at 50% 50%,rgba(224,231,255,0.6) 0%,transparent 70%)', pointerEvents: 'none' }}></div>
@@ -673,7 +617,7 @@ export default function Home() {
           <div className="section-header reveal">
             <span className="pill pill-cyan">◎ By the Numbers</span>
             <h2 className="section-title">
-              Trusted by thousands of <span className="grad-cyan">professionals</span>
+              Live from the <span className="grad-cyan">platform</span>
             </h2>
           </div>
           <div className="metrics-grid">
@@ -681,29 +625,29 @@ export default function Home() {
               <div className="metric-icon" style={{ background: 'linear-gradient(135deg,#6366f1,#4f46e5)' }}>
                 <Icon name="users" style={{ color: 'white', width: 24, height: 24 }} />
               </div>
-              <div className="metric-val" style={{ background: 'linear-gradient(135deg,#6366f1,#4f46e5)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>12,500+</div>
-              <div className="metric-label">Freelancers Onboarded</div>
+              <div className="metric-val" style={{ background: 'linear-gradient(135deg,#6366f1,#4f46e5)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>{stats ? stats.workers.toLocaleString() : '—'}</div>
+              <div className="metric-label">Gig workers on Lannent</div>
             </div>
             <div className="metric-card reveal reveal-delay-1" style={{ background: '#ecfdf5', border: '1.5px solid #a7f3d0' }}>
               <div className="metric-icon" style={{ background: 'linear-gradient(135deg,#10b981,#059669)' }}>
                 <Icon name="check-circle" style={{ color: 'white', width: 24, height: 24 }} />
               </div>
-              <div className="metric-val" style={{ background: 'linear-gradient(135deg,#10b981,#059669)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>45,000+</div>
-              <div className="metric-label">Projects Completed</div>
+              <div className="metric-val" style={{ background: 'linear-gradient(135deg,#10b981,#059669)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>{stats ? stats.projectsCompleted.toLocaleString() : '—'}</div>
+              <div className="metric-label">{stats ? `Projects completed · ${stats.projectsInProgress} in progress` : 'Projects completed'}</div>
             </div>
             <div className="metric-card reveal reveal-delay-2" style={{ background: '#eff6ff', border: '1.5px solid #bae6fd' }}>
               <div className="metric-icon" style={{ background: 'linear-gradient(135deg,#0ea5e9,#0284c7)' }}>
                 <Icon name="lock" style={{ color: 'white', width: 24, height: 24 }} />
               </div>
-              <div className="metric-val" style={{ background: 'linear-gradient(135deg,#0ea5e9,#0284c7)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>$24M+</div>
-              <div className="metric-label">Escrow Secured</div>
+              <div className="metric-val" style={{ background: 'linear-gradient(135deg,#0ea5e9,#0284c7)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>{stats ? compactMoney(stats.escrowHeld) : '—'}</div>
+              <div className="metric-label">Held in escrow right now</div>
             </div>
             <div className="metric-card reveal reveal-delay-3" style={{ background: '#fffbeb', border: '1.5px solid #fde68a' }}>
               <div className="metric-icon" style={{ background: 'linear-gradient(135deg,#f59e0b,#f97316)' }}>
-                <Icon name="star" style={{ color: 'white', width: 24, height: 24 }} />
+                <Icon name="wallet" style={{ color: 'white', width: 24, height: 24 }} />
               </div>
-              <div className="metric-val" style={{ background: 'linear-gradient(135deg,#f59e0b,#f97316)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>98.5%</div>
-              <div className="metric-label">Client Satisfaction</div>
+              <div className="metric-val" style={{ background: 'linear-gradient(135deg,#f59e0b,#f97316)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>{stats ? compactMoney(stats.paidToWorkers) : '—'}</div>
+              <div className="metric-label">Paid to gig workers</div>
             </div>
           </div>
         </div>

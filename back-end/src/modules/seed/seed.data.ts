@@ -2,8 +2,8 @@
 // EER Specialization: USERS split into base + role sub-tables
 // Base USERS: 10 shared columns (id, name, email, password, role, avatar, avatarColor, status, joinDate, walletBalance)
 // CLIENTS:  userId, company, location
-// WORKERS:  userId, location, skills, rating, completedProjects
-// EXPERTS:  userId, specialization, reviewsDone
+// WORKERS:  userId, location, skills   (project counts are derived, never stored)
+// EXPERTS:  userId, specialization      (reviews done is derived from paid engagements)
 // ============================================================================
 
 // ── Base USERS (shared attributes for ALL roles) ──────────────────────────────
@@ -31,17 +31,17 @@ export const SEED_CLIENTS = [
 
 // ── WORKERS (1:1 with USERS where role='worker') ──────────────────────────────
 export const SEED_WORKERS = [
-  { userId: 'u2', location: '', skills: ['React', 'Node.js', 'MongoDB'], rating: 4.8, completedProjects: 23 },
-  { userId: 'u5', location: '', skills: ['React', 'Figma', 'UI/UX Design'], rating: 4.9, completedProjects: 89 },
-  { userId: 'u6', location: '', skills: ['React', 'Node.js', 'MongoDB'], rating: 4.7, completedProjects: 65 },
-  { userId: 'u7', location: '', skills: ['Figma', 'CSS3', 'User Research'], rating: 4.8, completedProjects: 41 },
+  { userId: 'u2', location: '', skills: ['React', 'Node.js', 'MongoDB'] },
+  { userId: 'u5', location: '', skills: ['React', 'Figma', 'UI/UX Design'] },
+  { userId: 'u6', location: '', skills: ['React', 'Node.js', 'MongoDB'] },
+  { userId: 'u7', location: '', skills: ['Figma', 'CSS3', 'User Research'] },
 ];
 
 // ── EXPERTS (1:1 with USERS where role='expert') ──────────────────────────────
 export const SEED_EXPERTS = [
-  { userId: 'u3', specialization: 'Full-Stack & Security', reviewsDone: 47, hourlyRate: 120, domains: ['Web Development', 'Backend / API', 'Security'] },
-  { userId: 'u9', specialization: 'UI/UX & Design Systems', reviewsDone: 22, hourlyRate: 95, domains: ['UI/UX Design', 'Web Development'] },
-  { userId: 'u10', specialization: 'Mobile & Performance', reviewsDone: 15, hourlyRate: 105, domains: ['Mobile Development', 'AI / Machine Learning'] },
+  { userId: 'u3', specialization: 'Full-Stack & Security', hourlyRate: 120, domains: ['Web Development', 'Backend / API', 'Security'] },
+  { userId: 'u9', specialization: 'UI/UX & Design Systems', hourlyRate: 95, domains: ['UI/UX Design', 'Web Development'] },
+  { userId: 'u10', specialization: 'Mobile & Performance', hourlyRate: 105, domains: ['Mobile Development', 'AI / Machine Learning'] },
 ];
 
 // ============================================================================
@@ -83,9 +83,9 @@ export const SEED_MILESTONES = [
 ];
 
 export const SEED_PROPOSALS = [
-  { id: 'p1', taskId: 't3', workerId: 'u5', workerName: 'Sarah Johnson', avatar: 'SJ', avatarColor: 'linear-gradient(135deg,#6366f1,#4f46e5)', rating: 4.9, reviewCount: 127, location: 'San Francisco, CA', bidPrice: '$1,100', timeline: '1 week', coverLetter: 'Experienced in API integrations with Stripe, Twilio, and shipping providers. I can deliver clean, documented code within a week with full test coverage.', skills: ['Node.js', 'REST API', 'Testing'], completedProjects: 89, successRate: 98, hourlyRate: '$85/hr', responseTime: 'Within 2 hours', status: 'pending', type: 'proposal', createdAt: '2026-03-06' },
-  { id: 'p2', taskId: 't3', workerId: 'u6', workerName: 'Michael Chen', avatar: 'MC', avatarColor: 'linear-gradient(135deg,#ec4899,#be185d)', rating: 4.7, reviewCount: 83, location: 'New York, NY', bidPrice: '$1,000', timeline: '10 days', coverLetter: 'Full-stack developer with deep API experience. I have built payment integrations for Stripe, PayPal, and Square for multiple e-commerce clients.', skills: ['Node.js', 'Express', 'MongoDB'], completedProjects: 65, successRate: 96, hourlyRate: '$75/hr', responseTime: 'Within 4 hours', status: 'pending', type: 'proposal', createdAt: '2026-03-06' },
-  { id: 'p3', taskId: 't5', workerId: 'u2', workerName: 'Alex Worker', avatar: 'AW', avatarColor: 'linear-gradient(135deg,#10b981,#059669)', rating: 4.8, reviewCount: 56, location: 'Boston, MA', bidPrice: '$5,500', timeline: '4 weeks', coverLetter: 'ML engineer with production NLP chatbot experience. Built systems handling 10k+ daily conversations. Deep expertise in LangChain and OpenAI APIs.', skills: ['Python', 'TensorFlow', 'NLP'], completedProjects: 23, successRate: 100, hourlyRate: '$90/hr', responseTime: 'Within 1 hour', status: 'pending', type: 'proposal', createdAt: '2026-03-11' },
+  { id: 'p1', taskId: 't3', workerId: 'u5', workerName: 'Sarah Johnson', avatar: 'SJ', avatarColor: 'linear-gradient(135deg,#6366f1,#4f46e5)', bidPrice: '$1,100', timeline: '1 week', coverLetter: 'Experienced in API integrations with Stripe, Twilio, and shipping providers. I can deliver clean, documented code within a week with full test coverage.', skills: ['Node.js', 'REST API', 'Testing'], status: 'pending', type: 'proposal', createdAt: '2026-03-06' },
+  { id: 'p2', taskId: 't3', workerId: 'u6', workerName: 'Michael Chen', avatar: 'MC', avatarColor: 'linear-gradient(135deg,#ec4899,#be185d)', bidPrice: '$1,000', timeline: '10 days', coverLetter: 'Full-stack developer with deep API experience. I have built payment integrations for Stripe, PayPal, and Square for multiple e-commerce clients.', skills: ['Node.js', 'Express', 'MongoDB'], status: 'pending', type: 'proposal', createdAt: '2026-03-06' },
+  { id: 'p3', taskId: 't5', workerId: 'u2', workerName: 'Alex Worker', avatar: 'AW', avatarColor: 'linear-gradient(135deg,#10b981,#059669)', bidPrice: '$5,500', timeline: '4 weeks', coverLetter: 'ML engineer with production NLP chatbot experience. Built systems handling 10k+ daily conversations. Deep expertise in LangChain and OpenAI APIs.', skills: ['Python', 'TensorFlow', 'NLP'], status: 'pending', type: 'proposal', createdAt: '2026-03-11' },
 ];
 
 export const SEED_AUDIT_REQUESTS: any[] = [
@@ -105,7 +105,7 @@ export const SEED_AUDIT_REPORTS = [
 
 export const SEED_DISPUTES = [
   { id: 'd1', taskId: 't1', milestoneId: 'm3', raisedBy: 'u1', raisedByName: 'James Client', againstId: 'u5', againstName: 'Sarah Johnson', status: 'open', reason: 'Incomplete work', details: 'The backend integration milestone was submitted but the API endpoints return incorrect data formats. The payment gateway integration is also incomplete.', outcome: 'Revision of the API responses and the payment integration', expertId: 'u3', payerId: 'u1', reviewerFee: 200, auditRequestId: 'ar4', milestoneStatusBefore: 'submitted', verdict: null, resolution: null, amount: '$500', project: 'E-commerce Website Redesign', milestone: 'Backend Integration', createdAt: '2026-03-29', resolvedAt: null },
-  { id: 'd2', taskId: 't6', milestoneId: null, raisedBy: 'u2', raisedByName: 'Alex Worker', againstId: 'u8', againstName: 'Bob Client', status: 'resolved', reason: 'Client has not responded to milestone submission for over 2 weeks. Payment is being unfairly withheld.', expertId: 'u3', verdict: 'worker-favour', resolution: 'After reviewing the submitted work and communication logs, the milestone is deemed complete. Escrow funds released to worker.', amount: '$660', project: 'UI Design System', milestone: 'Phase 1 Components', createdAt: '2026-03-15', resolvedAt: '2026-03-22' },
+  { id: 'd2', taskId: 't6', milestoneId: null, raisedBy: 'u8', raisedByName: 'Bob Client', againstId: 'u2', againstName: 'Alex Worker', payerId: 'u8', status: 'resolved', reason: 'Components do not match the agreed design tokens', details: 'Several components use colours and spacing that differ from the design system brief.', expertId: 'u3', verdict: 'worker-favour', resolution: 'After reviewing the submitted work and communication logs, the milestone is deemed complete. Escrow funds released to worker.', amount: '$660', project: 'UI Design System', milestone: 'Phase 1 Components', createdAt: '2026-03-15', resolvedAt: '2026-03-22' },
 ];
 
 export const SEED_TRANSACTIONS = [

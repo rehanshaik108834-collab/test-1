@@ -139,7 +139,7 @@ function ApplicationDetails({ app, showDocuments, onClose, onAction }) {
         <DetailField label="Applied On">{app.appliedAt || 'N/A'}</DetailField>
         <DetailField label="Reviewed On">{app.reviewedAt || 'Not yet reviewed'}</DetailField>
       </div>
-      {app.status === 'pending' ? (
+      {app.status === 'pending' && onAction ? (
         <div style={{ display: 'flex', gap: 10, marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
           <button className="btn-approve" style={{ flex: 1, justifyContent: 'center', height: 40, fontSize: 14 }} onClick={() => { onClose(); onAction(app.id, 'approved'); }}>
             <Icon name="check" style={{ width: 14, height: 14 }} /> Approve Application
@@ -159,6 +159,8 @@ function ApplicationDetails({ app, showDocuments, onClose, onAction }) {
  * @param {boolean} showDocuments - show the résumé / certificate rows (admin desk)
  */
 export default function ExpertApplicationsReview({ role, activePath, showDocuments }) {
+  // Only the intake desk decides; compliance reads the queue but cannot act on it.
+  const canDecide = role === 'intake-admin';
   const Store = useStore();
   const Validate = useValidation();
   const rerender = useRerender();
@@ -265,7 +267,7 @@ export default function ExpertApplicationsReview({ role, activePath, showDocumen
                 <button className="btn-details" onClick={() => showDetails(a.id)}>
                   <Icon name="eye" style={{ width: 12, height: 12 }} /> Details
                 </button>
-                {a.status === 'pending' ? (
+                {a.status === 'pending' && canDecide ? (
                   <>
                     <button className="btn-approve" onClick={() => confirmAction(a.id, 'approved')}>
                       <Icon name="check" style={{ width: 12, height: 12 }} /> Approve
@@ -302,7 +304,7 @@ export default function ExpertApplicationsReview({ role, activePath, showDocumen
       {/* Detail Modal */}
       <div className={'detail-overlay' + (detailOpen ? ' show' : '')} id="detailModal" onClick={e => { if (e.target === e.currentTarget) setDetailOpen(false); }}>
         <div className="detail-card" id="detailContent">
-          {detailApp && <ApplicationDetails app={detailApp} showDocuments={showDocuments} onClose={() => setDetailOpen(false)} onAction={confirmAction} />}
+          {detailApp && <ApplicationDetails app={detailApp} showDocuments={showDocuments} onClose={() => setDetailOpen(false)} onAction={canDecide ? confirmAction : null} />}
         </div>
       </div>
     </DashboardLayout>

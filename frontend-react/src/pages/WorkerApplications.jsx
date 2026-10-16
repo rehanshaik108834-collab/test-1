@@ -52,13 +52,13 @@ function buildAllProposals(Store, Auth) {
         workerName: p.workerName || worker?.name || 'Worker',
         avatar: p.avatar || worker?.avatar || 'WK',
         avatarColor: p.avatarColor || worker?.avatarColor || '',
-        rating: worker?.rating || 0,
-        location: worker?.location || 'Remote',
+        location: worker?.location || 'Location not set',
         bidPrice: p.bidPrice || '$0',
         timeline: p.timeline || '2 weeks',
         coverLetter: p.coverLetter || '',
         skills: p.skills || worker?.skills || [],
         completedProjects: worker?.completedProjects || 0,
+        activeProjects: worker?.activeProjects || 0,
         experience: worker?.experienceLevel || 'Not set',
         hourlyRate: worker?.hourlyRate ? `$${worker.hourlyRate}/hr` : '—',
         availability: typeof worker?.availability === 'string' && worker.availability ? worker.availability : 'Availability not set',
@@ -121,8 +121,8 @@ function ProposalDetail({ p, onHire, onReject }) {
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 16 }}>
           <WorkerStat value={p.experience} label="Experience" background="#ecfdf5" valueColor="#10b981" labelColor="#065f46" valueSize={14} />
-          <WorkerStat value={p.completedProjects} label="Projects Done" background="#eef2ff" valueColor="#4f46e5" labelColor="#3730a3" />
- <WorkerStat value={p.rating ? `${p.rating}★` : 'New'} label="Rating" background="#fffbeb" valueColor="#d97706" labelColor="#92400e" />
+          <WorkerStat value={p.completedProjects} label="Completed on Lannent" background="#eef2ff" valueColor="#4f46e5" labelColor="#3730a3" />
+          <WorkerStat value={p.activeProjects} label="In progress now" background="#fffbeb" valueColor="#d97706" labelColor="#92400e" />
           <WorkerStat value={p.hourlyRate} label="Hourly Rate" background="#faf5ff" valueColor="#7c3aed" labelColor="#5b21b6" valueSize={16} />
         </div>
         <div style={{ display: 'flex', gap: 12 }}>
@@ -350,7 +350,7 @@ export default function WorkerApplications() {
                     <div style={{ width: 36, height: 36, borderRadius: '50%', background: p.avatarColor, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{p.avatar}</div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontWeight: 600, fontSize: 14 }}>{p.workerName}</div>
-                      <div style={{ fontSize: 12, color: 'var(--muted-foreground)' }}>{p.rating ? `${'★'.repeat(Math.round(p.rating))} ${p.rating}` : 'New on Lannent'}</div>
+                      <div style={{ fontSize: 12, color: 'var(--muted-foreground)' }}>{`${p.completedProjects} completed on Lannent`}</div>
                     </div>
                     <div style={{ textAlign: 'right', flexShrink: 0 }}>
                       <div style={{ fontWeight: 700, color: '#10b981', fontSize: 14 }}>{p.bidPrice}</div>
